@@ -249,9 +249,9 @@ def find_all_occurrences(text: str, pattern: str) -> List[Tuple[int, int]]:
         regex_pattern = r'(?<!\w)' + re.escape(pattern) + r'(?!\w)'
         for match in re.finditer(regex_pattern, text, re.IGNORECASE):
             occurrences.append((match.start(), match.end()))
-    except re.error:
-        # Fallback для складних символів, що можуть спричинити помилки regex
-        pass
+    except re.error as e:
+        # Fallback for complex characters that may cause regex errors
+        print(f"Warning: invalid regex pattern for '{pattern}': {e}")
 
     return occurrences
 
@@ -490,12 +490,13 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
     stats = {"restored_count": 0, "skipped_count": 0}
 
     # Будуємо мапу тільки для звань (оптимізація)
-    temp_map_for_ranks = {"mappings": {"rank": masking_map["mappings"].get("rank", {})}}
+    mappings = masking_map.get("mappings", {})
+    temp_map_for_ranks = {"mappings": {"rank": mappings.get("rank", {})}}
     rank_instance_map = build_instance_map(temp_map_for_ranks)
 
     # Створюємо набір всіх замаскованих звань для швидкої перевірки is_real_mask
     all_masked_ranks = set()
-    for original, mask_info in masking_map["mappings"].get("rank", {}).items():
+    for original, mask_info in mappings.get("rank", {}).items():
         if isinstance(mask_info, dict) and "masked_as" in mask_info:
             all_masked_ranks.add(mask_info["masked_as"].lower())
 
@@ -674,7 +675,7 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
     restored_text = masked_text
 
     # Копіюємо маппінг без звань (звання обробляються окремо)
-    mappings_copy = masking_map["mappings"].copy()
+    mappings_copy = masking_map.get("mappings", {}).copy()
     if "rank" in mappings_copy:
         del mappings_copy["rank"]
 
