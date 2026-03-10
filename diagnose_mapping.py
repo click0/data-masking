@@ -33,7 +33,7 @@ import argparse
 import difflib
 import re
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
 # ============================================================================
@@ -250,7 +250,7 @@ def diagnose_single_file(map_path: str) -> None:
 # БЛОК 2: ВЕРИФІКАЦІЯ ТЕКСТУ (Recovered vs Original)
 # ============================================================================
 
-def find_original_and_recovery() -> tuple[Optional[Path], Optional[Path]]:
+def find_original_and_recovery() -> Tuple[Optional[Path], Optional[Path]]:
     """
     Шукає пару файлів для перевірки: input.txt та найсвіжіший input_recovery_*.txt.
     """

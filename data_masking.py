@@ -96,6 +96,9 @@ MASK_ORDERS = True
 MASK_BR_NUMBERS = True
 MASK_DATES = True
 
+# Rank masking: allowed shift values for rank position offset
+RANK_SHIFT_OPTIONS = [-2, -1, 1, 2]
+
 DEBUG_MODE = False
 PRESERVE_CASE = True
 
@@ -1213,7 +1216,10 @@ def mask_date(original: str, masking_dict: Dict, instance_counters: Dict) -> str
                 new_date = datetime(2035, 12, 31) - timedelta(days=random.randint(0, 365))
 
             masked = new_date.strftime("%d.%m.%Y")
-        except Exception:
+        except (ValueError, OverflowError):
+            return original
+        except Exception as e:
+            print(f"Warning: unexpected error parsing date '{original}': {e}")
             return original
 
     return add_to_mapping(masking_dict, instance_counters, "date", original, masked)
@@ -1290,14 +1296,14 @@ def mask_rank(original: str, masking_dict: Dict, instance_counters: Dict) -> str
     # Генеруємо нове звання зі зсувом позиції
     seed = get_deterministic_seed(original_key)
     random.seed(seed)
-    shift = random.choice([-2, -1, 1, 2])
+    shift = random.choice(RANK_SHIFT_OPTIONS)
     new_idx = max(0, min(len(hierarchy) - 1, idx + shift))
     masked = hierarchy[new_idx]
 
     # Уникаємо випадків коли звання мапиться саме на себе
     attempts = 0
     while masked.lower() == original_key and attempts < 10:
-        shift = random.choice([-2, -1, 1, 2])
+        shift = random.choice(RANK_SHIFT_OPTIONS)
         new_idx = max(0, min(len(hierarchy) - 1, idx + shift))
         masked = hierarchy[new_idx]
         attempts += 1
