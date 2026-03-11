@@ -70,9 +70,18 @@ from rank_data import (
 )
 
 # ============================================================================
+# OPTIONAL MODULES
+# ============================================================================
+try:
+    from re_mask import ReMasker, MappingChain, make_empty_masking_dict
+    REMASK_AVAILABLE = True
+except ImportError:
+    REMASK_AVAILABLE = False
+
+# ============================================================================
 # МЕТАДАНІ
 # ============================================================================
-__version__ = "2.2.14"
+__version__ = "2.2.15"
 __author__ = "Vladyslav V. Prodan"
 __contact__ = "github.com/click0"
 __phone__ = "+38(099)6053340"
@@ -1684,6 +1693,9 @@ def main():
     parser.add_argument("-o", "--output", help="Output file")
     parser.add_argument("--no-report", action="store_true", help="No report")
     parser.add_argument("--debug", action="store_true", help="Debug mode")
+    if REMASK_AVAILABLE:
+        parser.add_argument("--re-mask", type=int, default=None, metavar="N",
+                            help="Number of re-masking passes (2-10)")
     args = parser.parse_args()
 
     global DEBUG_MODE
@@ -1721,20 +1733,58 @@ def main():
         print(f"Error reading file: {e}")
         return
 
-    if is_json:
-        masked_data = mask_json_recursive(input_data, masking_dict, instance_counters)
+    re_mask_passes = getattr(args, 're_mask', None)
+
+    if REMASK_AVAILABLE and re_mask_passes and re_mask_passes > 1:
+        # Multi-pass re-masking
+        chain = MappingChain()
+        masked_data = input_data
+
+        for pass_num in range(1, re_mask_passes + 1):
+            print(f"  Прохід {pass_num}/{re_mask_passes}...")
+            pass_dict = make_empty_masking_dict(__version__)
+            pass_counters = {}
+
+            if is_json:
+                masked_data = mask_json_recursive(masked_data, pass_dict, pass_counters)
+            else:
+                masked_data = mask_text_context_aware(masked_data, pass_dict, pass_counters)
+
+            pass_dict["instance_tracking"] = pass_counters
+            for category, mappings in pass_dict["mappings"].items():
+                pass_dict["statistics"][category] = len(mappings)
+            chain.add_pass(pass_dict)
+
+        # Save chain mapping
+        chain_path = Path(f"masking_chain_{timestamp}_{random_suffix}.json")
+        chain.save(chain_path)
+        print(f"  Chain mapping ({re_mask_passes} passes): {chain_path}")
+
+        # Also save combined stats to masking_dict for report
+        masking_dict["instance_tracking"] = {}
+        total_unique = 0
+        for p in chain.passes:
+            for cat, count in p.get("statistics", {}).items():
+                masking_dict["statistics"][cat] = masking_dict["statistics"].get(cat, 0) + count
+                if cat != "total_masked":
+                    total_unique += count
+        masking_dict["statistics"]["total_masked"] = total_unique
     else:
-        masked_data = mask_text_context_aware(input_data, masking_dict, instance_counters)
+        # Single-pass masking (original logic)
+        if is_json:
+            masked_data = mask_json_recursive(input_data, masking_dict, instance_counters)
+        else:
+            masked_data = mask_text_context_aware(input_data, masking_dict, instance_counters)
 
-    # ФОРМУВАННЯ ПОВНОЇ СТРУКТУРИ JSON
-    masking_dict["instance_tracking"] = instance_counters
+        # ФОРМУВАННЯ ПОВНОЇ СТРУКТУРИ JSON
+        masking_dict["instance_tracking"] = instance_counters
 
-    total_unique = 0
-    for category, mappings in masking_dict["mappings"].items():
-        count = len(mappings)
-        masking_dict["statistics"][category] = count
-        total_unique += count
-    masking_dict["statistics"]["total_masked"] = total_unique
+        total_unique = 0
+        for category, mappings in masking_dict["mappings"].items():
+            count = len(mappings)
+            masking_dict["statistics"][category] = count
+            total_unique += count
+        masking_dict["statistics"]["total_masked"] = total_unique
 
     try:
         # Збереження результату
@@ -1742,9 +1792,10 @@ def main():
             if is_json: json.dump(masked_data, f, ensure_ascii=False, indent=2)
             else: f.write(masked_data)
 
-        # Збереження мапи
-        with open(map_path, 'w', encoding='utf-8') as f:
-            json.dump(masking_dict, f, ensure_ascii=False, indent=2)
+        # Збереження мапи (single-pass only; chain saves its own file)
+        if not (REMASK_AVAILABLE and re_mask_passes and re_mask_passes > 1):
+            with open(map_path, 'w', encoding='utf-8') as f:
+                json.dump(masking_dict, f, ensure_ascii=False, indent=2)
 
         # ГЕНЕРАЦІЯ ДЕТАЛЬНОГО ЗВІТУ
         if not args.no_report:

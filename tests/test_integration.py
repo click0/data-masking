@@ -833,5 +833,139 @@ class TestCliErrorHandling:
             except (ValueError, Exception):
                 # Очікувана помилка
                 assert True
+# ============================================================================
+# ТЕСТИ CHAIN ROUNDTRIP (multi-pass mask → unmask restoration)
+# ============================================================================
+class TestChainRoundtrip:
+    """Тести відновлення даних через ланцюг маскування (2-3 проходи)."""
+
+    SAMPLE_TEXT = """НАКАЗ
+від "06" жовтня 2025 року №292
+Капітан Петренко Іван Сергійович
+ІПН: 1234567890
+Паспорт: 123456789
+"""
+
+    def _make_masking_dict(self):
+        """Create a fresh masking dict."""
+        from re_mask import make_empty_masking_dict
+        return make_empty_masking_dict("2.2.15")
+
+    def test_chain_roundtrip_2_passes(self):
+        """Тест: маскування у 2 проходи, потім відновлення через ланцюг."""
+        from data_masking import mask_text_context_aware, REMASK_AVAILABLE
+        from unmask_data import unmask_chain
+        from re_mask import MappingChain
+
+        if not REMASK_AVAILABLE:
+            pytest.skip("ReMask module not available")
+
+        text = self.SAMPLE_TEXT
+        chain = MappingChain()
+
+        # Pass 1
+        dict1 = self._make_masking_dict()
+        counters1 = {}
+        masked1 = mask_text_context_aware(text, dict1, counters1)
+        dict1["instance_tracking"] = counters1
+        chain.add_pass(dict1)
+
+        # Verify pass 1 masked something
+        assert masked1 != text, "Pass 1 should mask data"
+        assert "Петренко" not in masked1
+
+        # Pass 2
+        dict2 = self._make_masking_dict()
+        counters2 = {}
+        masked2 = mask_text_context_aware(masked1, dict2, counters2)
+        dict2["instance_tracking"] = counters2
+        chain.add_pass(dict2)
+
+        assert chain.current_pass == 2
+        assert len(chain.passes) == 2
+
+        # Unmask chain (reverse order)
+        chain_data = {
+            "passes": chain.passes,
+            "total_passes": 2
+        }
+        restored, stats = unmask_chain(masked2, chain_data)
+
+        # Key data should be restored
+        assert "Петренко" in restored, f"Surname not restored. Got: {restored}"
+        assert "1234567890" in restored, f"IPN not restored. Got: {restored}"
+
+    def test_chain_roundtrip_3_passes(self):
+        """Тест: маскування у 3 проходи, потім відновлення через ланцюг."""
+        from data_masking import mask_text_context_aware, REMASK_AVAILABLE
+        from unmask_data import unmask_chain
+        from re_mask import MappingChain
+
+        if not REMASK_AVAILABLE:
+            pytest.skip("ReMask module not available")
+
+        text = self.SAMPLE_TEXT
+        chain = MappingChain()
+
+        masked = text
+        for pass_num in range(1, 4):
+            pass_dict = self._make_masking_dict()
+            pass_counters = {}
+            masked = mask_text_context_aware(masked, pass_dict, pass_counters)
+            pass_dict["instance_tracking"] = pass_counters
+            chain.add_pass(pass_dict)
+
+        assert chain.current_pass == 3
+        assert "Петренко" not in masked
+        assert "1234567890" not in masked
+
+        # Unmask chain
+        chain_data = {
+            "passes": chain.passes,
+            "total_passes": 3
+        }
+        restored, stats = unmask_chain(masked, chain_data)
+
+        assert "Петренко" in restored, f"Surname not restored after 3 passes. Got: {restored}"
+        assert "1234567890" in restored, f"IPN not restored after 3 passes. Got: {restored}"
+
+    def test_chain_save_load_roundtrip(self, temp_dir):
+        """Тест: збереження та завантаження ланцюга."""
+        from data_masking import mask_text_context_aware, REMASK_AVAILABLE
+        from unmask_data import unmask_chain
+        from re_mask import MappingChain
+
+        if not REMASK_AVAILABLE:
+            pytest.skip("ReMask module not available")
+
+        text = "Сержант Коваленко Олег Петрович ІПН 9876543210"
+        chain = MappingChain()
+
+        # 2 passes
+        masked = text
+        for _ in range(2):
+            d = self._make_masking_dict()
+            c = {}
+            masked = mask_text_context_aware(masked, d, c)
+            d["instance_tracking"] = c
+            chain.add_pass(d)
+
+        # Save chain
+        chain_path = temp_dir / "test_chain.json"
+        chain.save(chain_path)
+        assert chain_path.exists()
+
+        # Load chain
+        import json
+        with open(chain_path, 'r', encoding='utf-8') as f:
+            chain_data = json.load(f)
+
+        assert "passes" in chain_data
+        assert chain_data["total_passes"] == 2
+
+        # Unmask from loaded chain
+        restored, _ = unmask_chain(masked, chain_data)
+        assert "Коваленко" in restored, f"Surname not restored from loaded chain. Got: {restored}"
+        assert "9876543210" in restored, f"IPN not restored from loaded chain. Got: {restored}"
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

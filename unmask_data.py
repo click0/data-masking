@@ -817,6 +817,69 @@ def unmask_json_recursive(masked_data: Any, masking_map: Dict, map_version: str)
         return masked_data
 
 # ============================================================================
+# CHAIN UNMASK (multi-pass reverse restoration)
+# ============================================================================
+
+def unmask_chain(masked_text: str, chain_data: Dict) -> Tuple[str, Dict]:
+    """
+    Unmask a multi-pass (re-mask chain) masked text by reversing passes.
+
+    Applies unmask in reverse order: last pass first, then second-to-last, etc.
+    This correctly restores the original text through the chain of mappings.
+
+    Args:
+        masked_text: Text masked with multiple passes
+        chain_data: Chain mapping dict with "passes" list
+
+    Returns:
+        Tuple (restored_text, combined_stats)
+    """
+    passes = chain_data.get("passes", [])
+    if not passes:
+        return masked_text, {"restored_count": 0, "skipped_count": 0}
+
+    total_stats = {"restored_count": 0, "skipped_count": 0}
+    text = masked_text
+
+    # Reverse order: undo last pass first
+    for pass_data in reversed(passes):
+        pass_version = check_mapping_version(pass_data)
+        text, stats = unmask_text_v2(text, pass_data, pass_version)
+        total_stats["restored_count"] += stats.get("restored_count", 0)
+        total_stats["skipped_count"] += stats.get("skipped_count", 0)
+
+    return text, total_stats
+
+
+def unmask_json_chain(masked_data, chain_data: Dict):
+    """
+    Unmask JSON data masked with multiple passes (chain).
+
+    Args:
+        masked_data: JSON data (dict, list, str)
+        chain_data: Chain mapping dict with "passes" list
+
+    Returns:
+        Restored JSON data
+    """
+    passes = chain_data.get("passes", [])
+    if not passes:
+        return masked_data
+
+    data = masked_data
+    for pass_data in reversed(passes):
+        pass_version = check_mapping_version(pass_data)
+        data = unmask_json_recursive(data, pass_data, pass_version)
+
+    return data
+
+
+def is_chain_mapping(masking_map: Dict) -> bool:
+    """Check if a mapping dict is a chain (multi-pass) mapping."""
+    return "passes" in masking_map and isinstance(masking_map["passes"], list)
+
+
+# ============================================================================
 # ГОЛОВНА ФУНКЦІЯ (ENTRY POINT)
 # ============================================================================
 
@@ -901,22 +964,30 @@ def main():
     # ПРОЦЕС UNMASK
     # ========================================================================
 
-    # Визначаємо версію маппінгу
-    map_version = check_mapping_version(masking_map)
-    print(f"🔄 Розмаскування {masked_path.name} (логіка {map_version})...")
-
     start_time = time.time()
 
-    # Запускаємо unmask
-    if masked_path.suffix == '.json':
-        # JSON unmask (рекурсивна обробка)
-        restored_data = unmask_json_recursive(masked_data, masking_map, map_version)
-    else:
-        # Текстовий unmask
-        if map_version.startswith("v2"):
-            restored_data, stats = unmask_text_v2(masked_data, masking_map, map_version)
+    # Check if this is a chain mapping (multi-pass)
+    if is_chain_mapping(masking_map):
+        total_passes = masking_map.get("total_passes", len(masking_map["passes"]))
+        print(f"🔄 Розмаскування {masked_path.name} (ланцюг з {total_passes} проходів)...")
+
+        if masked_path.suffix == '.json':
+            restored_data = unmask_json_chain(masked_data, masking_map)
+            stats = {"restored_count": 0, "skipped_count": 0}
         else:
-            restored_data, stats = unmask_text_v1(masked_data, masking_map)
+            restored_data, stats = unmask_chain(masked_data, masking_map)
+    else:
+        # Single-pass unmask (original logic)
+        map_version = check_mapping_version(masking_map)
+        print(f"🔄 Розмаскування {masked_path.name} (логіка {map_version})...")
+
+        if masked_path.suffix == '.json':
+            restored_data = unmask_json_recursive(masked_data, masking_map, map_version)
+        else:
+            if map_version.startswith("v2"):
+                restored_data, stats = unmask_text_v2(masked_data, masking_map, map_version)
+            else:
+                restored_data, stats = unmask_text_v1(masked_data, masking_map)
 
     # ========================================================================
     # ЗБЕРЕЖЕННЯ РЕЗУЛЬТАТУ
