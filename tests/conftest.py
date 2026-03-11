@@ -2,12 +2,36 @@
 """
 Pytest configuration and fixtures for data-masking tests
 """
+import os
+import subprocess
 import pytest
 import sys
 from pathlib import Path
 
 # Додаємо батьківську директорію в PYTHONPATH
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Force UTF-8 for subprocess on Windows (fixes cp1251 UnicodeDecodeError)
+if sys.platform == "win32":
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+
+
+@pytest.fixture
+def run_cli():
+    """Run a CLI command with UTF-8 encoding (cross-platform).
+
+    Usage:
+        result = run_cli(["python", "data_masking.py", "-i", "input.txt"])
+        assert result.returncode == 0
+        print(result.stdout)
+    """
+    def _run(cmd, **kwargs):
+        kwargs.setdefault("encoding", "utf-8")
+        kwargs.setdefault("errors", "replace")
+        kwargs.setdefault("capture_output", True)
+        kwargs.setdefault("cwd", str(Path(__file__).parent.parent))
+        return subprocess.run(cmd, **kwargs)
+    return _run
 
 
 @pytest.fixture
