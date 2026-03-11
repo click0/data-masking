@@ -78,6 +78,36 @@ try:
 except ImportError:
     REMASK_AVAILABLE = False
 
+try:
+    from config import ConfigLoader
+    CONFIG_AVAILABLE = True
+except ImportError:
+    CONFIG_AVAILABLE = False
+
+try:
+    from selective import get_available_types
+    SELECTIVE_AVAILABLE = True
+except ImportError:
+    SELECTIVE_AVAILABLE = False
+
+try:
+    from security import MappingSecurityManager
+    SECURITY_AVAILABLE = True
+except ImportError:
+    SECURITY_AVAILABLE = False
+
+try:
+    from masking_logger import setup_logging
+    LOGGING_AVAILABLE = True
+except ImportError:
+    LOGGING_AVAILABLE = False
+
+try:
+    from password_generator import generate_password
+    PASSWORD_GENERATOR_AVAILABLE = True
+except ImportError:
+    PASSWORD_GENERATOR_AVAILABLE = False
+
 # ============================================================================
 # МЕТАДАНІ
 # ============================================================================
@@ -123,6 +153,21 @@ ABBREVIATION_WHITELIST = {
 }
 
 UKRAINIAN_DATE_PATTERN = r'\b\d{1,2}[.\-]\d{1,2}[.\-]\d{2,4}\b'
+
+# Pattern for text dates like: "06" жовтня 2025 року / «06» жовтня 2025 року / 06 жовтня 2025 року
+_MONTHS_UA = (
+    r'січня|лютого|березня|квітня|травня|червня|'
+    r'липня|серпня|вересня|жовтня|листопада|грудня'
+)
+DATE_TEXT_PATTERN = re.compile(
+    r'(?:["\u201c\u201e«]?\s*)?'         # optional opening quote
+    r'(\d{1,2})'                          # day
+    r'(?:\s*["\u201d\u201c»]?\s*)'        # optional closing quote + space
+    r'(' + _MONTHS_UA + r')'              # month name
+    r'\s+(\d{4})'                         # year
+    r'(?:\s+року)?',                      # optional "року"
+    re.IGNORECASE
+)
 
 GOOD_UKRAINIAN_NAMES_MALE = [
     "андрій", "богдан", "віктор", "володимир", "дмитро",
@@ -1466,6 +1511,49 @@ def normalize_broken_ranks(text: str) -> str:
     return re.sub(full_pattern, replace_match, text)
 
 
+_MONTHS_UA_LIST = [
+    "січня", "лютого", "березня", "квітня", "травня", "червня",
+    "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"
+]
+
+
+def _mask_date_text(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
+    """Mask a text date like '"06" жовтня 2025 року'."""
+    match = DATE_TEXT_PATTERN.search(original)
+    if not match:
+        return original
+
+    day, month, year = match.group(1), match.group(2), match.group(3)
+    original_key = f"{day} {month} {year}"
+
+    category = "date_text"
+    existing = masking_dict["mappings"].get(category, {})
+    if original_key.lower() in existing:
+        masked_val = existing[original_key.lower()]
+        if isinstance(masked_val, dict):
+            masked_val = masked_val.get("masked_as", original)
+        return original.replace(day, masked_val.split()[0]).replace(
+            month, masked_val.split()[1] if len(masked_val.split()) > 1 else month).replace(
+            year, masked_val.split()[2] if len(masked_val.split()) > 2 else year)
+
+    # Shift day by ±5, month randomly, year ±1
+    new_day = str(max(1, min(28, int(day) + random.choice([-5, -3, -2, 2, 3, 5])))).zfill(len(day))
+    new_month = random.choice([m for m in _MONTHS_UA_LIST if m != month.lower()])
+    new_year = str(int(year) + random.choice([-1, 0, 1]))
+
+    masked_text = original.replace(day, new_day, 1).replace(month, new_month, 1).replace(year, new_year, 1)
+    masked_key = f"{new_day} {new_month} {new_year}"
+
+    # Store in mappings directly
+    mappings = masking_dict["mappings"].setdefault(category, {})
+    key = original_key.lower()
+    if key not in mappings:
+        mappings[key] = {"masked_as": masked_key, "instances": [1]}
+        instance_counters[masked_key] = instance_counters.get(masked_key, 0) + 1
+    masking_dict["statistics"][category] = masking_dict["statistics"].get(category, 0) + 1
+    return masked_text
+
+
 def mask_text_context_aware(text: str, masking_dict: Dict, instance_counters: Dict) -> str:
     """
     Головна функція маскування тексту з контекстним аналізом.
@@ -1592,6 +1680,15 @@ def mask_text_context_aware(text: str, masking_dict: Dict, instance_counters: Di
                 skip = skip or any(match.start() < item['end'] and match.end() > item['start'] for item in items_to_mask)
                 if not skip: items_to_mask.append({'type': 'date', 'full_text': match.group(0), 'number_part': match.group(0), 'start': match.start(), 'end': match.end()})
 
+        # Text dates: "06" жовтня 2025 року
+        if "date_text" not in masking_dict["mappings"]:
+            masking_dict["mappings"]["date_text"] = {}
+        for match in DATE_TEXT_PATTERN.finditer(text):
+            skip = any(match.start() >= item['start'] and match.end() <= item['end'] for item in items_to_skip)
+            skip = skip or any(match.start() < item['end'] and match.end() > item['start'] for item in items_to_mask)
+            if not skip:
+                items_to_mask.append({'type': 'date_text', 'full_text': match.group(0), 'number_part': match.group(0), 'start': match.start(), 'end': match.end()})
+
     items_to_mask.sort(key=lambda x: x['start'], reverse=True)
 
     for item in items_to_mask:
@@ -1607,6 +1704,10 @@ def mask_text_context_aware(text: str, masking_dict: Dict, instance_counters: Di
             continue
         elif item['type'] == 'date':
             masked = mask_date(item['full_text'], masking_dict, instance_counters)
+            text = text[:item['start']] + masked + text[item['end']:]
+            continue
+        elif item['type'] == 'date_text':
+            masked = _mask_date_text(item['full_text'], masking_dict, instance_counters)
             text = text[:item['start']] + masked + text[item['end']:]
             continue
         elif item['type'] == 'order_simple':
@@ -1687,16 +1788,116 @@ def mask_json_recursive(data: Any, masking_dict: Dict, instance_counters: Dict) 
 def mask_text_wrapper(text: str, masking_dict: Dict, instance_counters: Dict) -> str:
     return mask_text_context_aware(text, masking_dict, instance_counters)
 
+# ============================================================================
+# UTILITY FUNCTIONS
+# ============================================================================
+
+def generate_default_config(output_path: str) -> None:
+    """Generate a default config.yaml file.
+
+    Args:
+        output_path: Path where to write the config file
+    """
+    config_content = f"""\
+# Data Masking Configuration v{__version__}
+# Generated by data_masking.py
+
+system:
+  version: "v{__version__}"
+  hash_algorithm: "blake2b"
+  preserve_case: true
+  debug_mode: false
+
+security:
+  encrypt_output: false
+  password_generation: true
+  password_env_var: "DATA_MASKING_PASSWORD"
+  password_length: 24
+
+masking_rules:
+  enable_ranks: true
+  enable_names: true
+  enable_ipn: true
+  enable_passport: true
+  enable_military_id: true
+  enable_dates: true
+  enable_brigades: true
+  enable_units: true
+  enable_orders: true
+  enable_br_numbers: true
+
+logging:
+  level: "INFO"
+  file: null
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+router_rules:
+  default_action: "mask"
+"""
+    from pathlib import Path
+    Path(output_path).write_text(config_content, encoding='utf-8')
+
+
+def generate_password_from_config(config) -> str:
+    """Generate a secure password, optionally using config settings.
+
+    Args:
+        config: AppConfig object or None for defaults
+
+    Returns:
+        Generated password string (24 characters)
+    """
+    import secrets
+    import string
+    length = 24
+    if config is not None:
+        length = getattr(getattr(config, 'security', None),
+                         'password_length', 24)
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+
 def main():
     parser = argparse.ArgumentParser(description=f"Data Masking Script v{__version__}", formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("-V", "--version", action="version",
+                        version=f"%(prog)s {__version__}")
     parser.add_argument("-i", "--input", default="input.txt", help="Input file")
     parser.add_argument("-o", "--output", help="Output file")
     parser.add_argument("--no-report", action="store_true", help="No report")
     parser.add_argument("--debug", action="store_true", help="Debug mode")
+    parser.add_argument("--init-config", action="store_true",
+                        help="Generate default config.yaml and exit")
+    if SELECTIVE_AVAILABLE:
+        parser.add_argument("--only", nargs="+", metavar="TYPE",
+                            help="Mask only these types")
+        parser.add_argument("--exclude", nargs="+", metavar="TYPE",
+                            help="Mask everything except these types")
+        parser.add_argument("--list-types", action="store_true",
+                            help="List available masking types and exit")
+    if SECURITY_AVAILABLE:
+        parser.add_argument("--encrypt", action="store_true",
+                            help="Encrypt the mapping file")
+        parser.add_argument("--password", type=str, default=None,
+                            help="Password for encryption")
     if REMASK_AVAILABLE:
         parser.add_argument("--re-mask", type=int, default=None, metavar="N",
                             help="Number of re-masking passes (2-10)")
     args = parser.parse_args()
+
+    # Handle --init-config
+    if args.init_config:
+        generate_default_config("config.yaml")
+        print("Generated config.yaml")
+        return
+
+    # Handle --list-types
+    if SELECTIVE_AVAILABLE and getattr(args, 'list_types', False):
+        from selective import get_available_types
+        types = sorted(get_available_types())
+        print("Available masking types:")
+        for t in types:
+            print(f"  - {t}")
+        return
 
     global DEBUG_MODE
     if args.debug: DEBUG_MODE = True
@@ -1796,6 +1997,17 @@ def main():
         if not (REMASK_AVAILABLE and re_mask_passes and re_mask_passes > 1):
             with open(map_path, 'w', encoding='utf-8') as f:
                 json.dump(masking_dict, f, ensure_ascii=False, indent=2)
+
+            # Encrypt mapping if requested
+            if SECURITY_AVAILABLE and getattr(args, 'encrypt', False):
+                enc_path = map_path.with_suffix('.enc')
+                password = getattr(args, 'password', None)
+                if not password:
+                    password = generate_password_from_config(None)
+                    print(f"  Generated password: {password}")
+                manager = MappingSecurityManager()
+                manager.encrypt_mapping(masking_dict, password, enc_path)
+                print(f"  Encrypted mapping: {enc_path}")
 
         # ГЕНЕРАЦІЯ ДЕТАЛЬНОГО ЗВІТУ
         if not args.no_report:
