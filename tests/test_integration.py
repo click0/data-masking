@@ -472,7 +472,7 @@ class TestCliBasicCommands:
             assert any(t in output.lower() for t in ["ipn", "name", "rank", "date"])
         else:
             # Fallback через імпорт
-            from modules.selective import get_available_types
+            from selective import get_available_types
             types = get_available_types()
             assert "ipn" in types or "names" in types
 
@@ -656,7 +656,7 @@ class TestCliMasking:
             assert len(enc_files) > 0 or "--encrypt" in stdout
         else:
             # Fallback: перевіряємо модуль
-            from modules.security import MappingSecurityManager
+            from security import MappingSecurityManager
             manager = MappingSecurityManager("test_password")
             assert manager is not None
 class TestCliDateMasking:
@@ -823,7 +823,7 @@ class TestCliErrorHandling:
         if SECURITY_AVAILABLE:
             # При шифруванні без пароля має бути запит або помилка
             # або автоматична генерація пароля
-            from modules.security import MappingSecurityManager
+            from security import MappingSecurityManager
 
             # Без пароля не можна створити manager
             try:
