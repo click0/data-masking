@@ -1,0 +1,99 @@
+# ==========================================================================
+# Data Masking Configuration Example v2.2.15
+#
+# Copy this file to config.yaml and adjust as needed.
+# Generate default config: python data_masking.py --init-config
+#
+# Author: Vladyslav V. Prodan
+# Contact: github.com/click0
+# License: BSD 3-Clause
+# Year: 2025
+# ==========================================================================
+
+# --------------------------------------------------------------------------
+# System settings
+# --------------------------------------------------------------------------
+system:
+  # Hash algorithm for deterministic seed generation.
+  # Same input always produces the same masked output.
+  # Options: blake2b (recommended), md5, sha1, sha256, sha512
+  hash_algorithm: "blake2b"
+
+  # Preserve letter case of masked values:
+  #   UPPER CASE  -> UPPER CASE
+  #   Title Case  -> Title Case
+  #   lower case  -> lower case
+  preserve_case: true
+
+  # Enable debug output (verbose logging to console)
+  debug_mode: false
+
+# --------------------------------------------------------------------------
+# Security settings
+# --------------------------------------------------------------------------
+security:
+  # Encrypt the mapping file (AES-128-CBC via Fernet)
+  encrypt_output: false
+
+  # Auto-generate a random password if --password is not specified
+  password_generation: true
+
+  # Environment variable to read password from (alternative to --password)
+  password_env_var: "DATA_MASKING_PASSWORD"
+
+  # Length of auto-generated password (characters)
+  password_length: 24
+
+# --------------------------------------------------------------------------
+# Masking rules — enable/disable individual data types
+# --------------------------------------------------------------------------
+masking_rules:
+  # Military ranks (with declension and case preservation)
+  enable_ranks: true
+
+  # Personal names: first name (ім'я), surname (прізвище), patronymic (по батькові)
+  enable_names: true
+
+  # Individual Tax Number / ІПН (10 digits)
+  enable_ipn: true
+
+  # Passport and ID-passport (9 digits)
+  enable_passport: true
+
+  # Military ID / військовий квиток (AA123456)
+  enable_military_id: true
+
+  # Dates in DD.MM.YYYY format (offset ±30 days)
+  enable_dates: true
+
+  # Brigade numbers (e.g. "72 окремої механізованої бригади")
+  enable_brigades: true
+
+  # Military unit designations (e.g. А1234)
+  enable_units: true
+
+  # Order numbers (e.g. №123, №45/67)
+  enable_orders: true
+
+  # BR document numbers (e.g. №БР-123/456)
+  enable_br_numbers: true
+
+# --------------------------------------------------------------------------
+# Logging settings
+# --------------------------------------------------------------------------
+logging:
+  # Log level: DEBUG | INFO | WARNING | ERROR | CRITICAL
+  level: "INFO"
+
+  # Log file path. null = console output only.
+  file: null
+
+  # Log message format (Python logging format string)
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# --------------------------------------------------------------------------
+# Router rules (selective masking)
+# --------------------------------------------------------------------------
+router_rules:
+  # Default action for unmatched patterns
+  default_action: "mask"
