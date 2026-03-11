@@ -832,7 +832,7 @@ def mask_surname(original: str, masking_dict: Dict, instance_counters: Dict) -> 
 
     ЛОГІКА МАСКУВАННЯ:
     - Для коротких прізвищ (<5 символів): генерує нове через faker
-    - Для довгих прізвищ (≥5 символів): зберігає початок (3) та кінець (2), змінює середину
+    - Для довгих прізвищ (≥5 символів): зберігає початок (3) та кінець (5), змінює середину
 
     ЗБЕРЕЖЕННЯ ФОРМАТУ:
     - UPPER CASE → UPPER CASE
@@ -872,7 +872,7 @@ def mask_surname(original: str, masking_dict: Dict, instance_counters: Dict) -> 
             # Для довгих зберігаємо початок та кінець
             middle_len = min(random.randint(2, 7), len(fake_surname)-2)
             middle = fake_surname[1:1+middle_len] if len(fake_surname) > 4 else fake_surname[1:-1]
-            masked = original[:3] + middle + original[-2:]
+            masked = original[:3] + middle + original[-5:]
 
         # Застосовуємо регістр
         if is_upper: masked = masked.upper()
