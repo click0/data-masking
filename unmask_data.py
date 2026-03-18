@@ -47,6 +47,7 @@ Year: 2025
 """
 
 import json
+import sys
 import argparse
 import os
 import re
@@ -54,6 +55,12 @@ import time
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any
+
+# Fix Unicode output on Windows (PyInstaller cp1252 issue)
+if sys.platform == 'win32' and getattr(sys.stdout, 'encoding', 'utf-8').lower().replace('-', '') != 'utf8':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 # ============================================================================
 # МОДУЛІ v2.3.0
