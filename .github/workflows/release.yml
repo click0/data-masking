@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   release:
     name: Build & Release
@@ -139,6 +142,8 @@ jobs:
     name: Windows Binaries
     needs: release
     runs-on: windows-latest
+    env:
+      PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@v4
 
@@ -171,9 +176,7 @@ jobs:
             --hidden-import=modules.masking_logger \
             --hidden-import=modules.selective \
             --hidden-import=modules.re_mask \
-            --hidden-import=modules.tools \
             --hidden-import=modules.password_generator \
-            --hidden-import=modules.rank_data \
             --hidden-import=yaml \
             --hidden-import=_cffi_backend \
             --add-data='rank_data.py;.' \
@@ -184,21 +187,15 @@ jobs:
         shell: bash
         run: |
           pyinstaller --onefile --noconfirm --clean \
-            --collect-all=faker \
             --collect-all=cryptography \
-            --hidden-import=rank_data \
             --hidden-import=modules \
             --hidden-import=modules.config \
             --hidden-import=modules.security \
             --hidden-import=modules.masking_logger \
-            --hidden-import=modules.selective \
             --hidden-import=modules.re_mask \
-            --hidden-import=modules.tools \
-            --hidden-import=modules.password_generator \
             --hidden-import=modules.rank_data \
             --hidden-import=yaml \
             --hidden-import=_cffi_backend \
-            --add-data='rank_data.py;.' \
             --name unmask_data \
             unmask_data.py
 
@@ -206,21 +203,6 @@ jobs:
         shell: bash
         run: |
           pyinstaller --onefile --noconfirm --clean \
-            --collect-all=faker \
-            --collect-all=cryptography \
-            --hidden-import=rank_data \
-            --hidden-import=modules \
-            --hidden-import=modules.config \
-            --hidden-import=modules.security \
-            --hidden-import=modules.masking_logger \
-            --hidden-import=modules.selective \
-            --hidden-import=modules.re_mask \
-            --hidden-import=modules.tools \
-            --hidden-import=modules.password_generator \
-            --hidden-import=modules.rank_data \
-            --hidden-import=yaml \
-            --hidden-import=_cffi_backend \
-            --add-data='rank_data.py;.' \
             --name diagnose_mapping \
             diagnose_mapping.py
 
