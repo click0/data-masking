@@ -167,6 +167,7 @@ jobs:
         shell: bash
         run: |
           pyinstaller --onefile --noconfirm --clean \
+            --runtime-hook=pyinstaller_utf8_hook.py \
             --collect-all=faker \
             --collect-all=cryptography \
             --hidden-import=rank_data \
@@ -187,6 +188,7 @@ jobs:
         shell: bash
         run: |
           pyinstaller --onefile --noconfirm --clean \
+            --runtime-hook=pyinstaller_utf8_hook.py \
             --collect-all=cryptography \
             --hidden-import=modules \
             --hidden-import=modules.config \
@@ -203,6 +205,7 @@ jobs:
         shell: bash
         run: |
           pyinstaller --onefile --noconfirm --clean \
+            --runtime-hook=pyinstaller_utf8_hook.py \
             --name diagnose_mapping \
             diagnose_mapping.py
 
