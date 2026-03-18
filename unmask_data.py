@@ -2,18 +2,17 @@
 # -*- coding: utf-8 -*-
 
 """
-Data Unmasking Script v2.2.14
+Data Unmasking Script v2.2.15
 Відновлення оригінальних даних з замаскованого файлу
 
 Цей скрипт виконує зворотну операцію до data_masking.py: відновлює оригінальні
 дані з замаскованих файлів, використовуючи збережений словник маппінгів.
 
-КЛЮЧОВІ ОСОБЛИВОСТІ:
-    - Instance Tracking: відновлює правильний оригінал при колізіях маскування
-    - Gender-aware unmask: відновлює звання з урахуванням роду (чоловічий/жіночий)
-    - Case restoration: відновлює граматичний відмінок звань (називний, родовий, давальний)
-    - Case preservation: зберігає регістр літер (UPPER, Title, lower)
-    - Підтримка складних звань: "капітан медичної служби у відставці"
+ОНОВЛЕНО В v2.2.15:
+- 🔐 Підтримка AES-256-GCM шифрування mapping файлів (.enc)
+- 🔄 --to-version для конвертації між версіями маппінгів
+- 📊 Структуроване логування через MaskingLogger
+- ⚙️ Підтримка конфігураційних файлів (.yaml/.json)
 
 ОНОВЛЕНО В v2.2.9:
 - 🔧 Виправлено імпорти (datetime)
@@ -22,7 +21,7 @@ Data Unmasking Script v2.2.14
 
 ФОРМАТ ВХІДНИХ ДАНИХ:
     1. Замаскований файл (output_TIMESTAMP.txt/json)
-    2. Словник маппінгів (masking_map_TIMESTAMP.json)
+    2. Словник маппінгів (masking_map_TIMESTAMP.json або .enc)
 
 ПРИКЛАД ВИКОРИСТАННЯ:
     # Автоматичний режим (шукає останню пару файлів)
@@ -34,15 +33,22 @@ Data Unmasking Script v2.2.14
     # З вказанням output файлу
     python unmask_data.py output_20250101_120000_123.txt -o recovered_input.txt
 
+    # З шифрованим mapping файлом
+    python unmask_data.py output.txt --map masking_map.enc --password mypassword
+
+    # З конфігураційним файлом
+    python unmask_data.py -c config.yaml
+
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
-Version: 2.2.9
+Version: 2.2.15
 License: BSD 3-Clause
 Year: 2025
 """
 
 import json
 import argparse
+import os
 import re
 import time
 from pathlib import Path
@@ -50,20 +56,81 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any
 
 # ============================================================================
+# МОДУЛІ v2.2.15
+# ============================================================================
+
+# Безпека (шифрування mapping файлів)
+SECURITY_AVAILABLE = False
+try:
+    from security import MappingSecurityManager, is_encryption_available
+    SECURITY_AVAILABLE = True
+except ImportError:
+    try:
+        from modules.security import MappingSecurityManager, is_encryption_available
+        SECURITY_AVAILABLE = True
+    except ImportError:
+        pass
+
+# Re-mask (ланцюгове перемаскування)
+REMASK_AVAILABLE = False
+try:
+    from re_mask import ChainUnmasker, load_chain, get_chain_info
+    REMASK_AVAILABLE = True
+except ImportError:
+    try:
+        from modules.re_mask import ChainUnmasker, load_chain, get_chain_info
+        REMASK_AVAILABLE = True
+    except ImportError:
+        pass
+
+# Конфігурація
+CONFIG_AVAILABLE = False
+try:
+    from config import load_config, ConfigLoader
+    CONFIG_AVAILABLE = True
+except ImportError:
+    try:
+        from modules.config import load_config, ConfigLoader
+        CONFIG_AVAILABLE = True
+    except ImportError:
+        pass
+
+# Логування
+LOGGING_AVAILABLE = False
+try:
+    from masking_logger import MaskingLogger, setup_logging
+    LOGGING_AVAILABLE = True
+except ImportError:
+    try:
+        from modules.masking_logger import MaskingLogger, setup_logging
+        LOGGING_AVAILABLE = True
+    except ImportError:
+        pass
+
+# ============================================================================
 # ІМПОРТ ДАНИХ З МОДУЛЯ
 # ============================================================================
-from rank_data import (
-    RANK_DECLENSIONS,          # Відмінки чоловічих звань
-    RANK_FEMININE_MAP,         # Мапа чоловічих → жіночих звань
-    RANK_DECLENSIONS_FEMALE,   # Відмінки жіночих звань
-    RANK_TO_NOMINATIVE,        # Зворотний індекс форм звань
-    ALL_RANK_FORMS             # Відсортований список всіх форм
-)
+try:
+    from rank_data import (
+        RANK_DECLENSIONS,          # Відмінки чоловічих звань
+        RANK_FEMININE_MAP,         # Мапа чоловічих → жіночих звань
+        RANK_DECLENSIONS_FEMALE,   # Відмінки жіночих звань
+        RANK_TO_NOMINATIVE,        # Зворотний індекс форм звань
+        ALL_RANK_FORMS             # Відсортований список всіх форм
+    )
+except ImportError:
+    from modules.rank_data import (
+        RANK_DECLENSIONS,
+        RANK_FEMININE_MAP,
+        RANK_DECLENSIONS_FEMALE,
+        RANK_TO_NOMINATIVE,
+        ALL_RANK_FORMS
+    )
 
 # ============================================================================
 # МЕТАДАНІ
 # ============================================================================
-__version__ = "2.2.9"
+__version__ = "2.2.15"
 __author__ = "Vladyslav V. Prodan"
 __contact__ = "github.com/click0"
 __phone__ = "+38(099)6053340"
@@ -728,6 +795,19 @@ def unmask_text_v2(masked_text: str, masking_map: Dict, map_version: str) -> Tup
     Returns:
         Tuple (відновлений_текст, об'єднана_статистика)
     """
+    # Перевірка на re-mask (багатопрохідне маскування)
+    if "re_mask_passes" in masking_map:
+        passes = masking_map["re_mask_passes"]
+        total_stats = {"restored_count": 0, "skipped_count": 0}
+        text = masked_text
+        # Зворотний порядок: спочатку скасовуємо останній прохід
+        for pass_map in reversed(passes):
+            pass_version = check_mapping_version(pass_map)
+            text, stats = unmask_text_v2(text, pass_map, pass_version)
+            total_stats["restored_count"] += stats.get("restored_count", 0)
+            total_stats["skipped_count"] += stats.get("skipped_count", 0)
+        return text, total_stats
+
     if map_version == "v2.1":
         # Крок 1: Відновлюємо звання (з граматикою та гендером)
         text_after_ranks, rank_stats = unmask_ranks_gender_aware(masked_text, masking_map)
@@ -880,6 +960,88 @@ def is_chain_mapping(masking_map: Dict) -> bool:
 
 
 # ============================================================================
+# ЗАВАНТАЖЕННЯ ТА УТИЛІТИ v2.2.15
+# ============================================================================
+
+def load_mapping_file(map_path: Path, password: str = None) -> Dict:
+    """
+    Завантажує mapping файл з підтримкою шифрування.
+
+    Підтримує:
+        - .json файли (звичайний JSON)
+        - .enc файли (AES-256-GCM зашифровані)
+
+    Пріоритет пароля:
+        1. Параметр password (з --password)
+        2. Змінна оточення MASKING_PASSWORD
+        3. Змінна оточення UNMASK_PASSWORD
+
+    Args:
+        map_path: Шлях до mapping файлу (.json або .enc)
+        password: Опціональний пароль для дешифрування
+
+    Returns:
+        Словник маппінгів
+
+    Raises:
+        ValueError: Якщо .enc файл, але шифрування недоступне або пароль не вказано
+        FileNotFoundError: Якщо файл не знайдено
+    """
+    if not map_path.exists():
+        raise FileNotFoundError(f"Файл маппінгу не знайдено: {map_path}")
+
+    if map_path.suffix == '.enc':
+        if not SECURITY_AVAILABLE:
+            raise ValueError(
+                "Для роботи з .enc файлами потрібен модуль security. "
+                "Встановіть: pip install cryptography"
+            )
+
+        # Пріоритет пароля: параметр → MASKING_PASSWORD → UNMASK_PASSWORD
+        if not password:
+            password = os.environ.get('MASKING_PASSWORD', '')
+        if not password:
+            password = os.environ.get('UNMASK_PASSWORD', '')
+        if not password:
+            raise ValueError(
+                "Для дешифрування .enc файлу потрібен пароль. "
+                "Вкажіть --password або встановіть MASKING_PASSWORD / UNMASK_PASSWORD"
+            )
+
+        security_mgr = MappingSecurityManager(password)
+        return security_mgr.decrypt_mapping(map_path)
+    else:
+        with open(map_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+
+
+def show_chain_info(masking_map: Dict) -> None:
+    """
+    Показує інформацію про ланцюг перемаскування.
+
+    Args:
+        masking_map: Словник маппінгів (може бути chain)
+    """
+    if REMASK_AVAILABLE:
+        info = get_chain_info(masking_map)
+        if info:
+            print(f"📋 Інформація про ланцюг:")
+            for key, value in info.items():
+                print(f"   {key}: {value}")
+        else:
+            print("ℹ️ Це не ланцюговий mapping файл")
+    else:
+        if is_chain_mapping(masking_map):
+            passes = masking_map.get("passes", [])
+            print(f"📋 Ланцюг з {len(passes)} проходів")
+            for i, p in enumerate(passes, 1):
+                v = p.get("version", "?")
+                print(f"   Прохід {i}: v{v}")
+        else:
+            print("ℹ️ Це не ланцюговий mapping файл")
+
+
+# ============================================================================
 # ГОЛОВНА ФУНКЦІЯ (ENTRY POINT)
 # ============================================================================
 
@@ -887,18 +1049,118 @@ def main():
     """
     Головна функція CLI для unmask.
 
-    Підтримує два режими:
+    Підтримує режими:
         1. Автоматичний: шукає останню пару файлів
         2. Ручний: користувач вказує файли
+        3. З конфігурацією: параметри з config файлу
+        4. З шифруванням: підтримка .enc mapping файлів
     """
+    # ========================================================================
+    # ПАРСИНГ АРГУМЕНТІВ
+    # ========================================================================
+
+    epilog_text = """
+Приклади використання:
+  %(prog)s                                          # Автоматичний режим
+  %(prog)s output.txt --map masking_map.json        # Ручний режим
+  %(prog)s output.txt -o recovered.txt              # З вказанням output
+  %(prog)s output.txt --map map.enc --password pwd  # Шифрований mapping
+  %(prog)s -c config.yaml                           # З конфігурацією
+  %(prog)s output.txt --chain-info                  # Інформація про ланцюг
+"""
+
     parser = argparse.ArgumentParser(
         description=f'Data Unmasking Script v{__version__}',
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=epilog_text
     )
     parser.add_argument('masked_file', nargs='?', help='Masked file path')
-    parser.add_argument('--map', '-m', dest='map_file', help='Mapping JSON file')
+    parser.add_argument('--map', '-m', dest='map_file', help='Mapping file (.json or .enc)')
     parser.add_argument('--output', '-o', help='Output file path')
+    parser.add_argument('-V', '--version', action='version',
+                        version=f'%(prog)s {__version__}')
+
+    # Аргументи шифрування (якщо модуль доступний)
+    if SECURITY_AVAILABLE:
+        security_group = parser.add_argument_group('security options')
+        security_group.add_argument('--password', help='Password for encrypted mapping files')
+        security_group.add_argument('--password-env', metavar='VAR',
+                                    help='Environment variable name containing password')
+
+    # Аргументи re-mask (якщо модуль доступний)
+    if REMASK_AVAILABLE:
+        remask_group = parser.add_argument_group('re-mask options')
+        remask_group.add_argument('--to-version', metavar='VERSION',
+                                  help='Convert mapping to specified version')
+        remask_group.add_argument('--chain-info', action='store_true',
+                                  help='Show chain mapping information and exit')
+
+    # Аргумент конфігурації (якщо модуль доступний)
+    if CONFIG_AVAILABLE:
+        config_group = parser.add_argument_group('config options')
+        config_group.add_argument('-c', '--config', metavar='FILE',
+                                  help='Configuration file (.yaml or .json)')
+
+    # Аргументи логування (якщо модуль доступний)
+    if LOGGING_AVAILABLE:
+        log_group = parser.add_argument_group('logging options')
+        log_group.add_argument('--log-level', default='INFO',
+                               choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+                               help='Logging level (default: INFO)')
+        log_group.add_argument('--log-file', metavar='FILE',
+                               help='Log file path')
+
     args = parser.parse_args()
+
+    # ========================================================================
+    # ІНІЦІАЛІЗАЦІЯ ЛОГЕРА
+    # ========================================================================
+
+    logger = None
+    if LOGGING_AVAILABLE:
+        log_level = getattr(args, 'log_level', 'INFO')
+        log_file = getattr(args, 'log_file', None)
+        logger = setup_logging(level=log_level, log_file=log_file)
+        logger.info(f"Data Unmasking Script v{__version__}")
+
+    def log_info(msg):
+        if logger:
+            logger.info(msg)
+
+    def log_error(msg):
+        if logger:
+            logger.error(msg)
+
+    def log_debug(msg):
+        if logger:
+            logger.debug(msg)
+
+    # ========================================================================
+    # ЗАВАНТАЖЕННЯ КОНФІГУРАЦІЇ
+    # ========================================================================
+
+    config = {}
+    if CONFIG_AVAILABLE and getattr(args, 'config', None):
+        try:
+            config = load_config(args.config)
+            log_info(f"Конфігурацію завантажено з {args.config}")
+        except Exception as e:
+            print(f"❌ Помилка завантаження конфігурації: {e}")
+            log_error(f"Помилка завантаження конфігурації: {e}")
+            return
+
+    # ========================================================================
+    # ВИЗНАЧЕННЯ ПАРОЛЯ (пріоритет: --password > --password-env > config > env)
+    # ========================================================================
+
+    password = None
+    if SECURITY_AVAILABLE:
+        if getattr(args, 'password', None):
+            password = args.password
+        elif getattr(args, 'password_env', None):
+            password = os.environ.get(args.password_env, '')
+        elif config.get('password'):
+            password = config['password']
 
     # ========================================================================
     # ЛОГІКА ПОШУКУ ТА ВИБОРУ ФАЙЛІВ
@@ -910,11 +1172,13 @@ def main():
         if result is None:
             return
         masked_path, map_path, output_path = result
+        log_info(f"Автоматичний режим: {masked_path.name}")
     else:
         # Ручний режим
         masked_path = Path(args.masked_file)
         if not masked_path.exists():
             print(f"❌ Файл не знайдено: {masked_path}")
+            log_error(f"Файл не знайдено: {masked_path}")
             return
 
         # Визначаємо шлях до mapping файлу
@@ -926,12 +1190,19 @@ def main():
             if filename.startswith('output_'):
                 # output_20250101_120000_123 → masking_map_20250101_120000_123
                 map_path = masked_path.parent / f"masking_map_{filename[7:]}.json"
+                # Автоматичне виявлення .enc файлу поруч з .json
+                enc_path = map_path.with_suffix('.enc')
+                if not map_path.exists() and enc_path.exists():
+                    map_path = enc_path
+                    log_info(f"Знайдено шифрований mapping: {enc_path.name}")
             else:
                 print("❌ Будь ласка, вкажіть файл маппінгу через --map")
+                log_error("Файл маппінгу не вказано")
                 return
 
         if not map_path.exists():
             print(f"❌ Файл маппінгу не знайдено: {map_path}")
+            log_error(f"Файл маппінгу не знайдено: {map_path}")
             return
 
         # Визначаємо шлях для output файлу
@@ -946,18 +1217,43 @@ def main():
     # ========================================================================
 
     try:
-        # Завантажуємо словник маппінгів
-        with open(map_path, 'r', encoding='utf-8') as f:
-            masking_map = json.load(f)
+        # Завантажуємо словник маппінгів (з підтримкою шифрування)
+        masking_map = load_mapping_file(map_path, password=password)
+        log_info(f"Mapping завантажено: {map_path.name}")
+
+        # Обробка --chain-info (показати інформацію та вийти)
+        if REMASK_AVAILABLE and getattr(args, 'chain_info', False):
+            show_chain_info(masking_map)
+            return
+
+        # Обробка --to-version (конвертація версії)
+        if REMASK_AVAILABLE and getattr(args, 'to_version', None):
+            try:
+                chain_unmasker = ChainUnmasker(masking_map)
+                converted = chain_unmasker.convert_to_version(args.to_version)
+                output_converted = map_path.with_suffix(f'.v{args.to_version}.json')
+                with open(output_converted, 'w', encoding='utf-8') as f:
+                    json.dump(converted, f, ensure_ascii=False, indent=2)
+                print(f"✅ Конвертовано до версії {args.to_version}: {output_converted}")
+                log_info(f"Конвертовано до версії {args.to_version}")
+                return
+            except Exception as e:
+                print(f"❌ Помилка конвертації: {e}")
+                log_error(f"Помилка конвертації: {e}")
+                return
 
         # Завантажуємо замасковані дані (JSON або текст)
-        with open(masked_path, 'r', encoding='utf-8') as f:
+        with open(masked_path, 'r', encoding='utf-8', newline='') as f:
             if masked_path.suffix == '.json':
                 masked_data = json.load(f)
             else:
                 masked_data = f.read()
+
+        log_debug(f"Замасковані дані завантажено: {masked_path.name}")
+
     except Exception as e:
         print(f"❌ Помилка читання: {e}")
+        log_error(f"Помилка читання: {e}")
         return
 
     # ========================================================================
@@ -970,6 +1266,7 @@ def main():
     if is_chain_mapping(masking_map):
         total_passes = masking_map.get("total_passes", len(masking_map["passes"]))
         print(f"🔄 Розмаскування {masked_path.name} (ланцюг з {total_passes} проходів)...")
+        log_info(f"Розмаскування ланцюга з {total_passes} проходів")
 
         if masked_path.suffix == '.json':
             restored_data = unmask_json_chain(masked_data, masking_map)
@@ -980,9 +1277,11 @@ def main():
         # Single-pass unmask (original logic)
         map_version = check_mapping_version(masking_map)
         print(f"🔄 Розмаскування {masked_path.name} (логіка {map_version})...")
+        log_info(f"Розмаскування {masked_path.name} (логіка {map_version})")
 
         if masked_path.suffix == '.json':
             restored_data = unmask_json_recursive(masked_data, masking_map, map_version)
+            stats = {"restored_count": 0, "skipped_count": 0}
         else:
             if map_version.startswith("v2"):
                 restored_data, stats = unmask_text_v2(masked_data, masking_map, map_version)
@@ -1000,11 +1299,16 @@ def main():
             else:
                 f.write(restored_data)
 
+        elapsed = time.time() - start_time
         print(f"✅ Готово! Збережено у: {output_path}")
-        print(f"⏱️ Час виконання: {time.time() - start_time:.2f} сек")
+        print(f"⏱️ Час виконання: {elapsed:.2f} сек")
+        log_info(f"Збережено у: {output_path} ({elapsed:.2f} сек)")
+        log_info(f"Статистика: відновлено={stats.get('restored_count', 0)}, "
+                 f"пропущено={stats.get('skipped_count', 0)}")
 
     except Exception as e:
         print(f"❌ Помилка збереження: {e}")
+        log_error(f"Помилка збереження: {e}")
 
 
 if __name__ == "__main__":

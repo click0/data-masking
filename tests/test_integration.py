@@ -967,5 +967,6 @@ class TestChainRoundtrip:
         restored, _ = unmask_chain(masked, chain_data)
         assert "Коваленко" in restored, f"Surname not restored from loaded chain. Got: {restored}"
         assert "9876543210" in restored, f"IPN not restored from loaded chain. Got: {restored}"
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
