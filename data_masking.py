@@ -2269,7 +2269,9 @@ def main():
     }
     instance_counters = {}
 
+    print(f"Data Masking Script v{__version__}")
     print(f"Processing {input_path}...")
+    print(f"Output format: {'JSON' if is_json else 'TXT'}")
     if logger:
         logger.info(f"Processing {input_path}")
 
@@ -2412,8 +2414,35 @@ def main():
                 f.write(f"Версія: {__version__}\n")
                 f.write(f"Дата та час: {masking_dict['timestamp']}\n")
                 f.write(f"Вхідний файл: {input_path}\n")
-                f.write(f"Вихідний файл: {output_path}\n\n")
-                f.write("-" * 60 + "\n")
+                f.write(f"Вихідний файл: {output_path}\n")
+                f.write(f"Формат: {'JSON' if is_json else 'TXT'}\n")
+
+                # Конфігурація маскування
+                f.write("\n" + "-" * 60 + "\n")
+                f.write("КОНФІГУРАЦІЯ МАСКУВАННЯ\n")
+                f.write("-" * 60 + "\n\n")
+                f.write(f"  Імена (MASK_NAMES): {MASK_NAMES}\n")
+                f.write(f"  ІПН (MASK_IPN): {MASK_IPN}\n")
+                f.write(f"  Паспорти (MASK_PASSPORT): {MASK_PASSPORT}\n")
+                f.write(f"  Військові ID (MASK_MILITARY_ID): {MASK_MILITARY_ID}\n")
+                f.write(f"  Звання (MASK_RANKS): {MASK_RANKS}\n")
+                f.write(f"  Бригади (MASK_BRIGADES): {MASK_BRIGADES}\n")
+                f.write(f"  Частини (MASK_UNITS): {MASK_UNITS}\n")
+                f.write(f"  Накази (MASK_ORDERS): {MASK_ORDERS}\n")
+                f.write(f"  БР номери (MASK_BR_NUMBERS): {MASK_BR_NUMBERS}\n")
+                f.write(f"  Дати (MASK_DATES): {MASK_DATES}\n")
+                f.write(f"  Збереження регістру (PRESERVE_CASE): {PRESERVE_CASE}\n")
+                f.write(f"  Алгоритм хешування: {HASH_ALGORITHM}\n")
+
+                if re_mask_passes and re_mask_passes > 1:
+                    f.write(f"\n  Режим: повторне маскування ({re_mask_passes} проходів)\n")
+                else:
+                    f.write(f"\n  Режим: одинарне маскування\n")
+
+                if config is not None:
+                    f.write(f"  Конфігурація: {args.config or 'config.yaml'}\n")
+
+                f.write("\n" + "-" * 60 + "\n")
                 f.write("СТАТИСТИКА МАСКУВАННЯ\n")
                 f.write("-" * 60 + "\n\n")
                 f.write(f"Загальна кількість УНІКАЛЬНИХ замаскованих елементів: {total_unique}\n\n")
@@ -2425,9 +2454,19 @@ def main():
                 f.write("\n" + "=" * 60 + "\n")
                 f.write("СТАТИСТИКА ВХОДЖЕНЬ (Instance Tracking)\n")
                 f.write("-" * 60 + "\n\n")
-                for masked_val, count in sorted(masking_dict["instance_tracking"].items()):
+
+                sorted_report_instances = sorted(
+                    masking_dict["instance_tracking"].items(),
+                    key=lambda x: x[1],
+                    reverse=True
+                )
+                for masked_val, count in sorted_report_instances:
                     f.write(f"  • '{masked_val}': {count} входжень\n")
+
                 f.write("\n" + "=" * 60 + "\n")
+                f.write(f"Кінець звіту. Всього записів у instance tracking: "
+                        f"{len(masking_dict['instance_tracking'])}\n")
+                f.write("=" * 60 + "\n")
 
         # ДЕТАЛЬНИЙ ВИВІД У КОНСОЛЬ
         print()

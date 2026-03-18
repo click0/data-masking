@@ -66,6 +66,7 @@ def make_empty_masking_dict(version: str = "2.2.15") -> Dict:
 
 def _generate_chain_id() -> str:
     """Generate a unique chain ID from current datetime SHA256 hash[:12].
+
     Returns a 12-character hex string from the SHA256 of the ISO timestamp.
     """
     now_str = datetime.now().isoformat()
@@ -256,7 +257,8 @@ class MappingChain:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "MappingChain":
-        """Reconstruct a MappingChain from a dict (e.g. loaded from JSON)."""
+        """Reconstruct a MappingChain from a dict (e.g. loaded from JSON).
+        """
         chain_id = data.get("chain_id", _generate_chain_id())
         chain = cls(chain_id=chain_id)
         chain._created_at = data.get("created_at", chain._created_at)
