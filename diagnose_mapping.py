@@ -36,6 +36,12 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
+# Fix Unicode output on Windows (PyInstaller cp1252 issue)
+if sys.platform == 'win32' and getattr(sys.stdout, 'encoding', 'utf-8').lower().replace('-', '') != 'utf8':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 # ============================================================================
 # ⚙️ ГЛОБАЛЬНІ НАЛАШТУВАННЯ ТА КОНСТАНТИ
 # ============================================================================
