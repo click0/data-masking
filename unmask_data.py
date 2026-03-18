@@ -1051,13 +1051,13 @@ def main():
     # ========================================================================
 
     epilog_text = """
-Приклади використання:
-  %(prog)s                                          # Автоматичний режим
-  %(prog)s output.txt --map masking_map.json        # Ручний режим
-  %(prog)s output.txt -o recovered.txt              # З вказанням output
-  %(prog)s output.txt --map map.enc --password pwd  # Шифрований mapping
-  %(prog)s -c config.yaml                           # З конфігурацією
-  %(prog)s output.txt --chain-info                  # Інформація про ланцюг
+Examples:
+  %(prog)s                                          # Auto mode
+  %(prog)s output.txt --map masking_map.json        # Manual mode
+  %(prog)s output.txt -o recovered.txt              # With output file
+  %(prog)s output.txt --map map.enc --password pwd  # Encrypted mapping
+  %(prog)s -c config.yaml                           # With config file
+  %(prog)s output.txt --chain-info                  # Chain info
 """
 
     parser = argparse.ArgumentParser(

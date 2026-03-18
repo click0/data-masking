@@ -411,12 +411,12 @@ def verify_text_recovery(original_path: Path, recovery_path: Path, ignore_flags:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Утиліта діагностики, порівняння маппінгів та верифікації тексту.",
+        description="Mapping diagnostics, comparison and text verification utility.",
         formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument("files", nargs="*", help="Шляхи до .json файлів або число (для порівняння з історією)")
+    parser.add_argument("files", nargs="*", help="Paths to .json files or number (for history comparison)")
     parser.add_argument("--ignore-whitespace", action="store_true",
-                        help="При верифікації вважати успіхом, якщо різниця тільки в пробілах")
+                        help="Treat whitespace-only differences as success during verification")
 
     args = parser.parse_args()
 
