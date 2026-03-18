@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 """
-Data Masking Script v2.2.15
+Data Masking Script v2.3.0
 Локально узгоджене маскування конфіденційних даних з INSTANCE TRACKING
 
-ОНОВЛЕНО В v2.2.15:
+ОНОВЛЕНО В v2.3.0:
 - 🔐 Інтеграція security.py (AES-256-GCM шифрування mapping)
 - ⚙️ Інтеграція config.py (YAML конфігурація)
 - 📊 Інтеграція masking_logger.py (структуроване логування)
@@ -23,7 +23,7 @@ Data Masking Script v2.2.15
 ОНОВЛЕНО В v2.2.13:
 - 🔄 Об'єднано версії data_masking.py (v2.2.10) та data_masking_v2_2_12_fixed.py
 - ✅ Збережено всі виправлення багів з v2.2.12
-- 📋 Підготовлено для документування в v2.2.15
+- 📋 Підготовлено для документування в v2.3.0
 
 ВИПРАВЛЕНО В v2.2.12:
 - 🐛 БАГ #18 FIX: mask_rank() не зберігав Title Case для багатослівних звань
@@ -46,7 +46,7 @@ Data Masking Script v2.2.15
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 Phone: +38(099)6053340
-Version: 2.2.15
+Version: 2.3.0
 License: BSD 3-Clause "New" or "Revised" License
 Year: 2025
 """
@@ -82,7 +82,7 @@ from rank_data import (
 # OPTIONAL MODULES
 # ============================================================================
 
-# --- MODULES v2.2.15 ---
+# --- MODULES v2.3.0 ---
 try:
     from modules.selective import SelectiveFilter, apply_filter_to_globals, get_available_types
     SELECTIVE_AVAILABLE = True
@@ -122,7 +122,7 @@ except ImportError:
 # ============================================================================
 # МЕТАДАНІ
 # ============================================================================
-__version__ = "2.2.15"
+__version__ = "2.3.0"
 __author__ = "Vladyslav V. Prodan"
 __contact__ = "github.com/click0"
 __phone__ = "+38(099)6053340"
@@ -1341,7 +1341,7 @@ def mask_date_text(original: str, masking_dict: Dict, instance_counters: Dict) -
         Замаскована текстова дата у тому ж форматі
 
     Note:
-        Додано в v2.2.15 для повної анонімізації документів з текстовими датами
+        Додано в v2.3.0 для повної анонімізації документів з текстовими датами
         Використовує MONTHS_GENITIVE для розпізнавання українських місяців
     """
     match = DATE_TEXT_PATTERN.search(original)

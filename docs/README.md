@@ -1,4 +1,4 @@
-# Data Masking & Unmasking Scripts v2.2.15
+# Data Masking & Unmasking Scripts v2.3.0
 
 Скрипти для **узгодженого маскування** конфіденційних даних у військових документах з можливістю точного відновлення.
 
@@ -54,12 +54,12 @@ python unmask_data.py masked_file.txt
 python unmask_data.py masked_file.txt -m mapping_file.json
 ```
 
-**З шифрованим mapping файлом (v2.2.15+):**
+**З шифрованим mapping файлом (v2.3.0+):**
 ```bash
 python unmask_data.py masked_file.txt --map mapping.enc --password mypassword
 ```
 
-**З конфігураційним файлом (v2.2.15+):**
+**З конфігураційним файлом (v2.3.0+):**
 ```bash
 python unmask_data.py -c config.yaml
 ```
@@ -171,7 +171,7 @@ Unmask правильно відновить обидва входження
 
 ---
 
-## 🔧 Модулі v2.2.15
+## 🔧 Модулі v2.3.0
 
 ### Шифрування mapping файлів (`modules/security.py`)
 
@@ -434,7 +434,7 @@ ID-паспорт 123947568, видано наказом №59/87/4249/Р від
 2. **НЕ** передавайте mapping разом з замаскованими даними
 3. Видаляйте mapping після завершення роботи
 4. Використовуйте різні mapping для різних документів
-5. Використовуйте шифрування mapping файлів (v2.2.15+): `--encrypt --password`
+5. Використовуйте шифрування mapping файлів (v2.3.0+): `--encrypt --password`
 6. Unmask можливий ТІЛЬКИ при наявності mapping файлу
 
 ---
@@ -501,6 +501,6 @@ BSD 3-Clause "New" or "Revised" License
 
 ## 📅 Версії
 
-Поточна версія: **v2.2.15** (2025)
+Поточна версія: **v2.3.0** (2025)
 
 Детальну історію змін див. у [CHANGELOG.md](CHANGELOG.md)

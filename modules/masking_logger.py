@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Logging Module v2.2.15 for data_masking.py
+Logging Module v2.3.0 for data_masking.py
 
 Provides structured logging with JSON and colored console output
 for masking operations.
@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 
-__version__ = "2.2.15"
+__version__ = "2.3.0"
 
 
 class JsonFormatter(logging.Formatter):

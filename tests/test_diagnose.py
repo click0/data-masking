@@ -6,7 +6,7 @@ Testing verification logic and file handling.
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 Phone: +38(099)6053340
-Version: 2.2.15
+Version: 2.3.0
 License: BSD 3-Clause "New" or "Revised" License
 Year: 2025
 """
