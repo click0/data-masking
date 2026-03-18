@@ -185,43 +185,46 @@ class MappingChain:
     def _build_forward_chain(self, from_pass: int, to_pass: int) -> Dict:
         """Compose forward mappings from from_pass to to_pass.
         Chains original->masked relationships through intermediate passes."""
+        # Seed with the from_pass mapping
         combined: Dict[str, str] = {}
+        seed_data = self.get_pass(from_pass)
+        if seed_data is not None:
+            for _cat, pairs in seed_data.get("mappings", {}).items():
+                if isinstance(pairs, dict):
+                    combined.update(pairs)
+        # Chain through subsequent passes
         for step in range(from_pass + 1, to_pass + 1):
             step_data = self.get_pass(step)
             if step_data is None:
                 continue
-            step_mappings = step_data.get("mappings", {})
             step_flat: Dict[str, str] = {}
-            for _cat, pairs in step_mappings.items():
+            for _cat, pairs in step_data.get("mappings", {}).items():
                 if isinstance(pairs, dict):
                     step_flat.update(pairs)
-            if not combined:
-                combined = dict(step_flat)
-            else:
-                new_combined: Dict[str, str] = {}
-                for orig, intermediate in combined.items():
-                    if intermediate in step_flat:
-                        new_combined[orig] = step_flat[intermediate]
-                    else:
-                        new_combined[orig] = intermediate
-                existing_vals = set(combined.values())
-                for k, v in step_flat.items():
-                    if k not in existing_vals:
-                        new_combined[k] = v
-                combined = new_combined
+            new_combined: Dict[str, str] = {}
+            for orig, intermediate in combined.items():
+                if intermediate in step_flat:
+                    new_combined[orig] = step_flat[intermediate]
+                else:
+                    new_combined[orig] = intermediate
+            existing_vals = set(combined.values())
+            for k, v in step_flat.items():
+                if k not in existing_vals:
+                    new_combined[k] = v
+            combined = new_combined
         return combined
 
     def _build_reverse_chain(self, from_pass: int, to_pass: int) -> Dict:
         """Compose reverse mappings from from_pass back to to_pass.
-        Inverts each pass and walks backwards."""
+        Inverts each pass mapping and walks backwards.
+        """
         combined: Dict[str, str] = {}
         for step in range(from_pass, to_pass, -1):
             step_data = self.get_pass(step)
             if step_data is None:
                 continue
-            step_mappings = step_data.get("mappings", {})
             step_inv: Dict[str, str] = {}
-            for _cat, pairs in step_mappings.items():
+            for _cat, pairs in step_data.get("mappings", {}).items():
                 if isinstance(pairs, dict):
                     for orig, masked in pairs.items():
                         step_inv[masked] = orig
@@ -230,10 +233,7 @@ class MappingChain:
             else:
                 new_combined: Dict[str, str] = {}
                 for k, intermediate in combined.items():
-                    if intermediate in step_inv:
-                        new_combined[k] = step_inv[intermediate]
-                    else:
-                        new_combined[k] = intermediate
+                    new_combined[k] = step_inv.get(intermediate, intermediate)
                 existing_vals = set(combined.values())
                 for k, v in step_inv.items():
                     if k not in existing_vals:
