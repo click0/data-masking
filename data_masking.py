@@ -1322,6 +1322,109 @@ def mask_date(original: str, masking_dict: Dict, instance_counters: Dict) -> str
 
     return add_to_mapping(masking_dict, instance_counters, "date", original, masked)
 
+
+def mask_date_text(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
+    """
+    Маскує текстову дату у форматі: "06" жовтня 2025 року / «06» жовтня 2025 року.
+
+    ЛОГІКА МАСКУВАННЯ ТЕКСТОВИХ ДАТ:
+    - Парсить текстові дати з українськими назвами місяців у родовому відмінку
+    - Зміщує день на ±5 днів (в межах 1-28)
+    - Замінює місяць на випадковий інший місяць
+    - Зміщує рік на ±1 рік
+    - Використовує детермінований seed для unmask
+
+    ПІДТРИМУВАНІ ФОРМАТИ:
+    - "06" жовтня 2025 року
+    - «06» жовтня 2025 року
+    - 06 жовтня 2025 року
+    - 06 жовтня 2025
+    - "6" жовтня 2025
+
+    ВАЛІДАЦІЯ:
+    - Перевіряє що місяць є валідним українським місяцем у родовому відмінку
+    - День обмежується діапазоном 1-28 для уникнення невалідних дат
+    - Рік може бути будь-яким 4-значним числом
+
+    ЗБЕРЕЖЕННЯ ФОРМАТУ:
+    - Зберігає лапки (якщо були)
+    - Зберігає "року" (якщо було)
+    - Зберігає ширину поля дня (01 vs 1)
+
+    Приклади:
+    - '"06" жовтня 2025 року' → '"11" лютого 2026 року'
+    - '«15» березня 2024 року' → '«10» серпня 2023 року'
+    - '1 січня 2025' → '4 липня 2024'
+
+    Args:
+        original: Оригінальна текстова дата
+        masking_dict: Словник маппінгів для збереження відповідностей
+        instance_counters: Лічильники екземплярів для instance tracking
+
+    Returns:
+        Замаскована текстова дата у тому ж форматі
+
+    Note:
+        Додано в v2.2.15 для повної анонімізації документів з текстовими датами
+        Використовує MONTHS_GENITIVE для розпізнавання українських місяців
+    """
+    match = DATE_TEXT_PATTERN.search(original)
+    if not match:
+        return original
+
+    day, month_name, year = match.group(1), match.group(2), match.group(3)
+    original_key = f"{day} {month_name} {year}"
+
+    category = "date_text"
+
+    # Перевіряємо чи вже маскували цю дату
+    if category not in masking_dict["mappings"]:
+        masking_dict["mappings"][category] = {}
+
+    existing = masking_dict["mappings"].get(category, {})
+    if original_key.lower() in existing:
+        masked_val = existing[original_key.lower()]
+        if isinstance(masked_val, dict):
+            masked_val = masked_val.get("masked_as", original)
+        parts = masked_val.split()
+        if len(parts) >= 3:
+            result = original.replace(day, parts[0], 1).replace(
+                month_name, parts[1], 1).replace(year, parts[2], 1)
+            return result
+        return original
+
+    # Генеруємо детермінований seed
+    seed = get_deterministic_seed(original_key)
+    random.seed(seed)
+
+    # Зміщуємо день на ±5 (в межах 1-28)
+    day_shift = random.choice([-5, -3, -2, 2, 3, 5])
+    new_day = str(max(1, min(28, int(day) + day_shift))).zfill(len(day))
+
+    # Замінюємо місяць на випадковий інший
+    available_months = [m for m in _MONTHS_UA_LIST if m != month_name.lower()]
+    new_month = random.choice(available_months)
+
+    # Зміщуємо рік на ±1
+    year_shift = random.choice([-1, 0, 1])
+    new_year = str(int(year) + year_shift)
+
+    # Формуємо замаскований текст
+    masked_text = original.replace(day, new_day, 1).replace(
+        month_name, new_month, 1).replace(year, new_year, 1)
+    masked_key = f"{new_day} {new_month} {new_year}"
+
+    # Зберігаємо у mappings
+    mappings = masking_dict["mappings"].setdefault(category, {})
+    key = original_key.lower()
+    if key not in mappings:
+        mappings[key] = {"masked_as": masked_key, "instances": [1]}
+        instance_counters[masked_key] = instance_counters.get(masked_key, 0) + 1
+    masking_dict["statistics"][category] = masking_dict["statistics"].get(category, 0) + 1
+
+    return masked_text
+
+
 def get_rank_category_and_match(text: str) -> Tuple[Optional[str], Optional[str]]:
     text_lower = text.lower()
     for category, pattern in RANK_PATTERNS.items():
@@ -2071,6 +2174,63 @@ def main():
                     else:
                         print(f"Warning: unknown type '{t}', ignoring")
                 print(f"Selective masking: --exclude {' '.join(exclude_types)}")
+
+    # ================================================================
+    # Apply config-based masking rules (lower priority than CLI --only/--exclude)
+    # ================================================================
+    if config is not None:
+        masking_rules = getattr(config, 'masking_rules', None)
+        if masking_rules is not None:
+            # Only apply config rules if --only/--exclude were NOT specified via CLI
+            only_types = getattr(args, 'only', None) if SELECTIVE_AVAILABLE else None
+            exclude_types = getattr(args, 'exclude', None) if SELECTIVE_AVAILABLE else None
+
+            if not only_types and not exclude_types:
+                config_rules_map = {
+                    'enable_ranks': 'MASK_RANKS',
+                    'enable_names': 'MASK_NAMES',
+                    'enable_ipn': 'MASK_IPN',
+                    'enable_passport': 'MASK_PASSPORT',
+                    'enable_military_id': 'MASK_MILITARY_ID',
+                    'enable_dates': 'MASK_DATES',
+                    'enable_brigades': 'MASK_BRIGADES',
+                    'enable_units': 'MASK_UNITS',
+                    'enable_orders': 'MASK_ORDERS',
+                    'enable_br_numbers': 'MASK_BR_NUMBERS',
+                }
+                for config_key, global_var in config_rules_map.items():
+                    value = getattr(masking_rules, config_key, None)
+                    if value is not None:
+                        globals()[global_var] = bool(value)
+                        if logger:
+                            logger.debug(f"Config: {config_key} = {value}")
+
+    # ================================================================
+    # Apply system settings from config
+    # ================================================================
+    if config is not None:
+        system_cfg = getattr(config, 'system', None)
+        if system_cfg is not None:
+            cfg_debug = getattr(system_cfg, 'debug_mode', None)
+            if cfg_debug is not None and not args.debug:
+                DEBUG_MODE = bool(cfg_debug)
+
+            cfg_preserve_case = getattr(system_cfg, 'preserve_case', None)
+            if cfg_preserve_case is not None:
+                global PRESERVE_CASE
+                PRESERVE_CASE = bool(cfg_preserve_case)
+
+            cfg_hash = getattr(system_cfg, 'hash_algorithm', None)
+            if cfg_hash is not None:
+                global HASH_ALGORITHM
+                HASH_ALGORITHM = str(cfg_hash)
+
+    if logger:
+        logger.info(f"Masking flags: NAMES={MASK_NAMES}, IPN={MASK_IPN}, "
+                     f"PASSPORT={MASK_PASSPORT}, MILITARY_ID={MASK_MILITARY_ID}, "
+                     f"RANKS={MASK_RANKS}, BRIGADES={MASK_BRIGADES}, "
+                     f"UNITS={MASK_UNITS}, ORDERS={MASK_ORDERS}, "
+                     f"BR_NUMBERS={MASK_BR_NUMBERS}, DATES={MASK_DATES}")
 
     # ================================================================
     # Input file handling

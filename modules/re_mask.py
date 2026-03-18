@@ -155,7 +155,14 @@ class MappingChain:
         return self._current_pass
 
     def get_pass(self, pass_number: int) -> Optional[Dict]:
-        """Get a specific pass's mapping data (1-indexed)."""
+        """Get a specific pass's mapping data (1-indexed).
+
+        Args:
+            pass_number: The 1-based index of the desired pass.
+
+        Returns:
+            The pass record dict, or None if pass_number is out of range.
+        """
         for p in self._passes:
             if p.get("pass") == pass_number:
                 return p
@@ -166,6 +173,14 @@ class MappingChain:
 
         If to_pass > from_pass the forward chain is used; otherwise
         the reverse chain is built for unmasking.
+
+        Args:
+            from_pass: Starting pass number (1-indexed).
+            to_pass:   Target pass number (1-indexed).
+
+        Returns:
+            A dict mapping tokens at from_pass to their equivalents at
+            to_pass.  Returns an empty dict when from_pass == to_pass.
         """
         if from_pass == to_pass:
             return {}
@@ -174,7 +189,8 @@ class MappingChain:
         return self._build_reverse_chain(from_pass, to_pass)
 
     def _build_forward_chain(self, from_pass: int, to_pass: int) -> Dict:
-        """Compose forward mappings from from_pass to to_pass."""
+        """Compose forward mappings from from_pass to to_pass.
+        Chains original->masked relationships through intermediate passes."""
         combined: Dict[str, str] = {}
         for step in range(from_pass + 1, to_pass + 1):
             step_data = self.get_pass(step)
@@ -202,7 +218,8 @@ class MappingChain:
         return combined
 
     def _build_reverse_chain(self, from_pass: int, to_pass: int) -> Dict:
-        """Compose reverse mappings from from_pass back to to_pass."""
+        """Compose reverse mappings from from_pass back to to_pass.
+        Inverts each pass and walks backwards."""
         combined: Dict[str, str] = {}
         for step in range(from_pass, to_pass, -1):
             step_data = self.get_pass(step)
@@ -233,7 +250,12 @@ class MappingChain:
     # -- serialisation -------------------------------------------------------
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialise the chain to a plain dict."""
+        """Serialise the chain to a plain dict.
+
+        Returns:
+            A dict suitable for JSON serialisation containing all chain
+            metadata and pass records.
+        """
         return {
             "version": __version__,
             "chain_id": self._chain_id,
@@ -255,14 +277,25 @@ class MappingChain:
         return chain
 
     def save(self, path: Any) -> None:
-        """Save the chain to a JSON file."""
+        """Save the chain to a JSON file.
+
+        Args:
+            path: Filesystem path (str or Path) for the output file.
+        """
         path = Path(path)
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(self.to_dict(), fh, ensure_ascii=False, indent=2)
 
     @classmethod
     def load(cls, path: Any) -> "MappingChain":
-        """Load a chain from a JSON file."""
+        """Load a chain from a JSON file.
+
+        Args:
+            path: Filesystem path (str or Path) to a chain JSON file.
+
+        Returns:
+            A MappingChain instance populated from the file.
+        """
         path = Path(path)
         with open(path, "r", encoding="utf-8") as fh:
             chain_data = json.load(fh)
@@ -270,7 +303,14 @@ class MappingChain:
 
     @staticmethod
     def is_chain_file(data: Dict) -> bool:
-        """Check whether data represents a chain (has a 'passes' key)."""
+        """Check whether data represents a chain (has a 'passes' key).
+
+        Args:
+            data: A dict loaded from a JSON mapping file.
+
+        Returns:
+            True if data looks like a chain file, False otherwise.
+        """
         return "passes" in data and isinstance(data["passes"], list)
 
 
