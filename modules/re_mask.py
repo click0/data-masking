@@ -54,10 +54,6 @@ def make_empty_masking_dict(version: str = "2.2.15") -> Dict:
 
     Args:
         version: Version string to embed in the masking dict.
-
-    Returns:
-        A dict with 'version', 'timestamp', 'statistics', 'mappings',
-        and 'instance_tracking' keys ready for population.
     """
     return {
         "version": version,
@@ -70,10 +66,7 @@ def make_empty_masking_dict(version: str = "2.2.15") -> Dict:
 
 def _generate_chain_id() -> str:
     """Generate a unique chain ID from current datetime SHA256 hash[:12].
-
-    Returns:
-        A 12-character hex string derived from the SHA256 digest of the
-        current ISO-format timestamp.
+    Returns a 12-character hex string from the SHA256 of the ISO timestamp.
     """
     now_str = datetime.now().isoformat()
     return hashlib.sha256(now_str.encode("utf-8")).hexdigest()[:12]
@@ -250,12 +243,7 @@ class MappingChain:
     # -- serialisation -------------------------------------------------------
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialise the chain to a plain dict.
-
-        Returns:
-            A dict suitable for JSON serialisation containing all chain
-            metadata and pass records.
-        """
+        """Serialise the chain to a plain dict suitable for JSON output."""
         return {
             "version": __version__,
             "chain_id": self._chain_id,
@@ -268,7 +256,7 @@ class MappingChain:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "MappingChain":
-        """Reconstruct a MappingChain from a plain dict."""
+        """Reconstruct a MappingChain from a dict (e.g. loaded from JSON)."""
         chain_id = data.get("chain_id", _generate_chain_id())
         chain = cls(chain_id=chain_id)
         chain._created_at = data.get("created_at", chain._created_at)

@@ -2290,6 +2290,19 @@ def main():
     # ================================================================
     re_mask_passes = getattr(args, 're_mask', None)
 
+    # Validate re-mask passes range
+    if re_mask_passes is not None:
+        if re_mask_passes < 2:
+            print("Warning: --re-mask requires at least 2 passes, using single-pass mode")
+            if logger:
+                logger.warning("--re-mask value < 2, falling back to single-pass")
+            re_mask_passes = None
+        elif re_mask_passes > 10:
+            print(f"Warning: --re-mask capped at 10 passes (was {re_mask_passes})")
+            if logger:
+                logger.warning(f"--re-mask capped at 10 (requested {re_mask_passes})")
+            re_mask_passes = 10
+
     if REMASK_AVAILABLE and re_mask_passes and re_mask_passes > 1:
         # Multi-pass re-masking
         if logger:
