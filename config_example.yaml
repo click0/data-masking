@@ -1,99 +1,318 @@
 # ==========================================================================
-# Data Masking Configuration Example v2.2.15
+# Приклад конфігурації для системи маскування даних v2.2.15
 #
-# Copy this file to config.yaml and adjust as needed.
-# Generate default config: python data_masking.py --init-config
+# Скопіюйте цей файл як config.yaml та налаштуйте під свої потреби.
+# Згенерувати конфігурацію за замовчуванням:
+#   python data_masking.py --init-config
 #
 # Author: Vladyslav V. Prodan
 # Contact: github.com/click0
-# License: BSD 3-Clause
+# Phone: +38(099)6053340
+# Version: 2.2.15
+# License: BSD 3-Clause "New" or "Revised" License
 # Year: 2025
 # ==========================================================================
 
 # --------------------------------------------------------------------------
-# System settings
+# Системні налаштування
 # --------------------------------------------------------------------------
 system:
-  # Hash algorithm for deterministic seed generation.
-  # Same input always produces the same masked output.
-  # Options: blake2b (recommended), md5, sha1, sha256, sha512
+  # Версія конфігурації (для сумісності)
+  version: "v2.2.15"
+
+  # Алгоритм хешування для детерміністичного маскування.
+  # Той самий вхід завжди дає той самий замаскований результат.
+  # Доступні варіанти: blake2b (рекомендовано), md5, sha1, sha256, sha512
   hash_algorithm: "blake2b"
 
-  # Preserve letter case of masked values:
-  #   UPPER CASE  -> UPPER CASE
-  #   Title Case  -> Title Case
-  #   lower case  -> lower case
+  # Розмір дайджесту хешу (у байтах)
+  hash_digest_size: 8
+
+  # Кодування файлів (за замовчуванням UTF-8)
+  encoding: "utf-8"
+
+  # Зберігати регістр літер замаскованих значень:
+  #   ВЕЛИКІ ЛІТЕРИ  -> ВЕЛИКІ ЛІТЕРИ
+  #   Кожне Слово    -> Кожне Слово
+  #   малі літери    -> малі літери
   preserve_case: true
 
-  # Enable debug output (verbose logging to console)
+  # Створювати резервні копії вхідних файлів
+  backup_enabled: true
+  backup_suffix: ".bak"
+
+  # Максимальний розмір файлу для обробки (МБ)
+  max_file_size_mb: 50
+
+  # Тимчасова директорія (порожнє = системна за замовчуванням)
+  temp_dir: ""
+
+  # Режим налагодження (детальний вивід у консоль)
   debug_mode: false
 
+  # Строгий режим — зупиняє обробку при будь-якій помилці
+  strict_mode: false
+
 # --------------------------------------------------------------------------
-# Security settings
+# Налаштування безпеки та шифрування
 # --------------------------------------------------------------------------
 security:
-  # Encrypt the mapping file (AES-128-CBC via Fernet)
+  # Шифрувати файл маппінгу (AES-128-CBC через Fernet)
   encrypt_output: false
 
-  # Auto-generate a random password if --password is not specified
-  password_generation: true
-
-  # Environment variable to read password from (alternative to --password)
+  # Змінна оточення для зчитування пароля (альтернатива --password)
   password_env_var: "DATA_MASKING_PASSWORD"
 
-  # Length of auto-generated password (characters)
-  password_length: 24
+  # Налаштування автоматичної генерації пароля
+  password_generation:
+    # Увімкнути автоматичну генерацію пароля
+    enabled: true
+    # Довжина пароля (символів)
+    length: 24
+    # Використовувати спеціальні символи (!@#$%^&*)
+    use_special_chars: true
+    # Алгоритм генерації: secrets (рекомендовано) або random
+    algorithm: "secrets"
+    # Мінімальна кількість великих літер
+    min_uppercase: 2
+    # Мінімальна кількість малих літер
+    min_lowercase: 2
+    # Мінімальна кількість цифр
+    min_digits: 2
+    # Мінімальна кількість спецсимволів
+    min_special: 2
+
+  # Алгоритм шифрування
+  encryption_algorithm: "AES-128-CBC"
+
+  # Деривація ключа
+  key_derivation: "scrypt"
+  scrypt_n: 16384
+  scrypt_r: 8
+  scrypt_p: 1
+  salt_length: 16
+
+  # Автоматично генерувати пароль, якщо --password не вказано
+  auto_generate_password: true
+
+  # Файл для збереження згенерованого пароля (порожнє = не зберігати)
+  password_file: ""
+
+  # Безпечне видалення тимчасових файлів
+  secure_delete_temp: true
 
 # --------------------------------------------------------------------------
-# Masking rules — enable/disable individual data types
+# Правила маскування — увімкнути/вимкнути окремі типи даних
 # --------------------------------------------------------------------------
 masking_rules:
-  # Military ranks (with declension and case preservation)
+  # Військові звання (з відмінюванням та збереженням регістру)
   enable_ranks: true
 
-  # Personal names: first name (ім'я), surname (прізвище), patronymic (по батькові)
+  # Імена (перше ім'я)
   enable_names: true
 
-  # Individual Tax Number / ІПН (10 digits)
+  # Прізвища
+  enable_surnames: true
+
+  # По батькові
+  enable_patronymics: true
+
+  # Індивідуальний податковий номер / ІПН (10 цифр)
   enable_ipn: true
 
-  # Passport and ID-passport (9 digits)
+  # Паспорт та ID-картка (9 цифр)
   enable_passport: true
 
-  # Military ID / військовий квиток (AA123456)
+  # Військовий квиток (формат АА123456)
   enable_military_id: true
 
-  # Dates in DD.MM.YYYY format (offset ±30 days)
+  # Дати у форматі ДД.ММ.РРРР (зсув ±30 днів)
   enable_dates: true
 
-  # Brigade numbers (e.g. "72 окремої механізованої бригади")
-  enable_brigades: true
+  # Текстові дати ("06" жовтня 2025 року)
+  enable_date_text: true
 
-  # Military unit designations (e.g. А1234)
+  # Військові частини (наприклад, А1234)
   enable_units: true
 
-  # Order numbers (e.g. №123, №45/67)
+  # Номери бригад (наприклад, "72 окремої механізованої бригади")
+  enable_brigades: true
+
+  # Номери наказів (наприклад, №123, №45/67)
   enable_orders: true
 
-  # BR document numbers (e.g. №БР-123/456)
+  # Номери БР-документів (наприклад, №БР-123/456)
   enable_br_numbers: true
 
-# --------------------------------------------------------------------------
-# Logging settings
-# --------------------------------------------------------------------------
-logging:
-  # Log level: DEBUG | INFO | WARNING | ERROR | CRITICAL
-  level: "INFO"
+  # Номери документів
+  enable_document_numbers: true
 
-  # Log file path. null = console output only.
-  file: null
+  # Зберігати регістр при маскуванні
+  preserve_case: true
 
-  # Log message format (Python logging format string)
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  # Зберігати стать при підборі замін
+  preserve_gender: true
+
+  # Послідовне маскування (однакові значення -> однакова заміна)
+  consistent_mapping: true
+
+  # Відстеження instances (кількість входжень)
+  instance_tracking: true
+
+  # Контекстно-залежне маскування
+  context_aware: true
+
+  # Виправлення розірваних звань через перенос рядка (Fix #20)
+  rank_line_break_fix: true
+
+  # Власні шаблони регулярних виразів (додатково)
+  custom_patterns: []
 
 # --------------------------------------------------------------------------
-# Router rules (selective masking)
+# Налаштування валідації
+# --------------------------------------------------------------------------
+validation:
+  # Перевіряти контрольну суму ІПН
+  validate_ipn_checksum: true
+
+  # Перевіряти діапазон дат
+  validate_date_range: true
+  min_date_year: 1900
+  max_date_year: 2030
+
+  # Перевіряти звання за словником
+  validate_rank_dictionary: true
+
+  # Строгий формат ПІБ (Прізвище Ім'я По батькові)
+  strict_pib_format: false
+
+  # Дозволити скорочене по батькові (І.І.)
+  allow_abbreviated_patronymic: true
+
+  # Обмеження довжини імен
+  max_name_length: 50
+  min_name_length: 2
+
+# --------------------------------------------------------------------------
+# Правила маршрутизації (порядок обробки та вибіркове маскування)
 # --------------------------------------------------------------------------
 router_rules:
-  # Default action for unmatched patterns
+  # Дія за замовчуванням для невизначених шаблонів
   default_action: "mask"
+
+  # Порядок обробки типів даних (важливий для коректності!)
+  # Дати та числові типи обробляються першими, щоб уникнути
+  # хибних спрацювань при обробці тексту
+  processing_order:
+    - "date_text"
+    - "date"
+    - "ipn"
+    - "passport_id"
+    - "military_id"
+    - "order_number"
+    - "brigade_number"
+    - "rank"
+    - "pib"
+    - "military_unit"
+
+  # Пропустити вказані типи (має пріоритет над processing_order)
+  # Приклад: skip_types: ["date", "ipn"]
+  skip_types: []
+
+  # Маскувати ТІЛЬКИ вказані типи (решта пропускається)
+  # Приклад: only_types: ["ipn", "rank"]
+  only_types: []
+
+  # Перевизначення пріоритетів (ключ: тип, значення: пріоритет)
+  priority_overrides: {}
+
+# --------------------------------------------------------------------------
+# Налаштування логування
+# --------------------------------------------------------------------------
+logging:
+  # Увімкнути логування
+  enabled: true
+
+  # Рівень логування: DEBUG | INFO | WARNING | ERROR | CRITICAL
+  level: "INFO"
+
+  # Шлях до файлу логу (null = тільки консоль)
+  file: null
+
+  # Формат повідомлень логу (Python logging format)
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+  # Максимальний розмір файлу логу (МБ)
+  max_log_size_mb: 10
+
+  # Кількість ротаційних файлів логу
+  log_rotation_count: 5
+
+  # Виводити логи у консоль
+  log_to_console: true
+
+  # Записувати логи у файл
+  log_to_file: false
+
+  # НЕ логувати чутливі дані (завжди false у продакшені!)
+  log_sensitive_data: false
+
+  # Логувати продуктивність (час обробки)
+  log_performance: false
+
+  # Логувати статистику маскування
+  log_statistics: true
+
+# --------------------------------------------------------------------------
+# Налаштування повторного маскування (re-mask)
+# --------------------------------------------------------------------------
+remask:
+  # Увімкнути підтримку багатопрохідного маскування
+  enabled: true
+
+  # Максимальна кількість проходів
+  max_passes: 5
+
+  # Зберігати ланцюг маппінгів для відновлення
+  save_chain: true
+
+  # Формат файлу ланцюга
+  chain_format: "json"
+
+  # Автоматично нумерувати проходи
+  auto_numbering: true
+
+# ==========================================================================
+# Приклади використання
+# ==========================================================================
+#
+# 1. Базове маскування:
+#    python data_masking.py -i input.txt -o output.txt
+#
+# 2. Маскування з конфігурацією:
+#    python data_masking.py -i input.txt -o output.txt --config config.yaml
+#
+# 3. Генерація конфігурації за замовчуванням:
+#    python data_masking.py --init-config
+#
+# 4. Маскування з шифруванням:
+#    python data_masking.py -i input.txt -o output.txt --encrypt --password "MyPass123"
+#
+# 5. Вибіркове маскування (тільки ІПН та звання):
+#    python data_masking.py -i input.txt -o output.txt --only ipn,rank
+#
+# 6. Маскування з виключенням дат:
+#    python data_masking.py -i input.txt -o output.txt --exclude date,date_text
+#
+# 7. Повторне маскування (2 проходи):
+#    python data_masking.py -i input.txt -o output.txt --re-mask 2
+#
+# 8. Діагностика маппінгу:
+#    python diagnose_mapping.py mapping.json --verify input.txt output.txt
+#
+# 9. Розмаскування:
+#    python unmask_data.py -i masked.txt -m mapping.json -o restored.txt
+#
+# 10. Пароль через змінну оточення:
+#     export DATA_MASKING_PASSWORD="MySecurePassword"
+#     python data_masking.py -i input.txt -o output.txt --encrypt

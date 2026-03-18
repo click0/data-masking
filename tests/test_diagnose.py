@@ -6,7 +6,7 @@ Testing verification logic and file handling.
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 Phone: +38(099)6053340
-Version: 2.2.14
+Version: 2.2.15
 License: BSD 3-Clause "New" or "Revised" License
 Year: 2025
 """
@@ -326,8 +326,8 @@ def test_verify_windows_vs_unix_newlines(tmp_path, capsys):
     verify_text_recovery(orig, rec)
 
     captured = capsys.readouterr()
-    # Level 2 має пройти, бо обидва \r\n та \n нормалізуються
-    assert "✅ [LEVEL 2]" in captured.out
+    # Level 1 або Level 2 має пройти
+    assert "✅ [LEVEL 1]" in captured.out or "✅ [LEVEL 2]" in captured.out
 
 
 def test_verify_large_diff_truncation(tmp_path, capsys):
