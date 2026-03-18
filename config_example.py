@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Configuration example for data_masking.py v2.3.0
+Configuration example for data_masking.py v2.3.1
 
 Demonstrates all available configuration options using dataclasses.
 No external dependencies required — uses only Python standard library.
@@ -9,7 +9,7 @@ No external dependencies required — uses only Python standard library.
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 Phone: +38(099)6053340
-Version: 2.3.0
+Version: 2.3.1
 License: BSD 3-Clause "New" or "Revised" License
 Year: 2025
 """
@@ -25,7 +25,7 @@ from typing import List, Dict, Optional
 @dataclass
 class SystemConfig:
     """Системні налаштування."""
-    version: str = "v2.3.0"
+    version: str = "v2.3.1"
     hash_algorithm: str = "blake2b"
     hash_digest_size: int = 8
     encoding: str = "utf-8"
@@ -172,7 +172,7 @@ if __name__ == "__main__":
     data = config.to_dict()
 
     print("=" * 70)
-    print("  Data Masking Configuration Example v2.3.0")
+    print("  Data Masking Configuration Example v2.3.1")
     print("=" * 70)
 
     for section_name, section_data in data.items():
