@@ -142,6 +142,8 @@ jobs:
     name: Windows Binaries
     needs: release
     runs-on: windows-latest
+    env:
+      PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@v4
 
@@ -213,8 +215,6 @@ jobs:
 
       - name: Smoke test
         shell: pwsh
-        env:
-          PYTHONUTF8: '1'
         run: |
           ./dist/data_masking.exe --help
           ./dist/unmask_data.exe --help
