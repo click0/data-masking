@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   release:
     name: Build & Release
@@ -233,6 +236,8 @@ jobs:
 
       - name: Smoke test
         shell: pwsh
+        env:
+          PYTHONUTF8: '1'
         run: |
           ./dist/data_masking.exe --help
           ./dist/unmask_data.exe --help
