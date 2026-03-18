@@ -84,64 +84,40 @@ from rank_data import (
 
 # --- MODULES v2.2.15 ---
 try:
-    from selective import SelectiveFilter, apply_filter_to_globals, get_available_types
+    from modules.selective import SelectiveFilter, apply_filter_to_globals, get_available_types
     SELECTIVE_AVAILABLE = True
 except ImportError:
-    try:
-        from modules.selective import SelectiveFilter, apply_filter_to_globals, get_available_types
-        SELECTIVE_AVAILABLE = True
-    except ImportError:
-        SELECTIVE_AVAILABLE = False
+    SELECTIVE_AVAILABLE = False
 
 try:
-    from re_mask import ReMasker, MappingChain, make_empty_masking_dict
+    from modules.re_mask import ReMasker, MappingChain, make_empty_masking_dict
     REMASK_AVAILABLE = True
 except ImportError:
-    try:
-        from modules.re_mask import ReMasker, MappingChain, make_empty_masking_dict
-        REMASK_AVAILABLE = True
-    except ImportError:
-        REMASK_AVAILABLE = False
+    REMASK_AVAILABLE = False
 
 try:
-    from security import MappingSecurityManager
+    from modules.security import MappingSecurityManager
     SECURITY_AVAILABLE = True
 except ImportError:
-    try:
-        from modules.security import MappingSecurityManager
-        SECURITY_AVAILABLE = True
-    except ImportError:
-        SECURITY_AVAILABLE = False
+    SECURITY_AVAILABLE = False
 
 try:
-    from config import ConfigLoader
+    from modules.config import ConfigLoader
     CONFIG_AVAILABLE = True
 except ImportError:
-    try:
-        from modules.config import ConfigLoader
-        CONFIG_AVAILABLE = True
-    except ImportError:
-        CONFIG_AVAILABLE = False
+    CONFIG_AVAILABLE = False
 
 try:
-    from masking_logger import setup_logging
+    from modules.masking_logger import setup_logging
     LOGGING_AVAILABLE = True
 except ImportError:
-    try:
-        from modules.masking_logger import setup_logging
-        LOGGING_AVAILABLE = True
-    except ImportError:
-        LOGGING_AVAILABLE = False
+    LOGGING_AVAILABLE = False
 
 try:
-    from password_generator import generate_password
+    from modules.password_generator import generate_password
     PASSWORD_GENERATOR_AVAILABLE = True
 except ImportError:
-    try:
-        from modules.password_generator import generate_password
-        PASSWORD_GENERATOR_AVAILABLE = True
-    except ImportError:
-        PASSWORD_GENERATOR_AVAILABLE = False
+    PASSWORD_GENERATOR_AVAILABLE = False
 
 # ============================================================================
 # МЕТАДАНІ

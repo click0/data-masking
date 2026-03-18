@@ -62,50 +62,34 @@ from typing import Dict, List, Optional, Tuple, Any
 # Безпека (шифрування mapping файлів)
 SECURITY_AVAILABLE = False
 try:
-    from security import MappingSecurityManager, is_encryption_available
+    from modules.security import MappingSecurityManager, is_encryption_available
     SECURITY_AVAILABLE = True
 except ImportError:
-    try:
-        from modules.security import MappingSecurityManager, is_encryption_available
-        SECURITY_AVAILABLE = True
-    except ImportError:
-        pass
+    pass
 
 # Re-mask (ланцюгове перемаскування)
 REMASK_AVAILABLE = False
 try:
-    from re_mask import ChainUnmasker, load_chain, get_chain_info
+    from modules.re_mask import ChainUnmasker, load_chain, get_chain_info
     REMASK_AVAILABLE = True
 except ImportError:
-    try:
-        from modules.re_mask import ChainUnmasker, load_chain, get_chain_info
-        REMASK_AVAILABLE = True
-    except ImportError:
-        pass
+    pass
 
 # Конфігурація
 CONFIG_AVAILABLE = False
 try:
-    from config import load_config, ConfigLoader
+    from modules.config import load_config, ConfigLoader
     CONFIG_AVAILABLE = True
 except ImportError:
-    try:
-        from modules.config import load_config, ConfigLoader
-        CONFIG_AVAILABLE = True
-    except ImportError:
-        pass
+    pass
 
 # Логування
 LOGGING_AVAILABLE = False
 try:
-    from masking_logger import MaskingLogger, setup_logging
+    from modules.masking_logger import MaskingLogger, setup_logging
     LOGGING_AVAILABLE = True
 except ImportError:
-    try:
-        from modules.masking_logger import MaskingLogger, setup_logging
-        LOGGING_AVAILABLE = True
-    except ImportError:
-        pass
+    pass
 
 # ============================================================================
 # ІМПОРТ ДАНИХ З МОДУЛЯ
