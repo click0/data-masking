@@ -1,0 +1,128 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run tests (release gate)
+        run: pytest --timeout=300
+
+      - name: Extract version from tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Verify version consistency
+        run: |
+          python -c "
+          import re
+          tag_ver = '${{ env.VERSION }}'
+          with open('data_masking.py') as f:
+              content = f.read()
+          match = re.search(r'__version__\s*=\s*\"(.+?)\"', content)
+          src_ver = match.group(1)
+          assert tag_ver == src_ver, f'Tag v{tag_ver} != source v{src_ver}'
+          print(f'Version verified: v{src_ver}')
+          "
+
+      - name: Build archives
+        run: |
+          mkdir -p dist
+          ARCHIVE="data-masking-${{ env.VERSION }}"
+
+          tar czf "dist/${ARCHIVE}.tar.gz" \
+            --exclude='__pycache__' \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.pytest_cache' \
+            --exclude='dist' \
+            --exclude='*.pyc' \
+            --transform="s,^,${ARCHIVE}/," \
+            data_masking.py unmask_data.py diagnose_mapping.py rank_data.py \
+            config_example.py config_example.yaml \
+            modules/ docs/ tests/ \
+            requirements.txt requirements-dev.txt \
+            LICENSE pytest.ini .gitignore \
+            input_example.txt input_example.2.txt
+
+          cd "$(git rev-parse --show-toplevel)"
+          zip -r "dist/${ARCHIVE}.zip" \
+            data_masking.py unmask_data.py diagnose_mapping.py rank_data.py \
+            config_example.py config_example.yaml \
+            modules/ docs/ tests/ \
+            requirements.txt requirements-dev.txt \
+            LICENSE pytest.ini .gitignore \
+            input_example.txt input_example.2.txt \
+            -x '*__pycache__*' '*.pyc'
+
+      - name: Generate changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            CHANGELOG=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
+          else
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges -20)
+          fi
+          {
+            echo "CHANGELOG<<EOF"
+            echo "$CHANGELOG"
+            echo "EOF"
+          } >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Data Masking System v${{ env.VERSION }}"
+          body: |
+            ## Data Masking System v${{ env.VERSION }}
+
+            ### Changes
+            ${{ env.CHANGELOG }}
+
+            ### Installation
+            ```bash
+            # Download and extract
+            tar xzf data-masking-${{ env.VERSION }}.tar.gz
+            cd data-masking-${{ env.VERSION }}
+
+            # Install dependencies
+            pip install -r requirements.txt
+
+            # Run
+            python data_masking.py --help
+            python unmask_data.py --help
+            ```
+
+            ### Requirements
+            - Python 3.9+
+            - faker, cryptography, pyyaml
+          files: |
+            dist/data-masking-${{ env.VERSION }}.tar.gz
+            dist/data-masking-${{ env.VERSION }}.zip
+          draft: false
+          prerelease: ${{ contains(env.VERSION, 'rc') || contains(env.VERSION, 'beta') || contains(env.VERSION, 'alpha') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
