@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 
 """
-Data Unmasking Script v2.2.15
+Data Unmasking Script v2.3.0
 Відновлення оригінальних даних з замаскованого файлу
 
 Цей скрипт виконує зворотну операцію до data_masking.py: відновлює оригінальні
 дані з замаскованих файлів, використовуючи збережений словник маппінгів.
 
-ОНОВЛЕНО В v2.2.15:
+ОНОВЛЕНО В v2.3.0:
 - 🔐 Підтримка AES-256-GCM шифрування mapping файлів (.enc)
 - 🔄 --to-version для конвертації між версіями маппінгів
 - 📊 Структуроване логування через MaskingLogger
@@ -41,7 +41,7 @@ Data Unmasking Script v2.2.15
 
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
-Version: 2.2.15
+Version: 2.3.0
 License: BSD 3-Clause
 Year: 2025
 """
@@ -56,56 +56,40 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any
 
 # ============================================================================
-# МОДУЛІ v2.2.15
+# МОДУЛІ v2.3.0
 # ============================================================================
 
 # Безпека (шифрування mapping файлів)
 SECURITY_AVAILABLE = False
 try:
-    from security import MappingSecurityManager, is_encryption_available
+    from modules.security import MappingSecurityManager, is_encryption_available
     SECURITY_AVAILABLE = True
 except ImportError:
-    try:
-        from modules.security import MappingSecurityManager, is_encryption_available
-        SECURITY_AVAILABLE = True
-    except ImportError:
-        pass
+    pass
 
 # Re-mask (ланцюгове перемаскування)
 REMASK_AVAILABLE = False
 try:
-    from re_mask import ChainUnmasker, load_chain, get_chain_info
+    from modules.re_mask import ChainUnmasker, load_chain, get_chain_info
     REMASK_AVAILABLE = True
 except ImportError:
-    try:
-        from modules.re_mask import ChainUnmasker, load_chain, get_chain_info
-        REMASK_AVAILABLE = True
-    except ImportError:
-        pass
+    pass
 
 # Конфігурація
 CONFIG_AVAILABLE = False
 try:
-    from config import load_config, ConfigLoader
+    from modules.config import load_config, ConfigLoader
     CONFIG_AVAILABLE = True
 except ImportError:
-    try:
-        from modules.config import load_config, ConfigLoader
-        CONFIG_AVAILABLE = True
-    except ImportError:
-        pass
+    pass
 
 # Логування
 LOGGING_AVAILABLE = False
 try:
-    from masking_logger import MaskingLogger, setup_logging
+    from modules.masking_logger import MaskingLogger, setup_logging
     LOGGING_AVAILABLE = True
 except ImportError:
-    try:
-        from modules.masking_logger import MaskingLogger, setup_logging
-        LOGGING_AVAILABLE = True
-    except ImportError:
-        pass
+    pass
 
 # ============================================================================
 # ІМПОРТ ДАНИХ З МОДУЛЯ
@@ -130,7 +114,7 @@ except ImportError:
 # ============================================================================
 # МЕТАДАНІ
 # ============================================================================
-__version__ = "2.2.15"
+__version__ = "2.3.0"
 __author__ = "Vladyslav V. Prodan"
 __contact__ = "github.com/click0"
 __phone__ = "+38(099)6053340"
@@ -960,7 +944,7 @@ def is_chain_mapping(masking_map: Dict) -> bool:
 
 
 # ============================================================================
-# ЗАВАНТАЖЕННЯ ТА УТИЛІТИ v2.2.15
+# ЗАВАНТАЖЕННЯ ТА УТИЛІТИ v2.3.0
 # ============================================================================
 
 def load_mapping_file(map_path: Path, password: str = None) -> Dict:

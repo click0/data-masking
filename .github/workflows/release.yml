@@ -102,7 +102,7 @@ jobs:
             ### Changes
             ${{ env.CHANGELOG }}
 
-            ### Installation
+            ### Installation (Python)
             ```bash
             # Download and extract
             tar xzf data-masking-${{ env.VERSION }}.tar.gz
@@ -116,7 +116,15 @@ jobs:
             python unmask_data.py --help
             ```
 
-            ### Requirements
+            ### Windows (standalone, no Python needed)
+            Download `data-masking-${{ env.VERSION }}-windows-x64.zip`, extract and run:
+            ```
+            data_masking.exe --help
+            unmask_data.exe --help
+            diagnose_mapping.exe --help
+            ```
+
+            ### Requirements (Python version)
             - Python 3.9+
             - faker, cryptography, pyyaml
           files: |
@@ -124,5 +132,122 @@ jobs:
             dist/data-masking-${{ env.VERSION }}.zip
           draft: false
           prerelease: ${{ contains(env.VERSION, 'rc') || contains(env.VERSION, 'beta') || contains(env.VERSION, 'alpha') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-windows:
+    name: Windows Binaries
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Extract version from tag
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Build data_masking.exe
+        shell: bash
+        run: |
+          pyinstaller --onefile --noconfirm --clean \
+            --collect-all=faker \
+            --collect-all=cryptography \
+            --hidden-import=rank_data \
+            --hidden-import=modules \
+            --hidden-import=modules.config \
+            --hidden-import=modules.security \
+            --hidden-import=modules.masking_logger \
+            --hidden-import=modules.selective \
+            --hidden-import=modules.re_mask \
+            --hidden-import=modules.tools \
+            --hidden-import=modules.password_generator \
+            --hidden-import=modules.rank_data \
+            --hidden-import=yaml \
+            --hidden-import=_cffi_backend \
+            --add-data='rank_data.py;.' \
+            --name data_masking \
+            data_masking.py
+
+      - name: Build unmask_data.exe
+        shell: bash
+        run: |
+          pyinstaller --onefile --noconfirm --clean \
+            --collect-all=faker \
+            --collect-all=cryptography \
+            --hidden-import=rank_data \
+            --hidden-import=modules \
+            --hidden-import=modules.config \
+            --hidden-import=modules.security \
+            --hidden-import=modules.masking_logger \
+            --hidden-import=modules.selective \
+            --hidden-import=modules.re_mask \
+            --hidden-import=modules.tools \
+            --hidden-import=modules.password_generator \
+            --hidden-import=modules.rank_data \
+            --hidden-import=yaml \
+            --hidden-import=_cffi_backend \
+            --add-data='rank_data.py;.' \
+            --name unmask_data \
+            unmask_data.py
+
+      - name: Build diagnose_mapping.exe
+        shell: bash
+        run: |
+          pyinstaller --onefile --noconfirm --clean \
+            --collect-all=faker \
+            --collect-all=cryptography \
+            --hidden-import=rank_data \
+            --hidden-import=modules \
+            --hidden-import=modules.config \
+            --hidden-import=modules.security \
+            --hidden-import=modules.masking_logger \
+            --hidden-import=modules.selective \
+            --hidden-import=modules.re_mask \
+            --hidden-import=modules.tools \
+            --hidden-import=modules.password_generator \
+            --hidden-import=modules.rank_data \
+            --hidden-import=yaml \
+            --hidden-import=_cffi_backend \
+            --add-data='rank_data.py;.' \
+            --name diagnose_mapping \
+            diagnose_mapping.py
+
+      - name: Verify executables
+        shell: bash
+        run: |
+          ls -la dist/data_masking.exe
+          ls -la dist/unmask_data.exe
+          ls -la dist/diagnose_mapping.exe
+
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          ./dist/data_masking.exe --help
+          ./dist/unmask_data.exe --help
+          ./dist/diagnose_mapping.exe --help
+
+      - name: Package Windows binaries
+        shell: bash
+        run: |
+          cd dist
+          7z a "data-masking-${{ env.VERSION }}-windows-x64.zip" \
+            data_masking.exe unmask_data.exe diagnose_mapping.exe
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/data-masking-${{ env.VERSION }}-windows-x64.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
