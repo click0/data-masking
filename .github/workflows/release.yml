@@ -96,7 +96,7 @@ jobs:
           } >> $GITHUB_ENV
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.6.1
         with:
           name: "Data Masking System v${{ env.VERSION }}"
           body: |
@@ -231,7 +231,7 @@ jobs:
             data_masking.exe unmask_data.exe diagnose_mapping.exe
 
       - name: Upload to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.6.1
         with:
           files: dist/data-masking-${{ env.VERSION }}-windows-x64.zip
         env:
