@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Re-Masking Module v2.3.0
+Re-Masking Module v2.3.1
 Multi-pass masking with chain tracking for data_masking.py
 
 Provides:
@@ -12,7 +12,7 @@ Provides:
 
 Chain JSON format:
     {
-        "version": "2.3.0",
+        "version": "2.3.1",
         "chain_id": "<sha256_hash[:12]>",
         "chain_version": 2,
         "created_at": "ISO-8601",
@@ -38,7 +38,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-__version__ = "2.3.0"
+__version__ = "2.3.1"
 
 # Standard mapping categories used by data_masking.py
 MAPPING_CATEGORIES = [
@@ -49,7 +49,7 @@ MAPPING_CATEGORIES = [
 ]
 
 
-def make_empty_masking_dict(version: str = "2.3.0") -> Dict:
+def make_empty_masking_dict(version: str = "2.3.1") -> Dict:
     """Create a fresh empty masking dict with all required category keys.
 
     Args:
