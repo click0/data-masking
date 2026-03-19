@@ -8,9 +8,6 @@ on:
 permissions:
   contents: write
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   release:
     name: Build & Release
@@ -95,48 +92,61 @@ jobs:
             echo "EOF"
           } >> $GITHUB_ENV
 
+      - name: Determine release flags
+        id: release_flags
+        run: |
+          FLAGS=""
+          case "${{ env.VERSION }}" in
+            *rc*|*beta*|*alpha*) FLAGS="--prerelease" ;;
+          esac
+          echo "flags=$FLAGS" >> $GITHUB_OUTPUT
+
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2.6.1
-        with:
-          name: "Data Masking System v${{ env.VERSION }}"
-          body: |
-            ## Data Masking System v${{ env.VERSION }}
+        run: |
+          cat > /tmp/release-body.md <<BODY_EOF
+          ## Data Masking System v${{ env.VERSION }}
 
-            ### Changes
-            ${{ env.CHANGELOG }}
+          ### Changes
+          ${{ env.CHANGELOG }}
 
-            ### Installation (Python)
-            ```bash
-            # Download and extract
-            tar xzf data-masking-${{ env.VERSION }}.tar.gz
-            cd data-masking-${{ env.VERSION }}
+          ### Installation (Python)
+          \`\`\`bash
+          # Download and extract
+          tar xzf data-masking-${{ env.VERSION }}.tar.gz
+          cd data-masking-${{ env.VERSION }}
 
-            # Install dependencies
-            pip install -r requirements.txt
+          # Install dependencies
+          pip install -r requirements.txt
 
-            # Run
-            python data_masking.py --help
-            python unmask_data.py --help
-            ```
+          # Run
+          python data_masking.py --help
+          python unmask_data.py --help
+          \`\`\`
 
-            ### Windows (standalone, no Python needed)
-            Download `data-masking-${{ env.VERSION }}-windows-x64.zip`, extract and run:
-            ```
-            data_masking.exe --help
-            unmask_data.exe --help
-            diagnose_mapping.exe --help
-            ```
+          ### Windows (standalone, no Python needed)
+          Download \`data-masking-${{ env.VERSION }}-windows-x64.zip\`, extract and run:
+          \`\`\`
+          data_masking.exe --help
+          unmask_data.exe --help
+          diagnose_mapping.exe --help
+          \`\`\`
 
-            ### Requirements (Python version)
-            - Python 3.9+
-            - faker, cryptography, pyyaml
-          files: |
-            dist/data-masking-${{ env.VERSION }}.tar.gz
+          ### Requirements (Python version)
+          - Python 3.9+
+          - faker, cryptography, pyyaml
+          BODY_EOF
+
+          # Remove leading whitespace from heredoc
+          sed -i 's/^          //' /tmp/release-body.md
+
+          gh release create "${{ github.ref_name }}" \
+            --title "Data Masking System v${{ env.VERSION }}" \
+            --notes-file /tmp/release-body.md \
+            ${{ steps.release_flags.outputs.flags }} \
+            dist/data-masking-${{ env.VERSION }}.tar.gz \
             dist/data-masking-${{ env.VERSION }}.zip
-          draft: false
-          prerelease: ${{ contains(env.VERSION, 'rc') || contains(env.VERSION, 'beta') || contains(env.VERSION, 'alpha') }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-windows:
     name: Windows Binaries
@@ -231,8 +241,9 @@ jobs:
             data_masking.exe unmask_data.exe diagnose_mapping.exe
 
       - name: Upload to release
-        uses: softprops/action-gh-release@v2.6.1
-        with:
-          files: dist/data-masking-${{ env.VERSION }}-windows-x64.zip
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            dist/data-masking-${{ env.VERSION }}-windows-x64.zip \
+            --clobber
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
