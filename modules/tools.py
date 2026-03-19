@@ -40,7 +40,7 @@ Helper functions:
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 License: BSD 3-Clause
-Year: 2025
+Year: 2025-2026
 """
 
 import hashlib
@@ -56,7 +56,7 @@ __version__ = "2.3.1"
 __author__ = "Vladyslav V. Prodan"
 __contact__ = "github.com/click0"
 __license__ = "BSD 3-Clause"
-__year__ = "2025"
+__year__ = "2025-2026"
 
 # ============================================================================
 # OPTIONAL DEPENDENCY: Faker

@@ -10,7 +10,7 @@ for masking operations.
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 License: BSD 3-Clause
-Year: 2025
+Year: 2025-2026
 """
 
 import copy

@@ -12,7 +12,7 @@ File format: [16 bytes salt][12 bytes nonce][encrypted data with 16 bytes tag]
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 License: BSD 3-Clause
-Year: 2025
+Year: 2025-2026
 """
 
 __version__ = "2.3.1"

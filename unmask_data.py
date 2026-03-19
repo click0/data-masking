@@ -43,7 +43,7 @@ Author: Vladyslav V. Prodan
 Contact: github.com/click0
 Version: 2.3.1
 License: BSD 3-Clause
-Year: 2025
+Year: 2025-2026
 """
 
 import json
@@ -126,7 +126,7 @@ __author__ = "Vladyslav V. Prodan"
 __contact__ = "github.com/click0"
 __phone__ = "+38(099)6053340"
 __license__ = "BSD 3-Clause"
-__year__ = "2025"
+__year__ = "2025-2026"
 
 # ============================================================================
 # КОНФІГУРАЦІЯ ПОШУКУ ФАЙЛІВ

@@ -48,7 +48,7 @@ Contact: github.com/click0
 Phone: +38(099)6053340
 Version: 2.3.1
 License: BSD 3-Clause "New" or "Revised" License
-Year: 2025
+Year: 2025-2026
 """
 
 import json
@@ -127,7 +127,7 @@ __author__ = "Vladyslav V. Prodan"
 __contact__ = "github.com/click0"
 __phone__ = "+38(099)6053340"
 __license__ = "BSD 3-Clause"
-__year__ = "2025"
+__year__ = "2025-2026"
 
 fake_uk = Faker('uk_UA')
 HASH_ALGORITHM = 'blake2b'

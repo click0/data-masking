@@ -8,7 +8,7 @@ Contact: github.com/click0
 Phone: +38(099)6053340
 Version: 2.3.1
 License: BSD 3-Clause "New" or "Revised" License
-Year: 2025
+Year: 2025-2026
 
 Цей скрипт є інструментом контролю якості (QA) для системи маскування.
 Він виконує три основні функції:
