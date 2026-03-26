@@ -83,41 +83,50 @@ from rank_data import (
 # ============================================================================
 
 # --- MODULES v2.3.0 ---
+import logging as _logging
+_opt_logger = _logging.getLogger(__name__)
+
 try:
     from modules.selective import SelectiveFilter, apply_filter_to_globals, get_available_types
     SELECTIVE_AVAILABLE = True
 except ImportError:
     SELECTIVE_AVAILABLE = False
+    _opt_logger.debug("modules.selective not available — --only/--exclude disabled")
 
 try:
     from modules.re_mask import ReMasker, MappingChain, make_empty_masking_dict
     REMASK_AVAILABLE = True
 except ImportError:
     REMASK_AVAILABLE = False
+    _opt_logger.debug("modules.re_mask not available — re-masking disabled")
 
 try:
     from modules.security import MappingSecurityManager
     SECURITY_AVAILABLE = True
 except ImportError:
     SECURITY_AVAILABLE = False
+    _opt_logger.debug("modules.security not available — encryption disabled")
 
 try:
     from modules.config import ConfigLoader
     CONFIG_AVAILABLE = True
 except ImportError:
     CONFIG_AVAILABLE = False
+    _opt_logger.debug("modules.config not available — YAML config disabled")
 
 try:
     from modules.masking_logger import setup_logging
     LOGGING_AVAILABLE = True
 except ImportError:
     LOGGING_AVAILABLE = False
+    _opt_logger.debug("modules.masking_logger not available — structured logging disabled")
 
 try:
     from modules.password_generator import generate_password
     PASSWORD_GENERATOR_AVAILABLE = True
 except ImportError:
     PASSWORD_GENERATOR_AVAILABLE = False
+    _opt_logger.debug("modules.password_generator not available — password generation disabled")
 
 # ============================================================================
 # МЕТАДАНІ
@@ -264,6 +273,27 @@ MONTHS_GENITIVE = {
 }
 MONTHS_GENITIVE_BY_NUM = {v: k for k, v in MONTHS_GENITIVE.items()}
 MONTHS_GENITIVE_PATTERN = '|'.join(re.escape(m) for m in MONTHS_GENITIVE.keys())
+
+# Maximum input file size in bytes (default: 100 MB)
+MAX_INPUT_FILE_SIZE = 100 * 1024 * 1024
+
+
+def validate_file_size(file_path: Path, max_size: int = MAX_INPUT_FILE_SIZE) -> None:
+    """
+    Перевіряє розмір файлу перед зчитуванням у пам'ять.
+
+    Raises:
+        ValueError: якщо файл перевищує допустимий розмір
+    """
+    file_size = file_path.stat().st_size
+    if file_size > max_size:
+        max_mb = max_size / (1024 * 1024)
+        actual_mb = file_size / (1024 * 1024)
+        raise ValueError(
+            f"File {file_path.name} ({actual_mb:.1f} MB) exceeds maximum "
+            f"allowed size ({max_mb:.0f} MB)"
+        )
+
 
 # ============================================================================
 # ДОПОМІЖНІ ФУНКЦІЇ (БАЗОВІ)
@@ -1290,10 +1320,9 @@ def mask_date(original: str, masking_dict: Dict, instance_counters: Dict) -> str
                 new_date = datetime(2035, 12, 31) - timedelta(days=random.randint(0, 365))
 
             masked = new_date.strftime("%d.%m.%Y")
-        except (ValueError, OverflowError):
-            return original
-        except Exception as e:
-            print(f"Warning: unexpected error parsing date '{original}': {e}")
+        except (ValueError, OverflowError, TypeError, AttributeError) as e:
+            if DEBUG_MODE:
+                print(f"Warning: error parsing date '{original}': {e}")
             return original
 
     return add_to_mapping(masking_dict, instance_counters, "date", original, masked)
@@ -2065,7 +2094,7 @@ def main():
                 loader = ConfigLoader(config_path)
                 config = loader.load()
                 print(f"Loaded config from {config_path}")
-            except Exception as e:
+            except (FileNotFoundError, PermissionError, ValueError, OSError) as e:
                 print(f"Warning: could not load config from {config_path}: {e}")
                 config = None
 
@@ -2090,7 +2119,7 @@ def main():
         try:
             logger = setup_logging(level=log_level, log_file=log_file)
             logger.info(f"Data Masking Script v{__version__} started")
-        except Exception as e:
+        except (ValueError, OSError, TypeError) as e:
             print(f"Warning: could not setup logging: {e}")
             logger = None
 
@@ -2140,7 +2169,11 @@ def main():
                         globals()[type_flag_map[t_lower]] = True
                     else:
                         print(f"Warning: unknown type '{t}', ignoring")
+                        if logger:
+                            logger.warning(f"Unknown selective type: {t}")
                 print(f"Selective masking: --only {' '.join(only_types)}")
+                if logger:
+                    logger.info(f"Selective masking: --only {' '.join(only_types)}")
 
             elif exclude_types:
                 for t in exclude_types:
@@ -2149,7 +2182,11 @@ def main():
                         globals()[type_flag_map[t_lower]] = False
                     else:
                         print(f"Warning: unknown type '{t}', ignoring")
+                        if logger:
+                            logger.warning(f"Unknown selective type: {t}")
                 print(f"Selective masking: --exclude {' '.join(exclude_types)}")
+                if logger:
+                    logger.info(f"Selective masking: --exclude {' '.join(exclude_types)}")
 
     # ================================================================
     # Apply config-based masking rules (lower priority than CLI --only/--exclude)
@@ -2252,12 +2289,14 @@ def main():
         logger.info(f"Processing {input_path}")
 
     try:
+        validate_file_size(input_path)
         with open(input_path, 'r', encoding='utf-8', newline='') as f:
             if is_json:
                 input_data = json.load(f)
             else:
                 input_data = f.read()
-    except Exception as e:
+    except (FileNotFoundError, PermissionError, OSError, json.JSONDecodeError,
+            UnicodeDecodeError, ValueError) as e:
         print(f"Error reading file: {e}")
         if logger:
             logger.error(f"Error reading file: {e}")
@@ -2370,6 +2409,8 @@ def main():
                         password = os.environ.get(password_env)
                         if not password:
                             print(f"Warning: environment variable '{password_env}' is not set or empty")
+                            if logger:
+                                logger.warning(f"Environment variable '{password_env}' is not set or empty")
                             password = generate_password_from_config(config)
                             print(f"  Generated password: {password}")
                     else:
@@ -2474,7 +2515,7 @@ def main():
             logger.info(f"Output: {output_path.absolute()}")
             logger.info(f"Mapping: {map_path.absolute()}")
 
-    except Exception as e:
+    except (OSError, PermissionError, json.JSONDecodeError, UnicodeEncodeError) as e:
         print(f"❌ Помилка збереження файлів: {e}")
         if logger:
             logger.error(f"Error saving files: {e}")
