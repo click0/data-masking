@@ -2017,7 +2017,8 @@ def generate_password_from_config(config) -> str:
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 
-def main():
+def _build_parser() -> argparse.ArgumentParser:
+    """Build and return the CLI argument parser."""
     parser = argparse.ArgumentParser(
         description=f"Data Masking Script v{__version__}",
         formatter_class=argparse.RawDescriptionHelpFormatter
@@ -2038,7 +2039,6 @@ def main():
     parser.add_argument("--log-file", type=str, default=None,
                         help="Path to log file")
 
-    # Selective filtering arguments
     if SELECTIVE_AVAILABLE:
         parser.add_argument("--only", nargs="+", metavar="TYPE",
                             help="Mask only these types")
@@ -2047,7 +2047,6 @@ def main():
         parser.add_argument("--list-types", action="store_true",
                             help="List available masking types and exit")
 
-    # Security arguments
     if SECURITY_AVAILABLE:
         parser.add_argument("--encrypt", action="store_true",
                             help="Encrypt the mapping file")
@@ -2056,205 +2055,195 @@ def main():
         parser.add_argument("--password-env", type=str, default=None,
                             help="Environment variable name containing the password")
 
-    # Re-masking arguments
     if REMASK_AVAILABLE:
         parser.add_argument("--re-mask", type=int, default=None, metavar="N",
                             help="Number of re-masking passes (2-10)")
 
-    args = parser.parse_args()
+    return parser
 
-    # ================================================================
-    # Handle --init-config
-    # ================================================================
-    if args.init_config:
-        generate_default_config("config.yaml")
-        print("Generated config.yaml")
-        return
 
-    # ================================================================
-    # Handle --list-types
-    # ================================================================
-    if SELECTIVE_AVAILABLE and getattr(args, 'list_types', False):
-        types = sorted(get_available_types())
-        print("Available masking types:")
-        for t in types:
-            print(f"  - {t}")
-        return
+def _load_config(args) -> Optional[Any]:
+    """Load configuration from YAML file if available.
 
-    # ================================================================
-    # Config loading with priority: CLI args > config file > defaults
-    # ================================================================
-    config = None
-    if CONFIG_AVAILABLE:
-        config_path = args.config
-        if config_path is None and Path("config.yaml").exists():
-            config_path = "config.yaml"
-        if config_path:
-            try:
-                loader = ConfigLoader(config_path)
-                config = loader.load()
-                print(f"Loaded config from {config_path}")
-            except (FileNotFoundError, PermissionError, ValueError, OSError) as e:
-                print(f"Warning: could not load config from {config_path}: {e}")
-                config = None
+    Returns:
+        Config object or None.
+    """
+    if not CONFIG_AVAILABLE:
+        return None
 
-    # ================================================================
-    # Structured logging setup
-    # ================================================================
-    logger = None
-    if LOGGING_AVAILABLE:
-        log_level = args.log_level
-        log_file = args.log_file
+    config_path = args.config
+    if config_path is None and Path("config.yaml").exists():
+        config_path = "config.yaml"
+    if not config_path:
+        return None
 
-        # Config file values as fallback
-        if config is not None:
-            if log_level is None:
-                log_level = getattr(getattr(config, 'logging', None), 'level', None)
-            if log_file is None:
-                log_file = getattr(getattr(config, 'logging', None), 'file', None)
+    try:
+        loader = ConfigLoader(config_path)
+        config = loader.load()
+        print(f"Loaded config from {config_path}")
+        return config
+    except (FileNotFoundError, PermissionError, ValueError, OSError) as e:
+        print(f"Warning: could not load config from {config_path}: {e}")
+        return None
 
+
+def _setup_logger(args, config) -> Optional[Any]:
+    """Set up structured logging.
+
+    Returns:
+        Logger instance or None.
+    """
+    if not LOGGING_AVAILABLE:
+        return None
+
+    log_level = args.log_level
+    log_file = args.log_file
+
+    if config is not None:
         if log_level is None:
-            log_level = "INFO"
+            log_level = getattr(getattr(config, 'logging', None), 'level', None)
+        if log_file is None:
+            log_file = getattr(getattr(config, 'logging', None), 'file', None)
 
-        try:
-            logger = setup_logging(level=log_level, log_file=log_file)
-            logger.info(f"Data Masking Script v{__version__} started")
-        except (ValueError, OSError, TypeError) as e:
-            print(f"Warning: could not setup logging: {e}")
-            logger = None
+    if log_level is None:
+        log_level = "INFO"
 
-    global DEBUG_MODE
-    if args.debug:
-        DEBUG_MODE = True
+    try:
+        logger = setup_logging(level=log_level, log_file=log_file)
+        logger.info(f"Data Masking Script v{__version__} started")
+        return logger
+    except (ValueError, OSError, TypeError) as e:
+        print(f"Warning: could not setup logging: {e}")
+        return None
 
-    # ================================================================
-    # Apply selective filtering (--only / --exclude)
-    # ================================================================
+
+def _apply_selective_filters(args, logger) -> None:
+    """Apply --only / --exclude selective masking filters.
+
+    Modifies global MASK_* variables in-place.
+    """
     global MASK_NAMES, MASK_IPN, MASK_PASSPORT, MASK_MILITARY_ID, MASK_RANKS
     global MASK_BRIGADES, MASK_UNITS, MASK_ORDERS, MASK_BR_NUMBERS, MASK_DATES
 
-    if SELECTIVE_AVAILABLE:
-        only_types = getattr(args, 'only', None)
-        exclude_types = getattr(args, 'exclude', None)
-
-        if only_types or exclude_types:
-            type_flag_map = {
-                "names": "MASK_NAMES",
-                "ipn": "MASK_IPN",
-                "passport": "MASK_PASSPORT",
-                "military_id": "MASK_MILITARY_ID",
-                "ranks": "MASK_RANKS",
-                "brigades": "MASK_BRIGADES",
-                "units": "MASK_UNITS",
-                "orders": "MASK_ORDERS",
-                "br_numbers": "MASK_BR_NUMBERS",
-                "dates": "MASK_DATES",
-            }
-
-            if only_types:
-                # Disable all, then enable only specified
-                MASK_NAMES = False
-                MASK_IPN = False
-                MASK_PASSPORT = False
-                MASK_MILITARY_ID = False
-                MASK_RANKS = False
-                MASK_BRIGADES = False
-                MASK_UNITS = False
-                MASK_ORDERS = False
-                MASK_BR_NUMBERS = False
-                MASK_DATES = False
-                for t in only_types:
-                    t_lower = t.lower()
-                    if t_lower in type_flag_map:
-                        globals()[type_flag_map[t_lower]] = True
-                    else:
-                        print(f"Warning: unknown type '{t}', ignoring")
-                        if logger:
-                            logger.warning(f"Unknown selective type: {t}")
-                print(f"Selective masking: --only {' '.join(only_types)}")
-                if logger:
-                    logger.info(f"Selective masking: --only {' '.join(only_types)}")
-
-            elif exclude_types:
-                for t in exclude_types:
-                    t_lower = t.lower()
-                    if t_lower in type_flag_map:
-                        globals()[type_flag_map[t_lower]] = False
-                    else:
-                        print(f"Warning: unknown type '{t}', ignoring")
-                        if logger:
-                            logger.warning(f"Unknown selective type: {t}")
-                print(f"Selective masking: --exclude {' '.join(exclude_types)}")
-                if logger:
-                    logger.info(f"Selective masking: --exclude {' '.join(exclude_types)}")
-
-    # ================================================================
-    # Apply config-based masking rules (lower priority than CLI --only/--exclude)
-    # ================================================================
-    if config is not None:
-        masking_rules = getattr(config, 'masking_rules', None)
-        if masking_rules is not None:
-            # Only apply config rules if --only/--exclude were NOT specified via CLI
-            only_types = getattr(args, 'only', None) if SELECTIVE_AVAILABLE else None
-            exclude_types = getattr(args, 'exclude', None) if SELECTIVE_AVAILABLE else None
-
-            if not only_types and not exclude_types:
-                config_rules_map = {
-                    'enable_ranks': 'MASK_RANKS',
-                    'enable_names': 'MASK_NAMES',
-                    'enable_ipn': 'MASK_IPN',
-                    'enable_passport': 'MASK_PASSPORT',
-                    'enable_military_id': 'MASK_MILITARY_ID',
-                    'enable_dates': 'MASK_DATES',
-                    'enable_brigades': 'MASK_BRIGADES',
-                    'enable_units': 'MASK_UNITS',
-                    'enable_orders': 'MASK_ORDERS',
-                    'enable_br_numbers': 'MASK_BR_NUMBERS',
-                }
-                for config_key, global_var in config_rules_map.items():
-                    value = getattr(masking_rules, config_key, None)
-                    if value is not None:
-                        globals()[global_var] = bool(value)
-                        if logger:
-                            logger.debug(f"Config: {config_key} = {value}")
-
-    # ================================================================
-    # Apply system settings from config
-    # ================================================================
-    if config is not None:
-        system_cfg = getattr(config, 'system', None)
-        if system_cfg is not None:
-            cfg_debug = getattr(system_cfg, 'debug_mode', None)
-            if cfg_debug is not None and not args.debug:
-                DEBUG_MODE = bool(cfg_debug)
-
-            cfg_preserve_case = getattr(system_cfg, 'preserve_case', None)
-            if cfg_preserve_case is not None:
-                global PRESERVE_CASE
-                PRESERVE_CASE = bool(cfg_preserve_case)
-
-            cfg_hash = getattr(system_cfg, 'hash_algorithm', None)
-            if cfg_hash is not None:
-                global HASH_ALGORITHM
-                HASH_ALGORITHM = str(cfg_hash)
-
-    if logger:
-        logger.info(f"Masking flags: NAMES={MASK_NAMES}, IPN={MASK_IPN}, "
-                     f"PASSPORT={MASK_PASSPORT}, MILITARY_ID={MASK_MILITARY_ID}, "
-                     f"RANKS={MASK_RANKS}, BRIGADES={MASK_BRIGADES}, "
-                     f"UNITS={MASK_UNITS}, ORDERS={MASK_ORDERS}, "
-                     f"BR_NUMBERS={MASK_BR_NUMBERS}, DATES={MASK_DATES}")
-
-    # ================================================================
-    # Input file handling
-    # ================================================================
-    input_path = Path(args.input)
-    if not input_path.exists():
-        print(f"Error: {args.input} not found")
-        if logger:
-            logger.error(f"Input file not found: {args.input}")
+    if not SELECTIVE_AVAILABLE:
         return
 
+    only_types = getattr(args, 'only', None)
+    exclude_types = getattr(args, 'exclude', None)
+
+    if not only_types and not exclude_types:
+        return
+
+    type_flag_map = {
+        "names": "MASK_NAMES",
+        "ipn": "MASK_IPN",
+        "passport": "MASK_PASSPORT",
+        "military_id": "MASK_MILITARY_ID",
+        "ranks": "MASK_RANKS",
+        "brigades": "MASK_BRIGADES",
+        "units": "MASK_UNITS",
+        "orders": "MASK_ORDERS",
+        "br_numbers": "MASK_BR_NUMBERS",
+        "dates": "MASK_DATES",
+    }
+
+    if only_types:
+        MASK_NAMES = False
+        MASK_IPN = False
+        MASK_PASSPORT = False
+        MASK_MILITARY_ID = False
+        MASK_RANKS = False
+        MASK_BRIGADES = False
+        MASK_UNITS = False
+        MASK_ORDERS = False
+        MASK_BR_NUMBERS = False
+        MASK_DATES = False
+        for t in only_types:
+            t_lower = t.lower()
+            if t_lower in type_flag_map:
+                globals()[type_flag_map[t_lower]] = True
+            else:
+                print(f"Warning: unknown type '{t}', ignoring")
+                if logger:
+                    logger.warning(f"Unknown selective type: {t}")
+        print(f"Selective masking: --only {' '.join(only_types)}")
+        if logger:
+            logger.info(f"Selective masking: --only {' '.join(only_types)}")
+
+    elif exclude_types:
+        for t in exclude_types:
+            t_lower = t.lower()
+            if t_lower in type_flag_map:
+                globals()[type_flag_map[t_lower]] = False
+            else:
+                print(f"Warning: unknown type '{t}', ignoring")
+                if logger:
+                    logger.warning(f"Unknown selective type: {t}")
+        print(f"Selective masking: --exclude {' '.join(exclude_types)}")
+        if logger:
+            logger.info(f"Selective masking: --exclude {' '.join(exclude_types)}")
+
+
+def _apply_config_settings(args, config, logger) -> None:
+    """Apply config-based masking rules and system settings.
+
+    Modifies global variables (MASK_*, PRESERVE_CASE, HASH_ALGORITHM,
+    DEBUG_MODE) as needed. Config rules have lower priority than CLI
+    --only/--exclude.
+    """
+    global DEBUG_MODE, PRESERVE_CASE, HASH_ALGORITHM
+
+    if config is None:
+        return
+
+    # Masking rules from config (only if --only/--exclude not specified)
+    masking_rules = getattr(config, 'masking_rules', None)
+    if masking_rules is not None:
+        only_types = getattr(args, 'only', None) if SELECTIVE_AVAILABLE else None
+        exclude_types = getattr(args, 'exclude', None) if SELECTIVE_AVAILABLE else None
+
+        if not only_types and not exclude_types:
+            config_rules_map = {
+                'enable_ranks': 'MASK_RANKS',
+                'enable_names': 'MASK_NAMES',
+                'enable_ipn': 'MASK_IPN',
+                'enable_passport': 'MASK_PASSPORT',
+                'enable_military_id': 'MASK_MILITARY_ID',
+                'enable_dates': 'MASK_DATES',
+                'enable_brigades': 'MASK_BRIGADES',
+                'enable_units': 'MASK_UNITS',
+                'enable_orders': 'MASK_ORDERS',
+                'enable_br_numbers': 'MASK_BR_NUMBERS',
+            }
+            for config_key, global_var in config_rules_map.items():
+                value = getattr(masking_rules, config_key, None)
+                if value is not None:
+                    globals()[global_var] = bool(value)
+                    if logger:
+                        logger.debug(f"Config: {config_key} = {value}")
+
+    # System settings from config
+    system_cfg = getattr(config, 'system', None)
+    if system_cfg is not None:
+        cfg_debug = getattr(system_cfg, 'debug_mode', None)
+        if cfg_debug is not None and not args.debug:
+            DEBUG_MODE = bool(cfg_debug)
+
+        cfg_preserve_case = getattr(system_cfg, 'preserve_case', None)
+        if cfg_preserve_case is not None:
+            PRESERVE_CASE = bool(cfg_preserve_case)
+
+        cfg_hash = getattr(system_cfg, 'hash_algorithm', None)
+        if cfg_hash is not None:
+            HASH_ALGORITHM = str(cfg_hash)
+
+
+def _prepare_output_paths(args, input_path: Path) -> Tuple[Path, Path, Path, str, int]:
+    """Determine output, mapping, and report file paths.
+
+    Returns:
+        Tuple of (output_path, map_path, report_path, timestamp, random_suffix)
+    """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     random_suffix = random.randint(100, 999)
     is_json = input_path.suffix.lower() == '.json'
@@ -2266,6 +2255,354 @@ def main():
 
     map_path = Path(f"masking_map_{timestamp}_{random_suffix}.json")
     report_path = Path(f"masking_report_{timestamp}_{random_suffix}.txt")
+
+    return output_path, map_path, report_path, timestamp, random_suffix
+
+
+def _read_input(input_path: Path, is_json: bool, logger):
+    """Read input file (JSON or text).
+
+    Returns:
+        Parsed data or None on error.
+    """
+    try:
+        validate_file_size(input_path)
+        with open(input_path, 'r', encoding='utf-8', newline='') as f:
+            if is_json:
+                return json.load(f)
+            else:
+                return f.read()
+    except (FileNotFoundError, PermissionError, OSError, json.JSONDecodeError,
+            UnicodeDecodeError, ValueError) as e:
+        print(f"Error reading file: {e}")
+        if logger:
+            logger.error(f"Error reading file: {e}")
+        return None
+
+
+def _run_masking(input_data, is_json: bool, masking_dict: Dict,
+                 instance_counters: Dict, args, logger,
+                 timestamp: str, random_suffix: int) -> Tuple[Any, int]:
+    """Execute single-pass or multi-pass masking.
+
+    Returns:
+        Tuple of (masked_data, total_unique_count)
+    """
+    re_mask_passes = getattr(args, 're_mask', None)
+
+    if re_mask_passes is not None:
+        if re_mask_passes < 2:
+            print("Warning: --re-mask requires at least 2 passes, using single-pass mode")
+            if logger:
+                logger.warning("--re-mask value < 2, falling back to single-pass")
+            re_mask_passes = None
+        elif re_mask_passes > 10:
+            print(f"Warning: --re-mask capped at 10 passes (was {re_mask_passes})")
+            if logger:
+                logger.warning(f"--re-mask capped at 10 (requested {re_mask_passes})")
+            re_mask_passes = 10
+
+    if REMASK_AVAILABLE and re_mask_passes and re_mask_passes > 1:
+        return _run_multi_pass_masking(
+            input_data, is_json, masking_dict, args, logger,
+            re_mask_passes, timestamp, random_suffix
+        )
+    else:
+        return _run_single_pass_masking(
+            input_data, is_json, masking_dict, instance_counters, logger
+        )
+
+
+def _run_multi_pass_masking(input_data, is_json: bool, masking_dict: Dict,
+                            args, logger, re_mask_passes: int,
+                            timestamp: str, random_suffix: int) -> Tuple[Any, int]:
+    """Execute multi-pass re-masking with chain tracking."""
+    if logger:
+        logger.info(f"Starting multi-pass re-masking ({re_mask_passes} passes)")
+
+    chain = MappingChain()
+    masked_data = input_data
+
+    for pass_num in range(1, re_mask_passes + 1):
+        print(f"  Прохід {pass_num}/{re_mask_passes}...")
+        if logger:
+            logger.info(f"Re-masking pass {pass_num}/{re_mask_passes}")
+
+        pass_dict = make_empty_masking_dict(__version__)
+        pass_counters = {}
+
+        if is_json:
+            masked_data = mask_json_recursive(masked_data, pass_dict, pass_counters)
+        else:
+            masked_data = mask_text_context_aware(masked_data, pass_dict, pass_counters)
+
+        pass_dict["instance_tracking"] = pass_counters
+        for category, mappings in pass_dict["mappings"].items():
+            pass_dict["statistics"][category] = len(mappings)
+        chain.add_pass(pass_dict)
+
+    chain_path = Path(f"masking_chain_{timestamp}_{random_suffix}.json")
+    chain.save(chain_path)
+    print(f"  Chain mapping ({re_mask_passes} passes): {chain_path}")
+    if logger:
+        logger.info(f"Chain mapping saved to {chain_path}")
+
+    masking_dict["instance_tracking"] = {}
+    total_unique = 0
+    for p in chain.passes:
+        for cat, count in p.get("statistics", {}).items():
+            masking_dict["statistics"][cat] = masking_dict["statistics"].get(cat, 0) + count
+            if cat != "total_masked":
+                total_unique += count
+    masking_dict["statistics"]["total_masked"] = total_unique
+
+    return masked_data, total_unique
+
+
+def _run_single_pass_masking(input_data, is_json: bool, masking_dict: Dict,
+                             instance_counters: Dict, logger) -> Tuple[Any, int]:
+    """Execute single-pass masking."""
+    if logger:
+        logger.info("Starting single-pass masking")
+
+    if is_json:
+        masked_data = mask_json_recursive(input_data, masking_dict, instance_counters)
+    else:
+        masked_data = mask_text_context_aware(input_data, masking_dict, instance_counters)
+
+    masking_dict["instance_tracking"] = instance_counters
+
+    total_unique = 0
+    for category, mappings in masking_dict["mappings"].items():
+        count = len(mappings)
+        masking_dict["statistics"][category] = count
+        total_unique += count
+    masking_dict["statistics"]["total_masked"] = total_unique
+
+    return masked_data, total_unique
+
+
+def _handle_encryption(args, config, masking_dict: Dict, map_path: Path,
+                       logger) -> None:
+    """Encrypt the mapping file if --encrypt is requested."""
+    if not SECURITY_AVAILABLE or not getattr(args, 'encrypt', False):
+        return
+
+    enc_path = map_path.with_suffix('.enc')
+    password = getattr(args, 'password', None)
+
+    if not password:
+        password_env = getattr(args, 'password_env', None)
+        if password_env:
+            password = os.environ.get(password_env)
+            if not password:
+                print(f"Warning: environment variable '{password_env}' is not set or empty")
+                if logger:
+                    logger.warning(f"Environment variable '{password_env}' is not set or empty")
+                password = generate_password_from_config(config)
+                print(f"  Generated password: {password}")
+        else:
+            password = generate_password_from_config(config)
+            print(f"  Generated password: {password}")
+
+    manager = MappingSecurityManager()
+    manager.encrypt_mapping(masking_dict, password, enc_path)
+    print(f"  Encrypted mapping: {enc_path}")
+    if logger:
+        logger.info(f"Mapping encrypted to {enc_path}")
+
+
+def _write_report(report_path: Path, masking_dict: Dict, input_path: Path,
+                  output_path: Path, is_json: bool, total_unique: int,
+                  re_mask_passes, args, config) -> None:
+    """Generate the detailed masking report file."""
+    with open(report_path, 'w', encoding='utf-8') as f:
+        f.write("=" * 60 + "\n")
+        f.write("ЗВІТ МАСКУВАННЯ ДАНИХ\n")
+        f.write("=" * 60 + "\n\n")
+        f.write(f"Версія: {__version__}\n")
+        f.write(f"Дата та час: {masking_dict['timestamp']}\n")
+        f.write(f"Вхідний файл: {input_path}\n")
+        f.write(f"Вихідний файл: {output_path}\n")
+        f.write(f"Формат: {'JSON' if is_json else 'TXT'}\n")
+
+        f.write("\n" + "-" * 60 + "\n")
+        f.write("КОНФІГУРАЦІЯ МАСКУВАННЯ\n")
+        f.write("-" * 60 + "\n\n")
+        f.write(f"  Імена (MASK_NAMES): {MASK_NAMES}\n")
+        f.write(f"  ІПН (MASK_IPN): {MASK_IPN}\n")
+        f.write(f"  Паспорти (MASK_PASSPORT): {MASK_PASSPORT}\n")
+        f.write(f"  Військові ID (MASK_MILITARY_ID): {MASK_MILITARY_ID}\n")
+        f.write(f"  Звання (MASK_RANKS): {MASK_RANKS}\n")
+        f.write(f"  Бригади (MASK_BRIGADES): {MASK_BRIGADES}\n")
+        f.write(f"  Частини (MASK_UNITS): {MASK_UNITS}\n")
+        f.write(f"  Накази (MASK_ORDERS): {MASK_ORDERS}\n")
+        f.write(f"  БР номери (MASK_BR_NUMBERS): {MASK_BR_NUMBERS}\n")
+        f.write(f"  Дати (MASK_DATES): {MASK_DATES}\n")
+        f.write(f"  Збереження регістру (PRESERVE_CASE): {PRESERVE_CASE}\n")
+        f.write(f"  Алгоритм хешування: {HASH_ALGORITHM}\n")
+
+        if re_mask_passes and re_mask_passes > 1:
+            f.write(f"\n  Режим: повторне маскування ({re_mask_passes} проходів)\n")
+        else:
+            f.write(f"\n  Режим: одинарне маскування\n")
+
+        if config is not None:
+            f.write(f"  Конфігурація: {args.config or 'config.yaml'}\n")
+
+        f.write("\n" + "-" * 60 + "\n")
+        f.write("СТАТИСТИКА МАСКУВАННЯ\n")
+        f.write("-" * 60 + "\n\n")
+        f.write(f"Загальна кількість УНІКАЛЬНИХ замаскованих елементів: {total_unique}\n\n")
+
+        for key, value in sorted(masking_dict["statistics"].items()):
+            if key != "total_masked" and value > 0:
+                f.write(f"  • {key}: {value} (унікальних оригіналів)\n")
+
+        f.write("\n" + "=" * 60 + "\n")
+        f.write("СТАТИСТИКА ВХОДЖЕНЬ (Instance Tracking)\n")
+        f.write("-" * 60 + "\n\n")
+
+        sorted_report_instances = sorted(
+            masking_dict["instance_tracking"].items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+        for masked_val, count in sorted_report_instances:
+            f.write(f"  • '{masked_val}': {count} входжень\n")
+
+        f.write("\n" + "=" * 60 + "\n")
+        f.write(f"Кінець звіту. Всього записів у instance tracking: "
+                f"{len(masking_dict['instance_tracking'])}\n")
+        f.write("=" * 60 + "\n")
+
+
+def _print_summary(masking_dict: Dict, total_unique: int,
+                   output_path: Path, map_path: Path,
+                   report_path: Optional[Path], logger) -> None:
+    """Print masking summary to console."""
+    print()
+    print("✅ Маскування завершено успішно!")
+    print()
+    print(f"📊 Статистика:")
+    print(f"   Загальна кількість УНІКАЛЬНИХ замаскованих елементів: {total_unique}")
+    for key, value in sorted(masking_dict["statistics"].items()):
+        if key != "total_masked" and value > 0:
+            print(f"   • {key}: {value} (унікальних оригіналів)")
+    print()
+    print(f"   Статистика входжень (Instance Tracking):")
+    sorted_instances = sorted(masking_dict["instance_tracking"].items(), key=lambda x: x[1], reverse=True)
+    for masked_val, count in sorted_instances[:10]:
+        print(f"   • '{masked_val}': {count} входжень")
+    if len(sorted_instances) > 10:
+        print(f"   ... та ще {len(sorted_instances) - 10} записів")
+
+    print()
+    print(f"📁 Файли збережено:")
+    print(f"   • Замасковані дані: {output_path.absolute()}")
+    print(f"   • Словник замін: {map_path.absolute()}")
+    if report_path:
+        print(f"   • Звіт: {report_path.absolute()}")
+
+    if logger:
+        logger.info(f"Masking completed: {total_unique} unique items masked")
+        logger.info(f"Output: {output_path.absolute()}")
+        logger.info(f"Mapping: {map_path.absolute()}")
+
+
+def _save_results(masked_data, is_json: bool, masking_dict: Dict,
+                  output_path: Path, map_path: Path, report_path: Path,
+                  total_unique: int, args, config, logger) -> None:
+    """Save masked output, mapping, optional encryption, and report."""
+    re_mask_passes = getattr(args, 're_mask', None)
+
+    try:
+        with open(output_path, 'w', encoding='utf-8', newline='') as f:
+            if is_json:
+                json.dump(masked_data, f, ensure_ascii=False, indent=2)
+            else:
+                f.write(masked_data)
+
+        # Save mapping (single-pass only; chain saves its own file)
+        if not (REMASK_AVAILABLE and re_mask_passes and re_mask_passes > 1):
+            with open(map_path, 'w', encoding='utf-8') as f:
+                json.dump(masking_dict, f, ensure_ascii=False, indent=2)
+
+            _handle_encryption(args, config, masking_dict, map_path, logger)
+
+        # Generate report
+        if not args.no_report:
+            _write_report(report_path, masking_dict, Path(args.input),
+                          output_path, is_json, total_unique,
+                          re_mask_passes, args, config)
+
+        _print_summary(
+            masking_dict, total_unique, output_path, map_path,
+            report_path if not args.no_report else None, logger
+        )
+
+    except (OSError, PermissionError, json.JSONDecodeError, UnicodeEncodeError) as e:
+        print(f"❌ Помилка збереження файлів: {e}")
+        if logger:
+            logger.error(f"Error saving files: {e}")
+
+
+def main():
+    parser = _build_parser()
+    args = parser.parse_args()
+
+    # ================================================================
+    # Handle --init-config (early exit)
+    # ================================================================
+    if args.init_config:
+        generate_default_config("config.yaml")
+        print("Generated config.yaml")
+        return
+
+    # ================================================================
+    # Handle --list-types (early exit)
+    # ================================================================
+    if SELECTIVE_AVAILABLE and getattr(args, 'list_types', False):
+        types = sorted(get_available_types())
+        print("Available masking types:")
+        for t in types:
+            print(f"  - {t}")
+        return
+
+    # ================================================================
+    # Setup: config, logging, filters, system settings
+    # ================================================================
+    config = _load_config(args)
+    logger = _setup_logger(args, config)
+
+    global DEBUG_MODE
+    if args.debug:
+        DEBUG_MODE = True
+
+    _apply_selective_filters(args, logger)
+    _apply_config_settings(args, config, logger)
+
+    if logger:
+        logger.info(f"Masking flags: NAMES={MASK_NAMES}, IPN={MASK_IPN}, "
+                     f"PASSPORT={MASK_PASSPORT}, MILITARY_ID={MASK_MILITARY_ID}, "
+                     f"RANKS={MASK_RANKS}, BRIGADES={MASK_BRIGADES}, "
+                     f"UNITS={MASK_UNITS}, ORDERS={MASK_ORDERS}, "
+                     f"BR_NUMBERS={MASK_BR_NUMBERS}, DATES={MASK_DATES}")
+
+    # ================================================================
+    # Input file validation and path setup
+    # ================================================================
+    input_path = Path(args.input)
+    if not input_path.exists():
+        print(f"Error: {args.input} not found")
+        if logger:
+            logger.error(f"Input file not found: {args.input}")
+        return
+
+    output_path, map_path, report_path, timestamp, random_suffix = \
+        _prepare_output_paths(args, input_path)
+
+    is_json = input_path.suffix.lower() == '.json'
 
     masking_dict = {
         "version": __version__,
@@ -2282,243 +2619,35 @@ def main():
     }
     instance_counters = {}
 
+    # ================================================================
+    # Read input
+    # ================================================================
     print(f"Data Masking Script v{__version__}")
     print(f"Processing {input_path}...")
     print(f"Output format: {'JSON' if is_json else 'TXT'}")
     if logger:
         logger.info(f"Processing {input_path}")
 
-    try:
-        validate_file_size(input_path)
-        with open(input_path, 'r', encoding='utf-8', newline='') as f:
-            if is_json:
-                input_data = json.load(f)
-            else:
-                input_data = f.read()
-    except (FileNotFoundError, PermissionError, OSError, json.JSONDecodeError,
-            UnicodeDecodeError, ValueError) as e:
-        print(f"Error reading file: {e}")
-        if logger:
-            logger.error(f"Error reading file: {e}")
+    input_data = _read_input(input_path, is_json, logger)
+    if input_data is None:
         return
 
     # ================================================================
-    # Masking: multi-pass re-masking or single-pass
+    # Run masking pipeline
     # ================================================================
-    re_mask_passes = getattr(args, 're_mask', None)
-
-    # Validate re-mask passes range
-    if re_mask_passes is not None:
-        if re_mask_passes < 2:
-            print("Warning: --re-mask requires at least 2 passes, using single-pass mode")
-            if logger:
-                logger.warning("--re-mask value < 2, falling back to single-pass")
-            re_mask_passes = None
-        elif re_mask_passes > 10:
-            print(f"Warning: --re-mask capped at 10 passes (was {re_mask_passes})")
-            if logger:
-                logger.warning(f"--re-mask capped at 10 (requested {re_mask_passes})")
-            re_mask_passes = 10
-
-    if REMASK_AVAILABLE and re_mask_passes and re_mask_passes > 1:
-        # Multi-pass re-masking
-        if logger:
-            logger.info(f"Starting multi-pass re-masking ({re_mask_passes} passes)")
-
-        chain = MappingChain()
-        masked_data = input_data
-
-        for pass_num in range(1, re_mask_passes + 1):
-            print(f"  Прохід {pass_num}/{re_mask_passes}...")
-            if logger:
-                logger.info(f"Re-masking pass {pass_num}/{re_mask_passes}")
-
-            pass_dict = make_empty_masking_dict(__version__)
-            pass_counters = {}
-
-            if is_json:
-                masked_data = mask_json_recursive(masked_data, pass_dict, pass_counters)
-            else:
-                masked_data = mask_text_context_aware(masked_data, pass_dict, pass_counters)
-
-            pass_dict["instance_tracking"] = pass_counters
-            for category, mappings in pass_dict["mappings"].items():
-                pass_dict["statistics"][category] = len(mappings)
-            chain.add_pass(pass_dict)
-
-        # Save chain mapping
-        chain_path = Path(f"masking_chain_{timestamp}_{random_suffix}.json")
-        chain.save(chain_path)
-        print(f"  Chain mapping ({re_mask_passes} passes): {chain_path}")
-        if logger:
-            logger.info(f"Chain mapping saved to {chain_path}")
-
-        # Also save combined stats to masking_dict for report
-        masking_dict["instance_tracking"] = {}
-        total_unique = 0
-        for p in chain.passes:
-            for cat, count in p.get("statistics", {}).items():
-                masking_dict["statistics"][cat] = masking_dict["statistics"].get(cat, 0) + count
-                if cat != "total_masked":
-                    total_unique += count
-        masking_dict["statistics"]["total_masked"] = total_unique
-    else:
-        # Single-pass masking (original logic)
-        if logger:
-            logger.info("Starting single-pass masking")
-
-        if is_json:
-            masked_data = mask_json_recursive(input_data, masking_dict, instance_counters)
-        else:
-            masked_data = mask_text_context_aware(input_data, masking_dict, instance_counters)
-
-        # ФОРМУВАННЯ ПОВНОЇ СТРУКТУРИ JSON
-        masking_dict["instance_tracking"] = instance_counters
-
-        total_unique = 0
-        for category, mappings in masking_dict["mappings"].items():
-            count = len(mappings)
-            masking_dict["statistics"][category] = count
-            total_unique += count
-        masking_dict["statistics"]["total_masked"] = total_unique
+    masked_data, total_unique = _run_masking(
+        input_data, is_json, masking_dict, instance_counters,
+        args, logger, timestamp, random_suffix
+    )
 
     # ================================================================
     # Save results
     # ================================================================
-    try:
-        # Збереження результату
-        with open(output_path, 'w', encoding='utf-8', newline='') as f:
-            if is_json:
-                json.dump(masked_data, f, ensure_ascii=False, indent=2)
-            else:
-                f.write(masked_data)
-
-        # Збереження мапи (single-pass only; chain saves its own file)
-        if not (REMASK_AVAILABLE and re_mask_passes and re_mask_passes > 1):
-            with open(map_path, 'w', encoding='utf-8') as f:
-                json.dump(masking_dict, f, ensure_ascii=False, indent=2)
-
-            # Encrypt mapping if requested
-            if SECURITY_AVAILABLE and getattr(args, 'encrypt', False):
-                enc_path = map_path.with_suffix('.enc')
-                # Password priority: --password > --password-env > auto-generate
-                password = getattr(args, 'password', None)
-                if not password:
-                    password_env = getattr(args, 'password_env', None)
-                    if password_env:
-                        password = os.environ.get(password_env)
-                        if not password:
-                            print(f"Warning: environment variable '{password_env}' is not set or empty")
-                            if logger:
-                                logger.warning(f"Environment variable '{password_env}' is not set or empty")
-                            password = generate_password_from_config(config)
-                            print(f"  Generated password: {password}")
-                    else:
-                        password = generate_password_from_config(config)
-                        print(f"  Generated password: {password}")
-                manager = MappingSecurityManager()
-                manager.encrypt_mapping(masking_dict, password, enc_path)
-                print(f"  Encrypted mapping: {enc_path}")
-                if logger:
-                    logger.info(f"Mapping encrypted to {enc_path}")
-
-        # ГЕНЕРАЦІЯ ДЕТАЛЬНОГО ЗВІТУ
-        if not args.no_report:
-            with open(report_path, 'w', encoding='utf-8') as f:
-                f.write("=" * 60 + "\n")
-                f.write("ЗВІТ МАСКУВАННЯ ДАНИХ\n")
-                f.write("=" * 60 + "\n\n")
-                f.write(f"Версія: {__version__}\n")
-                f.write(f"Дата та час: {masking_dict['timestamp']}\n")
-                f.write(f"Вхідний файл: {input_path}\n")
-                f.write(f"Вихідний файл: {output_path}\n")
-                f.write(f"Формат: {'JSON' if is_json else 'TXT'}\n")
-
-                # Конфігурація маскування
-                f.write("\n" + "-" * 60 + "\n")
-                f.write("КОНФІГУРАЦІЯ МАСКУВАННЯ\n")
-                f.write("-" * 60 + "\n\n")
-                f.write(f"  Імена (MASK_NAMES): {MASK_NAMES}\n")
-                f.write(f"  ІПН (MASK_IPN): {MASK_IPN}\n")
-                f.write(f"  Паспорти (MASK_PASSPORT): {MASK_PASSPORT}\n")
-                f.write(f"  Військові ID (MASK_MILITARY_ID): {MASK_MILITARY_ID}\n")
-                f.write(f"  Звання (MASK_RANKS): {MASK_RANKS}\n")
-                f.write(f"  Бригади (MASK_BRIGADES): {MASK_BRIGADES}\n")
-                f.write(f"  Частини (MASK_UNITS): {MASK_UNITS}\n")
-                f.write(f"  Накази (MASK_ORDERS): {MASK_ORDERS}\n")
-                f.write(f"  БР номери (MASK_BR_NUMBERS): {MASK_BR_NUMBERS}\n")
-                f.write(f"  Дати (MASK_DATES): {MASK_DATES}\n")
-                f.write(f"  Збереження регістру (PRESERVE_CASE): {PRESERVE_CASE}\n")
-                f.write(f"  Алгоритм хешування: {HASH_ALGORITHM}\n")
-
-                if re_mask_passes and re_mask_passes > 1:
-                    f.write(f"\n  Режим: повторне маскування ({re_mask_passes} проходів)\n")
-                else:
-                    f.write(f"\n  Режим: одинарне маскування\n")
-
-                if config is not None:
-                    f.write(f"  Конфігурація: {args.config or 'config.yaml'}\n")
-
-                f.write("\n" + "-" * 60 + "\n")
-                f.write("СТАТИСТИКА МАСКУВАННЯ\n")
-                f.write("-" * 60 + "\n\n")
-                f.write(f"Загальна кількість УНІКАЛЬНИХ замаскованих елементів: {total_unique}\n\n")
-
-                for key, value in sorted(masking_dict["statistics"].items()):
-                    if key != "total_masked" and value > 0:
-                        f.write(f"  • {key}: {value} (унікальних оригіналів)\n")
-
-                f.write("\n" + "=" * 60 + "\n")
-                f.write("СТАТИСТИКА ВХОДЖЕНЬ (Instance Tracking)\n")
-                f.write("-" * 60 + "\n\n")
-
-                sorted_report_instances = sorted(
-                    masking_dict["instance_tracking"].items(),
-                    key=lambda x: x[1],
-                    reverse=True
-                )
-                for masked_val, count in sorted_report_instances:
-                    f.write(f"  • '{masked_val}': {count} входжень\n")
-
-                f.write("\n" + "=" * 60 + "\n")
-                f.write(f"Кінець звіту. Всього записів у instance tracking: "
-                        f"{len(masking_dict['instance_tracking'])}\n")
-                f.write("=" * 60 + "\n")
-
-        # ДЕТАЛЬНИЙ ВИВІД У КОНСОЛЬ
-        print()
-        print("✅ Маскування завершено успішно!")
-        print()
-        print(f"📊 Статистика:")
-        print(f"   Загальна кількість УНІКАЛЬНИХ замаскованих елементів: {total_unique}")
-        for key, value in sorted(masking_dict["statistics"].items()):
-            if key != "total_masked" and value > 0:
-                print(f"   • {key}: {value} (унікальних оригіналів)")
-        print()
-        print(f"   Статистика входжень (Instance Tracking):")
-        # Виводимо тільки топ-10 для консолі, щоб не засмічувати
-        sorted_instances = sorted(masking_dict["instance_tracking"].items(), key=lambda x: x[1], reverse=True)
-        for masked_val, count in sorted_instances[:10]:
-            print(f"   • '{masked_val}': {count} входжень")
-        if len(sorted_instances) > 10:
-            print(f"   ... та ще {len(sorted_instances) - 10} записів")
-
-        print()
-        print(f"📁 Файли збережено:")
-        print(f"   • Замасковані дані: {output_path.absolute()}")
-        print(f"   • Словник замін: {map_path.absolute()}")
-        if not args.no_report:
-            print(f"   • Звіт: {report_path.absolute()}")
-
-        if logger:
-            logger.info(f"Masking completed: {total_unique} unique items masked")
-            logger.info(f"Output: {output_path.absolute()}")
-            logger.info(f"Mapping: {map_path.absolute()}")
-
-    except (OSError, PermissionError, json.JSONDecodeError, UnicodeEncodeError) as e:
-        print(f"❌ Помилка збереження файлів: {e}")
-        if logger:
-            logger.error(f"Error saving files: {e}")
+    _save_results(
+        masked_data, is_json, masking_dict,
+        output_path, map_path, report_path,
+        total_unique, args, config, logger
+    )
 
 if __name__ == "__main__":
     main()
