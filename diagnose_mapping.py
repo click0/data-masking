@@ -91,7 +91,7 @@ def load_json(path: Path) -> Optional[Dict]:
     try:
         with open(path, 'r', encoding='utf-8') as f:
             return json.load(f)
-    except Exception as e:
+    except (FileNotFoundError, PermissionError, OSError, json.JSONDecodeError, UnicodeDecodeError) as e:
         print(f"❌ Помилка читання JSON {path}: {e}")
         return None
 
@@ -308,7 +308,7 @@ def verify_text_recovery(original_path: Path, recovery_path: Path, ignore_flags:
             f2.seek(0)
             lines_orig = f1.readlines()
             lines_rec = f2.readlines()
-    except Exception as e:
+    except (FileNotFoundError, PermissionError, OSError, UnicodeDecodeError) as e:
         print(f"❌ Помилка читання файлів: {e}")
         return
 
@@ -409,7 +409,7 @@ def verify_text_recovery(original_path: Path, recovery_path: Path, ignore_flags:
 # MAIN (Точка входу)
 # ============================================================================
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Mapping diagnostics, comparison and text verification utility.",
         formatter_class=argparse.RawTextHelpFormatter

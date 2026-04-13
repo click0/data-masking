@@ -82,6 +82,14 @@ class MaskingRulesConfig:
     enable_units: bool = True
     enable_orders: bool = True
     enable_br_numbers: bool = True
+    # Tuning parameters
+    rank_shift_options: List[int] = field(default_factory=lambda: [-2, -1, 1, 2])
+    date_shift_days: int = 30
+    date_year_min: int = 2015
+    date_year_max: int = 2035
+    brigade_number_max: int = 160
+    max_masking_iterations: int = 10
+    name_generation_max_attempts: int = 50
 
 
 @dataclass
@@ -251,7 +259,8 @@ class ConfigLoader:
                 return None
             logger.info("Loaded YAML config from %s", filepath)
             return data
-        except Exception as exc:
+        except (FileNotFoundError, PermissionError, OSError, ValueError,
+                yaml.YAMLError) as exc:  # type: ignore[union-attr]
             logger.error("Failed to load YAML config: %s", exc)
             return None
 

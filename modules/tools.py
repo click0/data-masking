@@ -47,7 +47,7 @@ import hashlib
 import random
 import re
 from datetime import datetime, timedelta
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 # ============================================================================
 # METADATA
@@ -356,7 +356,7 @@ def init_instance_counters() -> Dict:
 # INTERNAL RANK HELPERS
 # ============================================================================
 
-def _get_rank_category_and_match(text: str):
+def _get_rank_category_and_match(text: str) -> Tuple[Optional[str], Optional[str]]:
     """Detect the rank category and matched text from *text*.
 
     Returns:
@@ -371,7 +371,7 @@ def _get_rank_category_and_match(text: str):
     return None, None
 
 
-def _get_rank_info(rank_form: str):
+def _get_rank_info(rank_form: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """Look up a rank form in RANK_TO_NOMINATIVE.
 
     Args:
@@ -538,9 +538,7 @@ def mask_date_direct(
                 )
 
             masked = new_date.strftime("%d.%m.%Y")
-        except (ValueError, OverflowError):
-            return value
-        except Exception:
+        except (ValueError, OverflowError, TypeError, AttributeError):
             return value
 
     return add_to_mapping(masking_dict, instance_counters, entity_type,

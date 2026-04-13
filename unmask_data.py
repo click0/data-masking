@@ -72,7 +72,8 @@ try:
     from modules.security import MappingSecurityManager, is_encryption_available
     SECURITY_AVAILABLE = True
 except ImportError:
-    pass
+    import logging as _logging
+    _logging.getLogger(__name__).debug("modules.security not available — encryption disabled")
 
 # Re-mask (ланцюгове перемаскування)
 REMASK_AVAILABLE = False
@@ -80,7 +81,8 @@ try:
     from modules.re_mask import ChainUnmasker, load_chain, get_chain_info
     REMASK_AVAILABLE = True
 except ImportError:
-    pass
+    import logging as _logging
+    _logging.getLogger(__name__).debug("modules.re_mask not available — chain unmasking disabled")
 
 # Конфігурація
 CONFIG_AVAILABLE = False
@@ -88,7 +90,8 @@ try:
     from modules.config import load_config, ConfigLoader
     CONFIG_AVAILABLE = True
 except ImportError:
-    pass
+    import logging as _logging
+    _logging.getLogger(__name__).debug("modules.config not available — YAML config disabled")
 
 # Логування
 LOGGING_AVAILABLE = False
@@ -96,7 +99,8 @@ try:
     from modules.masking_logger import MaskingLogger, setup_logging
     LOGGING_AVAILABLE = True
 except ImportError:
-    pass
+    import logging as _logging
+    _logging.getLogger(__name__).debug("modules.masking_logger not available — structured logging disabled")
 
 # ============================================================================
 # ІМПОРТ ДАНИХ З МОДУЛЯ
@@ -137,6 +141,27 @@ SEARCH_DIRECTORIES = [
     Path('./output'),   # Підтека output
     Path('./result')    # Підтека result
 ]
+
+# Maximum input file size in bytes (default: 100 MB)
+MAX_INPUT_FILE_SIZE = 100 * 1024 * 1024
+
+
+def validate_file_size(file_path: Path, max_size: int = MAX_INPUT_FILE_SIZE) -> None:
+    """
+    Перевіряє розмір файлу перед зчитуванням у пам'ять.
+
+    Raises:
+        ValueError: якщо файл перевищує допустимий розмір
+    """
+    file_size = file_path.stat().st_size
+    if file_size > max_size:
+        max_mb = max_size / (1024 * 1024)
+        actual_mb = file_size / (1024 * 1024)
+        raise ValueError(
+            f"File {file_path.name} ({actual_mb:.1f} MB) exceeds maximum "
+            f"allowed size ({max_mb:.0f} MB)"
+        )
+
 
 # ============================================================================
 # ДОПОМІЖНІ ФУНКЦІЇ - АНАЛІЗ ТА РОЗПІЗНАВАННЯ
@@ -922,7 +947,7 @@ def unmask_chain(masked_text: str, chain_data: Dict) -> Tuple[str, Dict]:
     return text, total_stats
 
 
-def unmask_json_chain(masked_data, chain_data: Dict):
+def unmask_json_chain(masked_data: Any, chain_data: Dict) -> Any:
     """
     Unmask JSON data masked with multiple passes (chain).
 
@@ -1002,8 +1027,44 @@ def load_mapping_file(map_path: Path, password: str = None) -> Dict:
         security_mgr = MappingSecurityManager(password)
         return security_mgr.decrypt_mapping(map_path)
     else:
+        validate_file_size(map_path)
         with open(map_path, 'r', encoding='utf-8') as f:
             return json.load(f)
+
+
+def validate_mapping_schema(mapping: Dict) -> None:
+    """
+    Валідує структуру mapping-файлу.
+
+    Перевіряє наявність обов'язкових полів та коректність формату.
+
+    Args:
+        mapping: Завантажений словник маппінгів
+
+    Raises:
+        ValueError: якщо структура mapping невалідна
+    """
+    if not isinstance(mapping, dict):
+        raise ValueError("Mapping file must be a JSON object")
+
+    # Chain mapping має окрему структуру
+    if "passes" in mapping and "total_passes" in mapping:
+        if not isinstance(mapping["passes"], list):
+            raise ValueError("Chain mapping 'passes' must be a list")
+        return
+
+    # v2.0+ mapping
+    version = mapping.get("version")
+    if version and version.startswith("2"):
+        if "mappings" not in mapping:
+            raise ValueError(
+                f"Mapping v{version} must contain 'mappings' key"
+            )
+        if not isinstance(mapping["mappings"], dict):
+            raise ValueError("'mappings' must be a dictionary")
+        return
+
+    # v1 mapping — flat dict with category keys, no strict validation needed
 
 
 def show_chain_info(masking_map: Dict) -> None:
@@ -1135,7 +1196,7 @@ Examples:
         try:
             config = load_config(args.config)
             log_info(f"Конфігурацію завантажено з {args.config}")
-        except Exception as e:
+        except (FileNotFoundError, PermissionError, ValueError, OSError) as e:
             print(f"❌ Помилка завантаження конфігурації: {e}")
             log_error(f"Помилка завантаження конфігурації: {e}")
             return
@@ -1210,6 +1271,7 @@ Examples:
     try:
         # Завантажуємо словник маппінгів (з підтримкою шифрування)
         masking_map = load_mapping_file(map_path, password=password)
+        validate_mapping_schema(masking_map)
         log_info(f"Mapping завантажено: {map_path.name}")
 
         # Обробка --chain-info (показати інформацію та вийти)
@@ -1228,12 +1290,13 @@ Examples:
                 print(f"✅ Конвертовано до версії {args.to_version}: {output_converted}")
                 log_info(f"Конвертовано до версії {args.to_version}")
                 return
-            except Exception as e:
+            except (KeyError, ValueError, TypeError, OSError) as e:
                 print(f"❌ Помилка конвертації: {e}")
                 log_error(f"Помилка конвертації: {e}")
                 return
 
         # Завантажуємо замасковані дані (JSON або текст)
+        validate_file_size(masked_path)
         with open(masked_path, 'r', encoding='utf-8', newline='') as f:
             if masked_path.suffix == '.json':
                 masked_data = json.load(f)
@@ -1242,7 +1305,7 @@ Examples:
 
         log_debug(f"Замасковані дані завантажено: {masked_path.name}")
 
-    except Exception as e:
+    except (FileNotFoundError, PermissionError, OSError, json.JSONDecodeError, UnicodeDecodeError) as e:
         print(f"❌ Помилка читання: {e}")
         log_error(f"Помилка читання: {e}")
         return
@@ -1297,7 +1360,7 @@ Examples:
         log_info(f"Статистика: відновлено={stats.get('restored_count', 0)}, "
                  f"пропущено={stats.get('skipped_count', 0)}")
 
-    except Exception as e:
+    except (OSError, PermissionError, UnicodeEncodeError) as e:
         print(f"❌ Помилка збереження: {e}")
         log_error(f"Помилка збереження: {e}")
 
