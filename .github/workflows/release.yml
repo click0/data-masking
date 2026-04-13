@@ -140,6 +140,7 @@ jobs:
           sed -i 's/^          //' /tmp/release-body.md
 
           gh release create "${{ github.ref_name }}" \
+            --target "${{ github.sha }}" \
             --title "Data Masking System v${{ env.VERSION }}" \
             --notes-file /tmp/release-body.md \
             ${{ steps.release_flags.outputs.flags }} \
