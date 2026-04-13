@@ -588,6 +588,8 @@ def analyze_br_keyword(text: str, match: re.Match) -> Optional[Dict]:
     return None
 
 def clean_line_before_parsing(line: str) -> str:
+    # Видаляємо нумерацію пунктів на початку рядка: "20.1.2.1.", "1.", "1.2.", "3.2." тощо
+    line = re.sub(r'^\s*(?:\d+\.)+\s*', '', line)
     line = re.sub(r'\d{1,2}[.!]\d{1,2}\.\d{4}', '', line)
     line = re.sub(r'\s+року\s+', ' ', line, flags=re.IGNORECASE)
     line = re.sub(r'\s+', ' ', line)
