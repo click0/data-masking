@@ -101,7 +101,7 @@ jobs:
           esac
           echo "flags=$FLAGS" >> $GITHUB_OUTPUT
 
-      - name: Create GitHub Release
+      - name: Create or update GitHub Release
         run: |
           cat > /tmp/release-body.md <<BODY_EOF
           ## Data Masking System v${{ env.VERSION }}
@@ -139,13 +139,27 @@ jobs:
           # Remove leading whitespace from heredoc
           sed -i 's/^          //' /tmp/release-body.md
 
-          gh release create "${{ github.ref_name }}" \
-            --target "${{ github.sha }}" \
-            --title "Data Masking System v${{ env.VERSION }}" \
-            --notes-file /tmp/release-body.md \
-            ${{ steps.release_flags.outputs.flags }} \
-            dist/data-masking-${{ env.VERSION }}.tar.gz \
-            dist/data-masking-${{ env.VERSION }}.zip
+          # Create release if it doesn't exist, or upload to existing one
+          if gh release view "${{ github.ref_name }}" &>/dev/null; then
+            echo "Release exists, uploading assets..."
+            gh release upload "${{ github.ref_name }}" \
+              dist/data-masking-${{ env.VERSION }}.tar.gz \
+              dist/data-masking-${{ env.VERSION }}.zip \
+              --clobber
+            gh release edit "${{ github.ref_name }}" \
+              --title "Data Masking System v${{ env.VERSION }}" \
+              --notes-file /tmp/release-body.md \
+              ${{ steps.release_flags.outputs.flags }}
+          else
+            echo "Creating new release..."
+            gh release create "${{ github.ref_name }}" \
+              --target "${{ github.sha }}" \
+              --title "Data Masking System v${{ env.VERSION }}" \
+              --notes-file /tmp/release-body.md \
+              ${{ steps.release_flags.outputs.flags }} \
+              dist/data-masking-${{ env.VERSION }}.tar.gz \
+              dist/data-masking-${{ env.VERSION }}.zip
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
