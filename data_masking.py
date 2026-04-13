@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Data Masking Script v2.3.1
+Data Masking Script v2.3.2
 Локально узгоджене маскування конфіденційних даних з INSTANCE TRACKING
 
 ОНОВЛЕНО В v2.3.0:
@@ -46,7 +46,7 @@ Data Masking Script v2.3.1
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 Phone: +38(099)6053340
-Version: 2.3.1
+Version: 2.3.2
 License: BSD 3-Clause "New" or "Revised" License
 Year: 2025-2026
 """
@@ -131,7 +131,7 @@ except ImportError:
 # ============================================================================
 # МЕТАДАНІ
 # ============================================================================
-__version__ = "2.3.1"
+__version__ = "2.3.2"
 __author__ = "Vladyslav V. Prodan"
 __contact__ = "github.com/click0"
 __phone__ = "+38(099)6053340"

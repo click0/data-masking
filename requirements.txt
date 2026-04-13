@@ -1,4 +1,4 @@
-# Data Masking System v2.3.0
+# Data Masking System v2.3.2
 # Python 3.9+
 
 # Генерація реалістичних українських імен

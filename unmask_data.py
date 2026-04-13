@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Data Unmasking Script v2.3.1
+Data Unmasking Script v2.3.2
 Відновлення оригінальних даних з замаскованого файлу
 
 Цей скрипт виконує зворотну операцію до data_masking.py: відновлює оригінальні
@@ -41,7 +41,7 @@ Data Unmasking Script v2.3.1
 
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
-Version: 2.3.1
+Version: 2.3.2
 License: BSD 3-Clause
 Year: 2025-2026
 """
@@ -125,7 +125,7 @@ except ImportError:
 # ============================================================================
 # МЕТАДАНІ
 # ============================================================================
-__version__ = "2.3.1"
+__version__ = "2.3.2"
 __author__ = "Vladyslav V. Prodan"
 __contact__ = "github.com/click0"
 __phone__ = "+38(099)6053340"
