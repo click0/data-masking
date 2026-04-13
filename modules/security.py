@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Security Module v2.3.1
+Security Module v2.3.2
 
 Provides AES-256-GCM encryption/decryption of mapping files
 for data_masking.py.
@@ -15,7 +15,7 @@ License: BSD 3-Clause
 Year: 2025-2026
 """
 
-__version__ = "2.3.1"
+__version__ = "2.3.2"
 
 import json
 import os
