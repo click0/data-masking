@@ -738,7 +738,7 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
     pib_words = []
     for word in parts[pib_start_index:pib_start_index + 3]:
         if looks_like_name(word):
-            pib_words.append(word)
+            pib_words.append(word.rstrip(',.!?;:'))
         else:
             break
     pib = " ".join(pib_words) if pib_words else None
