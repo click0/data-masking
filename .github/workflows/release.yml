@@ -215,6 +215,7 @@ jobs:
           pyinstaller --onefile --noconfirm --clean \
             --runtime-hook=pyinstaller_utf8_hook.py \
             --collect-all=cryptography \
+            --hidden-import=rank_data \
             --hidden-import=modules \
             --hidden-import=modules.config \
             --hidden-import=modules.security \
@@ -223,6 +224,7 @@ jobs:
             --hidden-import=modules.rank_data \
             --hidden-import=yaml \
             --hidden-import=_cffi_backend \
+            --add-data='rank_data.py;.' \
             --name unmask_data \
             unmask_data.py
 
@@ -256,9 +258,10 @@ jobs:
             data_masking.exe unmask_data.exe diagnose_mapping.exe
 
       - name: Upload to release
+        shell: bash
         run: |
           gh release upload "${{ github.ref_name }}" \
-            dist/data-masking-${{ env.VERSION }}-windows-x64.zip \
+            "dist/data-masking-${{ env.VERSION }}-windows-x64.zip" \
             --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
