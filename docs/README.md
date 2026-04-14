@@ -499,8 +499,8 @@ BSD 3-Clause "New" or "Revised" License
 
 ---
 
-## 📅 Версії
+## 📅 Версія
 
-Поточна версія: **v2.3.2** (2026)
+**v2.3.2** (березень 2026)
 
-Детальну історію змін див. у [CHANGELOG.md](CHANGELOG.md)
+Детальну історію змін див. у [CHANGELOG.md](../CHANGELOG.md)
