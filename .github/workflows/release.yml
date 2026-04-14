@@ -109,31 +109,8 @@ jobs:
           ### Changes
           ${{ env.CHANGELOG }}
 
-          ### Installation (Python)
-          \`\`\`bash
-          # Download and extract
-          tar xzf data-masking-${{ env.VERSION }}.tar.gz
-          cd data-masking-${{ env.VERSION }}
-
-          # Install dependencies
-          pip install -r requirements.txt
-
-          # Run
-          python data_masking.py --help
-          python unmask_data.py --help
-          \`\`\`
-
-          ### Windows (standalone, no Python needed)
-          Download \`data-masking-${{ env.VERSION }}-windows-x64.zip\`, extract and run:
-          \`\`\`
-          data_masking.exe --help
-          unmask_data.exe --help
-          diagnose_mapping.exe --help
-          \`\`\`
-
-          ### Requirements (Python version)
-          - Python 3.9+
-          - faker, cryptography, pyyaml
+          ---
+          See [Installation guide](https://github.com/click0/data-masking/blob/main/docs/INSTALL.md) for setup instructions.
           BODY_EOF
 
           # Remove leading whitespace from heredoc
