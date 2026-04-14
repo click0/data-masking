@@ -501,6 +501,6 @@ BSD 3-Clause "New" or "Revised" License
 
 ## 📅 Версія
 
-**v2.3.2** (березень 2026)
+**v2.3.2** (квітень 2026)
 
 Детальну історію змін див. у [CHANGELOG.md](../CHANGELOG.md)
