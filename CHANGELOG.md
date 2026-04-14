@@ -4,7 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [2.3.1] - 2026
+## [2.3.2] - 2026-04
+
+### Fixed
+- Rank and PIB masking in lines with section numbering (e.g. `20.1.2.1.`)
+- Trailing punctuation (`,`) preserved when extracting PIB words
+- CI: release workflow handles existing releases (create or upload)
+
+## [2.3.1] - 2026-03
 
 ### Fixed
 - Unicode output crash on Windows (PyInstaller cp1252 encoding issue)
