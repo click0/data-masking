@@ -5,7 +5,7 @@ Tests for helper functions
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 Phone: +38(099)6053340
-Version: 2.3.2
+Version: 2.4.0
 License: BSD 3-Clause "New" or "Revised" License
 Year: 2025-2026
 

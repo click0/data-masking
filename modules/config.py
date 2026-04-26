@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Configuration Module v2.3.2 for data_masking.py
+Configuration Module v2.4.0 for data_masking.py
 
 Provides YAML + ENV + CLI configuration loading with priority resolution:
     CLI > ENV > config.yaml > config.py > Default
@@ -16,7 +16,7 @@ License: BSD 3-Clause
 Year: 2025-2026
 """
 
-__version__ = "2.3.2"
+__version__ = "2.4.0"
 
 import os
 import logging

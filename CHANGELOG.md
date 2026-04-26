@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.4.0] - 2026-04
+
+### Changed
+- **Refactoring**: split `data_masking.py` (2654 lines) into `masking/` package with 8 modules:
+  `constants`, `helpers`, `language`, `context`, `mask_personal`, `mask_military`, `engine`, `cli`
+- **Refactoring**: split `unmask_data.py` (1369 lines) into `unmasking/` package with 4 modules:
+  `helpers`, `engine`, `io`, `cli`
+- Root-level `data_masking.py` and `unmask_data.py` are now thin wrappers with full backward compatibility
+
+### Added
+- `__main__.py` — run as `python . mask [args]` or `python . unmask [args]`
+- `masking/` package — modular masking implementation
+- `unmasking/` package — modular unmasking implementation
+
 ## [2.3.2] - 2026-04
 
 ### Fixed

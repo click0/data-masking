@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Password Generator Module v2.3.2
+Password Generator Module v2.4.0
 Генератор паролів з підтримкою ASCII, кирилиці та кастомних символів.
 Використання як модуль:
     from password_generator import generate_password, PasswordConfig
@@ -25,7 +25,7 @@ Password Generator Module v2.3.2
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 Phone: +38(099)6053340
-Version: 2.3.2
+Version: 2.4.0
 License: BSD 3-Clause "New" or "Revised" License
 Year: 2025-2026
 """
@@ -34,7 +34,7 @@ import string
 import argparse
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any, Union
-__version__ = "2.3.2"
+__version__ = "2.4.0"
 __author__ = "Vladyslav V. Prodan"
 # =============================================================================
 # КОНСТАНТИ
