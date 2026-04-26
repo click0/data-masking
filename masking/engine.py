@@ -7,6 +7,7 @@ Main masking engine: context-aware text masking and JSON processing.
 Extracted from data_masking.py during v2.4.0 refactoring.
 """
 
+import random
 import re
 from typing import Any, Dict
 
@@ -15,6 +16,7 @@ from masking.context import (
     analyze_number_sign_context, analyze_br_keyword,
     looks_like_pib_line, parse_hybrid_line,
 )
+from masking.helpers import get_deterministic_seed, add_to_mapping
 from masking.language import (
     is_likely_surname_by_case, detect_gender_by_patronymic,
 )
@@ -28,6 +30,139 @@ from masking.mask_military import (
     mask_brigade_number, mask_date, _mask_date_text,
     mask_rank_preserve_case, is_valid_date,
 )
+
+_UA_UPPER = "АБВГДЕЖЗІКЛМНОПРСТУФХЦЮЯ"
+
+_SURNAME_RE = r'[А-ЯІЇЄҐ][а-яіїєґ\'ʼ\-]{2,}'
+_SURNAME_UPPER_RE = r'[А-ЯІЇЄҐ]{3,}'
+_NAME_RE = r'(?:' + _SURNAME_RE + r'|' + _SURNAME_UPPER_RE + r')'
+
+# Прізвище + 2 ініціали: Іванов П.А. / Іванов П. А. / ІВАНОВ П.А.
+_RE_NAME_INI2 = re.compile(
+    r'(' + _NAME_RE + r')\s+([А-ЯІЇЄҐ])\.\s?([А-ЯІЇЄҐ])\.'
+)
+# 2 ініціали + Прізвище: П.А. Іванов / П. А. Іванов
+_RE_INI2_NAME = re.compile(
+    r'(?<![а-яіїєґА-ЯІЇЄҐa-zA-Z])'
+    r'([А-ЯІЇЄҐ])\.\s?([А-ЯІЇЄҐ])\.\s?(' + _NAME_RE + r')'
+)
+# Прізвище + 1 ініціал: Іванов П.
+_RE_NAME_INI1 = re.compile(
+    r'(' + _NAME_RE + r')\s+([А-ЯІЇЄҐ])\.(?![а-яіїєґА-ЯІЇЄҐa-zA-Z])'
+)
+# 1 ініціал + Прізвище: П. Іванов
+_RE_INI1_NAME = re.compile(
+    r'(?<![а-яіїєґА-ЯІЇЄҐa-zA-Z])'
+    r'([А-ЯІЇЄҐ])\.\s?(' + _NAME_RE + r')'
+)
+
+
+def _is_surname_candidate(word: str) -> bool:
+    """Перевіряє чи слово схоже на прізвище (Title Case або UPPER, >= 3 літер)."""
+    if not word or len(word) < 3:
+        return False
+    clean = word.rstrip(',.!?;:')
+    if len(clean) < 3:
+        return False
+    if clean.lower() in _cfg.ABBREVIATION_WHITELIST:
+        return False
+    if clean.lower() in [w.lower() for w in _cfg.EXCLUDE_WORDS]:
+        return False
+    if clean.lower() in _cfg.RANKS_LIST:
+        return False
+    if clean.isupper() and len(clean) >= 3:
+        return True
+    if clean[0].isupper() and clean[1:].islower():
+        return True
+    return False
+
+
+def _mask_initial(letter: str, masking_dict: Dict, instance_counters: Dict) -> str:
+    """Маскує одну літеру ініціала: П -> В (детерміновано)."""
+    seed = get_deterministic_seed(letter.lower() + "_initial")
+    random.seed(seed)
+    candidates = [c for c in _UA_UPPER if c != letter.upper()]
+    return random.choice(candidates)
+
+
+def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -> str:
+    """
+    Знаходить ПІБ з ініціалами та маскує їх.
+
+    Шукає ініціали (П.А., К.П., Т. А.), перевіряє сусіда — чи це прізвище.
+    Збирає заміни, застосовує з кінця тексту щоб не збити позиції.
+    """
+    if not _cfg.MASK_NAMES:
+        return text
+
+    replacements = []  # (start, end, new_text)
+
+    def _do(regex, handler):
+        for m in regex.finditer(text):
+            r = handler(m)
+            if r:
+                replacements.append(r)
+
+    # Прізвище + 2 ініціали: Іванов К.П. / Іванов К. П.
+    def _name_ini2(m):
+        surname, i1, i2 = m.group(1), m.group(2), m.group(3)
+        if not _is_surname_candidate(surname):
+            return None
+        ms = mask_surname(surname, masking_dict, instance_counters)
+        mi1 = _mask_initial(i1, masking_dict, instance_counters)
+        mi2 = _mask_initial(i2, masking_dict, instance_counters)
+        has_space = f"{i1}. {i2}." in m.group(0)
+        ini = f"{mi1}. {mi2}." if has_space else f"{mi1}.{mi2}."
+        return (m.start(), m.end(), f"{ms} {ini}")
+
+    # 2 ініціали + Прізвище: К.П. Іванов / К. П. Іванов
+    def _ini2_name(m):
+        i1, i2, surname = m.group(1), m.group(2), m.group(3)
+        if not _is_surname_candidate(surname):
+            return None
+        ms = mask_surname(surname, masking_dict, instance_counters)
+        mi1 = _mask_initial(i1, masking_dict, instance_counters)
+        mi2 = _mask_initial(i2, masking_dict, instance_counters)
+        has_space = f"{i1}. {i2}." in m.group(0)
+        ini = f"{mi1}. {mi2}." if has_space else f"{mi1}.{mi2}."
+        return (m.start(), m.end(), f"{ini} {ms}")
+
+    # Прізвище + 1 ініціал: Іванов П.
+    def _name_ini1(m):
+        surname, i1 = m.group(1), m.group(2)
+        if not _is_surname_candidate(surname):
+            return None
+        ms = mask_surname(surname, masking_dict, instance_counters)
+        mi1 = _mask_initial(i1, masking_dict, instance_counters)
+        return (m.start(), m.end(), f"{ms} {mi1}.")
+
+    # 1 ініціал + Прізвище: П. Іванов
+    def _ini1_name(m):
+        i1, surname = m.group(1), m.group(2)
+        if not _is_surname_candidate(surname):
+            return None
+        ms = mask_surname(surname, masking_dict, instance_counters)
+        mi1 = _mask_initial(i1, masking_dict, instance_counters)
+        return (m.start(), m.end(), f"{mi1}. {ms}")
+
+    _do(_RE_NAME_INI2, _name_ini2)
+    _do(_RE_INI2_NAME, _ini2_name)
+    _do(_RE_NAME_INI1, _name_ini1)
+    _do(_RE_INI1_NAME, _ini1_name)
+
+    # Довші патерни мають пріоритет; видаляємо перекриття
+    replacements.sort(key=lambda x: (x[1] - x[0]), reverse=True)
+    kept = []
+    for r in replacements:
+        if not any(r[0] < k[1] and r[1] > k[0] for k in kept):
+            kept.append(r)
+
+    # Заміни з кінця тексту
+    kept.sort(key=lambda x: x[0], reverse=True)
+    for start, end, new_text in kept:
+        text = text[:start] + new_text + text[end:]
+
+    return text
 
 
 def normalize_broken_ranks(text: str) -> str:
@@ -63,6 +198,10 @@ def mask_text_context_aware(text: str, masking_dict: Dict, instance_counters: Di
     """
     # === ШАГ 0: Нормалізація розірваних звань
     text = normalize_broken_ranks(text)
+
+    # === ШАГ 0.5: ПІБ з ініціалами (Іванов П.А., П. Іванов тощо)
+    # Запускаємо ДО основного парсера, щоб ініціали не плутали looks_like_pib_line
+    text = _mask_initials_pib(text, masking_dict, instance_counters)
 
     items_to_mask = []
     items_to_skip = []

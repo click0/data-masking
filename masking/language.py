@@ -25,6 +25,7 @@ def looks_like_name(word: str) -> bool:
     if word.startswith("___") and word.endswith("___"): return False
     clean_word = word.rstrip(',.!?;:')
     if len(clean_word) < 3: return False
+    if '.' in clean_word: return False
     if clean_word in _cfg.EXCLUDE_WORDS or clean_word.lower() in [w.lower() for w in _cfg.EXCLUDE_WORDS]: return False
     if re.search(r'\d', clean_word): return False
     if clean_word.lower() in _cfg.RANKS_LIST: return False
