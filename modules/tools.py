@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Tools API Module v2.4.0
+Tools API Module v2.5.0
 
 Provides atomic masking functions for programmatic use (without CLI).
 Each function is self-contained and operates on a single value, updating
@@ -52,7 +52,7 @@ from typing import Dict, Optional, Tuple
 # ============================================================================
 # METADATA
 # ============================================================================
-__version__ = "2.4.0"
+__version__ = "2.5.0"
 __author__ = "Vladyslav V. Prodan"
 __contact__ = "github.com/click0"
 __license__ = "BSD 3-Clause"

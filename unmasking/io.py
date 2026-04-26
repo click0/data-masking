@@ -4,7 +4,7 @@
 """
 File I/O and validation for unmasking operations.
 
-Extracted from unmask_data.py during v2.4.0 refactoring.
+Extracted from unmask_data.py during v2.5.0 refactoring.
 """
 
 import json

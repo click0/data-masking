@@ -4,7 +4,7 @@
 """
 CLI entry point for data unmasking.
 
-Extracted from unmask_data.py during v2.4.0 refactoring.
+Extracted from unmask_data.py during v2.5.0 refactoring.
 """
 
 import json
@@ -58,7 +58,7 @@ except ImportError:
 # ============================================================================
 # МЕТАДАНІ
 # ============================================================================
-__version__ = "2.4.0"
+__version__ = "2.5.0"
 
 
 def main():

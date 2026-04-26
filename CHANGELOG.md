@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [2.4.0] - 2026-04
+## [2.5.0] - 2026-04
 
 ### Changed
 - **Refactoring**: split `data_masking.py` (2654 lines) into `masking/` package with 8 modules:
@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `__main__.py` — run as `python . mask [args]` or `python . unmask [args]`
 - `masking/` package — modular masking implementation
 - `unmasking/` package — modular unmasking implementation
+- PIB masking with initials: `Іванов П.А.`, `П. Агранов`, `К.П. Іванов`, `Т. А. Сидоренко`, `КОВАЛЕНКО І.В.`
 
 ## [2.3.2] - 2026-04
 

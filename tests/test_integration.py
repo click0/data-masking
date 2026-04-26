@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Інтеграційні тести для data_masking.py v2.4.0
+Інтеграційні тести для data_masking.py v2.5.0
 Тестує нові функції:
 - --init-config
 - --encrypt / --password
@@ -11,7 +11,7 @@
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 Phone: +38(099)6053340
-Version: 2.4.0
+Version: 2.5.0
 License: BSD 3-Clause "New" or "Revised" License
 Year: 2025-2026
 """
@@ -58,7 +58,7 @@ class TestVersion:
     def test_version(self):
         """Тест: версія модуля."""
         import data_masking
-        assert data_masking.__version__ == "2.4.0"
+        assert data_masking.__version__ == "2.5.0"
 # ============================================================================
 # ТЕСТИ --init-config
 # ============================================================================
@@ -104,7 +104,7 @@ class TestInitConfig:
         assert "router_rules:" in content
 
         # Перевіряємо версію
-        assert "v2.4.0" in content
+        assert "v2.5.0" in content
 
         # Перевіряємо параметри безпеки
         assert "encrypt_output:" in content
@@ -387,7 +387,7 @@ class TestCliArguments:
         """Тест: версія доступна."""
         from data_masking import __version__
 
-        assert __version__ == "2.4.0"
+        assert __version__ == "2.5.0"
 
         # Спробуємо subprocess
         try:
@@ -404,7 +404,7 @@ class TestCliArguments:
 
                 stdout = result.stdout or ""
                 if result.returncode == 0 and stdout.strip():
-                    assert "2.4.0" in stdout
+                    assert "2.5.0" in stdout
                     return
         except Exception:
             pass
@@ -450,12 +450,12 @@ class TestCliBasicCommands:
         result = run_cli("-V", expect_success=False)
         # --version може повернути 0 або інший код
         output = (result.stdout or "") + (result.stderr or "")
-        if "2.4.0" in output:
+        if "2.5.0" in output:
             assert True
         else:
             # Fallback
             from data_masking import __version__
-            assert __version__ == "2.4.0"
+            assert __version__ == "2.5.0"
 
     def test_list_types(self, run_cli):
         """Тест: --list-types показує доступні типи."""
@@ -542,7 +542,7 @@ class TestCliMasking:
 
             text = sample_input_file.read_text(encoding="utf-8")
             masking_dict = {
-                "version": "2.4.0",
+                "version": "2.5.0",
                 "mappings": {k: {} for k in [
                     "ipn", "passport_id", "military_id", "surname", "name",
                     "military_unit", "order_number", "order_number_with_letters",
@@ -576,7 +576,7 @@ class TestCliMasking:
 
         # Симуляція --only ipn (маскуємо тільки ІПН)
         masking_dict = {
-            "version": "2.4.0",
+            "version": "2.5.0",
             "mappings": {k: {} for k in [
                 "ipn", "passport_id", "military_id", "surname", "name",
                 "military_unit", "order_number", "rank", "date", "date_text", "patronymic"
@@ -616,7 +616,7 @@ class TestCliMasking:
             text = sample_input_file.read_text(encoding="utf-8")
 
             masking_dict = {
-                "version": "2.4.0",
+                "version": "2.5.0",
                 "mappings": {k: {} for k in [
                     "ipn", "passport_id", "military_id", "surname", "name",
                     "military_unit", "order_number", "order_number_with_letters",
@@ -669,7 +669,7 @@ class TestCliDateMasking:
         text = 'від "06" жовтня 2025 року №292'
 
         masking_dict = {
-            "version": "2.4.0",
+            "version": "2.5.0",
             "mappings": {k: {} for k in [
                 "ipn", "passport_id", "military_id", "surname", "name",
                 "order_number", "rank", "date", "date_text", "patronymic"
@@ -692,7 +692,7 @@ class TestCliDateMasking:
         text = "Дата: 15.03.2024"
 
         masking_dict = {
-            "version": "2.4.0",
+            "version": "2.5.0",
             "mappings": {k: {} for k in [
                 "ipn", "passport_id", "military_id", "surname", "name",
                 "order_number", "rank", "date", "date_text", "patronymic"
@@ -733,7 +733,7 @@ class TestCliOutputFormats:
         # Симулюємо --no-report
         text = "Тестовий текст"
         masking_dict = {
-            "version": "2.4.0",
+            "version": "2.5.0",
             "mappings": {"surname": {}, "name": {}},
             "statistics": {},
             "instance_tracking": {}
@@ -768,7 +768,7 @@ class TestCliOutputFormats:
         }
 
         masking_dict = {
-            "version": "2.4.0",
+            "version": "2.5.0",
             "mappings": {k: {} for k in [
                 "ipn", "passport_id", "surname", "name", "rank", "patronymic"
             ]},
@@ -849,7 +849,7 @@ class TestChainRoundtrip:
     def _make_masking_dict(self):
         """Create a fresh masking dict."""
         from re_mask import make_empty_masking_dict
-        return make_empty_masking_dict("2.4.0")
+        return make_empty_masking_dict("2.5.0")
 
     def test_chain_roundtrip_2_passes(self):
         """Тест: маскування у 2 проходи, потім відновлення через ланцюг."""
