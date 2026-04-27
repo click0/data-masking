@@ -1,4 +1,4 @@
-# Data Masking & Unmasking Scripts v2.3.2
+# Data Masking & Unmasking Scripts v2.4.0
 
 Скрипти для **узгодженого маскування** конфіденційних даних у військових документах з можливістю точного відновлення.
 
@@ -501,6 +501,6 @@ BSD 3-Clause "New" or "Revised" License
 
 ## 📅 Версія
 
-**v2.3.2** (квітень 2026)
+**v2.4.0** (квітень 2026)
 
 Детальну історію змін див. у [CHANGELOG.md](../CHANGELOG.md)
