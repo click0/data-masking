@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 """
-Data Masking Script v2.5.0
+Data Masking Script v2.5.1
 Локально узгоджене маскування конфіденційних даних з INSTANCE TRACKING
 
-ОНОВЛЕНО В v2.5.0:
+ОНОВЛЕНО В v2.5.1:
 - Рефакторинг: розбито на пакет masking/ (constants, helpers, language,
   context, mask_personal, mask_military, engine, cli)
 - Додано __main__.py для запуску через python -m
@@ -14,7 +14,7 @@ Data Masking Script v2.5.0
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 Phone: +38(099)6053340
-Version: 2.5.0
+Version: 2.5.1
 License: BSD 3-Clause "New" or "Revised" License
 Year: 2025-2026
 """

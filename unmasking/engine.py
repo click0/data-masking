@@ -4,7 +4,7 @@
 """
 Core unmasking logic: text and JSON restoration.
 
-Extracted from unmask_data.py during v2.5.0 refactoring.
+Extracted from unmask_data.py during v2.5.1 refactoring.
 """
 
 import re

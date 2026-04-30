@@ -4,7 +4,7 @@
 """
 Language analysis functions: gender detection, grammatical case, declension.
 
-Extracted from data_masking.py during v2.5.0 refactoring.
+Extracted from data_masking.py during v2.5.1 refactoring.
 """
 
 import random

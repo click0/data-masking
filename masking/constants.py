@@ -4,7 +4,7 @@
 """
 Masking constants, patterns, and configuration flags.
 
-Extracted from data_masking.py during v2.5.0 refactoring.
+Extracted from data_masking.py during v2.5.1 refactoring.
 """
 
 import re
@@ -26,7 +26,7 @@ from rank_data import (
 # ============================================================================
 # МЕТАДАНІ
 # ============================================================================
-__version__ = "2.5.0"
+__version__ = "2.5.1"
 __author__ = "Vladyslav V. Prodan"
 __contact__ = "github.com/click0"
 __phone__ = "+38(099)6053340"

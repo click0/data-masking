@@ -4,7 +4,7 @@
 """
 Personal data masking functions: IPN, passport, military ID, names.
 
-Extracted from data_masking.py during v2.5.0 refactoring.
+Extracted from data_masking.py during v2.5.1 refactoring.
 """
 
 import random
