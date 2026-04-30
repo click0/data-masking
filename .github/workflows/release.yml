@@ -62,8 +62,9 @@ jobs:
             --exclude='*.pyc' \
             --transform="s,^,${ARCHIVE}/," \
             data_masking.py unmask_data.py diagnose_mapping.py rank_data.py \
+            __main__.py \
             config_example.py config_example.yaml \
-            modules/ docs/ tests/ \
+            masking/ unmasking/ modules/ docs/ tests/ \
             requirements.txt requirements-dev.txt \
             LICENSE pytest.ini .gitignore \
             input_example.txt input_example.2.txt
@@ -71,8 +72,9 @@ jobs:
           cd "$(git rev-parse --show-toplevel)"
           zip -r "dist/${ARCHIVE}.zip" \
             data_masking.py unmask_data.py diagnose_mapping.py rank_data.py \
+            __main__.py \
             config_example.py config_example.yaml \
-            modules/ docs/ tests/ \
+            masking/ unmasking/ modules/ docs/ tests/ \
             requirements.txt requirements-dev.txt \
             LICENSE pytest.ini .gitignore \
             input_example.txt input_example.2.txt \
@@ -173,6 +175,15 @@ jobs:
             --collect-all=faker \
             --collect-all=cryptography \
             --hidden-import=rank_data \
+            --hidden-import=masking \
+            --hidden-import=masking.constants \
+            --hidden-import=masking.helpers \
+            --hidden-import=masking.language \
+            --hidden-import=masking.context \
+            --hidden-import=masking.mask_personal \
+            --hidden-import=masking.mask_military \
+            --hidden-import=masking.engine \
+            --hidden-import=masking.cli \
             --hidden-import=modules \
             --hidden-import=modules.config \
             --hidden-import=modules.security \
@@ -193,6 +204,11 @@ jobs:
             --runtime-hook=pyinstaller_utf8_hook.py \
             --collect-all=cryptography \
             --hidden-import=rank_data \
+            --hidden-import=unmasking \
+            --hidden-import=unmasking.helpers \
+            --hidden-import=unmasking.engine \
+            --hidden-import=unmasking.io \
+            --hidden-import=unmasking.cli \
             --hidden-import=modules \
             --hidden-import=modules.config \
             --hidden-import=modules.security \
