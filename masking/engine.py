@@ -31,7 +31,7 @@ from masking.mask_military import (
     mask_rank_preserve_case, is_valid_date,
 )
 
-_UA_UPPER = "АБВГДЕЖЗІКЛМНОПРСТУФХЦЮЯ"
+_UA_UPPER = "АБВГҐДЕЖЗІЙКЛМНОПРСТУФХЦЧШЩЮЯЄІЇҐ"
 
 _SURNAME_RE = r'[А-ЯІЇЄҐ][а-яіїєґ\'ʼ\-]{2,}'
 _SURNAME_UPPER_RE = r'[А-ЯІЇЄҐ]{3,}'
@@ -66,9 +66,9 @@ def _is_surname_candidate(word: str) -> bool:
         return False
     if clean.lower() in _cfg.ABBREVIATION_WHITELIST:
         return False
-    if clean.lower() in [w.lower() for w in _cfg.EXCLUDE_WORDS]:
+    if clean.lower() in _cfg.EXCLUDE_WORDS_LOWER:
         return False
-    if clean.lower() in _cfg.RANKS_LIST:
+    if clean.lower() in _cfg.RANKS_LIST_LOWER:
         return False
     if clean.isupper() and len(clean) >= 3:
         return True
@@ -77,9 +77,9 @@ def _is_surname_candidate(word: str) -> bool:
     return False
 
 
-def _mask_initial(letter: str, masking_dict: Dict, instance_counters: Dict) -> str:
-    """Маскує одну літеру ініціала: П -> В (детерміновано)."""
-    seed = get_deterministic_seed(letter.lower() + "_initial")
+def _mask_initial(letter: str, context: str = "") -> str:
+    """Маскує одну літеру ініціала: П -> В (детерміновано, з контекстом прізвища)."""
+    seed = get_deterministic_seed(letter.lower() + "_initial_" + context.lower())
     random.seed(seed)
     candidates = [c for c in _UA_UPPER if c != letter.upper()]
     return random.choice(candidates)
@@ -109,8 +109,8 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
         if not _is_surname_candidate(surname):
             return None
         ms = mask_surname(surname, masking_dict, instance_counters)
-        mi1 = _mask_initial(i1, masking_dict, instance_counters)
-        mi2 = _mask_initial(i2, masking_dict, instance_counters)
+        mi1 = _mask_initial(i1, surname)
+        mi2 = _mask_initial(i2, surname)
         has_space = f"{i1}. {i2}." in m.group(0)
         ini = f"{mi1}. {mi2}." if has_space else f"{mi1}.{mi2}."
         return (m.start(), m.end(), f"{ms} {ini}")
@@ -121,8 +121,8 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
         if not _is_surname_candidate(surname):
             return None
         ms = mask_surname(surname, masking_dict, instance_counters)
-        mi1 = _mask_initial(i1, masking_dict, instance_counters)
-        mi2 = _mask_initial(i2, masking_dict, instance_counters)
+        mi1 = _mask_initial(i1, surname)
+        mi2 = _mask_initial(i2, surname)
         has_space = f"{i1}. {i2}." in m.group(0)
         ini = f"{mi1}. {mi2}." if has_space else f"{mi1}.{mi2}."
         return (m.start(), m.end(), f"{ini} {ms}")
@@ -133,7 +133,7 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
         if not _is_surname_candidate(surname):
             return None
         ms = mask_surname(surname, masking_dict, instance_counters)
-        mi1 = _mask_initial(i1, masking_dict, instance_counters)
+        mi1 = _mask_initial(i1, surname)
         return (m.start(), m.end(), f"{ms} {mi1}.")
 
     # 1 ініціал + Прізвище: П. Іванов
@@ -142,7 +142,7 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
         if not _is_surname_candidate(surname):
             return None
         ms = mask_surname(surname, masking_dict, instance_counters)
-        mi1 = _mask_initial(i1, masking_dict, instance_counters)
+        mi1 = _mask_initial(i1, surname)
         return (m.start(), m.end(), f"{mi1}. {ms}")
 
     _do(_RE_NAME_INI2, _name_ini2)
@@ -165,6 +165,17 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
     return text
 
 
+_BROKEN_RANKS_RE = None
+
+def _get_broken_ranks_re():
+    global _BROKEN_RANKS_RE
+    if _BROKEN_RANKS_RE is None:
+        multi_word_ranks = [r for r in _cfg.ALL_RANK_FORMS if ' ' in r]
+        if multi_word_ranks:
+            patterns = [re.escape(r).replace(r'\ ', r'\s+') for r in multi_word_ranks]
+            _BROKEN_RANKS_RE = re.compile(r'(?i)\b(' + '|'.join(patterns) + r')\b')
+    return _BROKEN_RANKS_RE
+
 def normalize_broken_ranks(text: str) -> str:
     """
     Нормалізує розірвані звання у тексті (Bug Fix #15).
@@ -172,21 +183,14 @@ def normalize_broken_ranks(text: str) -> str:
     Звання може бути розірване переносом рядка в документах:
     - "старшого\nсержанта" -> "старшого сержанта"
     """
-    # Беремо тільки складені звання (ті, що містять пробіл)
-    multi_word_ranks = [r for r in _cfg.ALL_RANK_FORMS if ' ' in r]
-
-    if not multi_word_ranks:
+    pattern = _get_broken_ranks_re()
+    if pattern is None:
         return text
 
-    # Створюємо великий паттерн, замінюючи пробіли на \s+ (будь-який пробільний символ, включно з \n)
-    patterns = [re.escape(r).replace(r'\ ', r'\s+') for r in multi_word_ranks]
-    full_pattern = r'(?i)\b(' + '|'.join(patterns) + r')\b'
-
     def replace_match(match):
-        # Замінюємо всі пробільні символи (включаючи \n) на один звичайний пробіл
         return re.sub(r'\s+', ' ', match.group(0))
 
-    return re.sub(full_pattern, replace_match, text)
+    return pattern.sub(replace_match, text)
 
 
 def mask_text_context_aware(text: str, masking_dict: Dict, instance_counters: Dict) -> str:

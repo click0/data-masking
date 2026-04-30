@@ -168,6 +168,9 @@ MONTHS_GENITIVE_PATTERN = '|'.join(re.escape(m) for m in MONTHS_GENITIVE.keys())
 # Maximum input file size in bytes (default: 100 MB)
 MAX_INPUT_FILE_SIZE = 100 * 1024 * 1024
 
+EXCLUDE_WORDS_LOWER = frozenset(w.lower() for w in EXCLUDE_WORDS)
+RANKS_LIST_LOWER = frozenset(r.lower() for r in RANKS_LIST)
+
 _MONTHS_UA_LIST = [
     "січня", "лютого", "березня", "квітня", "травня", "червня",
     "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"

@@ -126,7 +126,7 @@ def check_mapping_version(masking_map: Dict) -> str:
     """
     version = masking_map.get("version", "1.0.0")
 
-    if version.startswith("2.2") or version.startswith("2.1"):
+    if version.startswith("2.") and not version.startswith("2.0"):
         return "v2.1"
     elif version.startswith("2.0"):
         return "v2.0"
