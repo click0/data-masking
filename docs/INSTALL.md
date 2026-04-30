@@ -53,6 +53,100 @@ unmask_data.exe masked.txt --map mapping.json
 diagnose_mapping.exe
 ```
 
+### Building Windows binaries locally
+
+Requirements: Python 3.9+, pip, PyInstaller.
+
+```bash
+pip install -r requirements.txt
+pip install pyinstaller
+```
+
+#### Release build (single-file, optimized)
+
+```bash
+pyinstaller --onefile --noconfirm --clean \
+  --runtime-hook=pyinstaller_utf8_hook.py \
+  --collect-all=faker \
+  --collect-all=cryptography \
+  --hidden-import=rank_data \
+  --hidden-import=masking --hidden-import=masking.constants \
+  --hidden-import=masking.helpers --hidden-import=masking.language \
+  --hidden-import=masking.context --hidden-import=masking.mask_personal \
+  --hidden-import=masking.mask_military --hidden-import=masking.engine \
+  --hidden-import=masking.cli \
+  --hidden-import=modules --hidden-import=modules.config \
+  --hidden-import=modules.security --hidden-import=modules.masking_logger \
+  --hidden-import=modules.selective --hidden-import=modules.re_mask \
+  --hidden-import=modules.password_generator \
+  --hidden-import=yaml --hidden-import=_cffi_backend \
+  --add-data='rank_data.py;.' \
+  --name data_masking \
+  data_masking.py
+
+pyinstaller --onefile --noconfirm --clean \
+  --runtime-hook=pyinstaller_utf8_hook.py \
+  --collect-all=cryptography \
+  --hidden-import=rank_data \
+  --hidden-import=unmasking --hidden-import=unmasking.helpers \
+  --hidden-import=unmasking.engine --hidden-import=unmasking.io \
+  --hidden-import=unmasking.cli \
+  --hidden-import=modules --hidden-import=modules.config \
+  --hidden-import=modules.security --hidden-import=modules.masking_logger \
+  --hidden-import=modules.re_mask --hidden-import=modules.rank_data \
+  --hidden-import=yaml --hidden-import=_cffi_backend \
+  --add-data='rank_data.py;.' \
+  --name unmask_data \
+  unmask_data.py
+```
+
+#### Debug build (with console output and debug symbols)
+
+Adds `--debug all` for verbose bootloader output, `--log-level DEBUG` for
+PyInstaller analysis log, and keeps the build directory for inspection.
+
+```bash
+pyinstaller --onefile --noconfirm --clean \
+  --debug all --log-level DEBUG \
+  --runtime-hook=pyinstaller_utf8_hook.py \
+  --collect-all=faker \
+  --collect-all=cryptography \
+  --hidden-import=rank_data \
+  --hidden-import=masking --hidden-import=masking.constants \
+  --hidden-import=masking.helpers --hidden-import=masking.language \
+  --hidden-import=masking.context --hidden-import=masking.mask_personal \
+  --hidden-import=masking.mask_military --hidden-import=masking.engine \
+  --hidden-import=masking.cli \
+  --hidden-import=modules --hidden-import=modules.config \
+  --hidden-import=modules.security --hidden-import=modules.masking_logger \
+  --hidden-import=modules.selective --hidden-import=modules.re_mask \
+  --hidden-import=modules.password_generator \
+  --hidden-import=yaml --hidden-import=_cffi_backend \
+  --add-data='rank_data.py;.' \
+  --name data_masking_debug \
+  data_masking.py
+
+pyinstaller --onefile --noconfirm --clean \
+  --debug all --log-level DEBUG \
+  --runtime-hook=pyinstaller_utf8_hook.py \
+  --collect-all=cryptography \
+  --hidden-import=rank_data \
+  --hidden-import=unmasking --hidden-import=unmasking.helpers \
+  --hidden-import=unmasking.engine --hidden-import=unmasking.io \
+  --hidden-import=unmasking.cli \
+  --hidden-import=modules --hidden-import=modules.config \
+  --hidden-import=modules.security --hidden-import=modules.masking_logger \
+  --hidden-import=modules.re_mask --hidden-import=modules.rank_data \
+  --hidden-import=yaml --hidden-import=_cffi_backend \
+  --add-data='rank_data.py;.' \
+  --name unmask_data_debug \
+  unmask_data.py
+```
+
+Debug binaries print import tracebacks and module resolution details at
+startup. The `build/` directory contains the analysis results
+(`data_masking_debug.toc`, `.pyz` contents list).
+
 ---
 
 ## Dependencies
