@@ -4,7 +4,7 @@
 """
 CLI entry point and orchestration for data masking.
 
-Extracted from data_masking.py during v2.5.0 refactoring.
+Extracted from data_masking.py during v2.5.1 refactoring.
 """
 
 import json

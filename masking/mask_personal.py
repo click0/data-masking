@@ -4,7 +4,7 @@
 """
 Personal data masking functions: IPN, passport, military ID, names.
 
-Extracted from data_masking.py during v2.5.0 refactoring.
+Extracted from data_masking.py during v2.5.1 refactoring.
 """
 
 import random
@@ -110,6 +110,8 @@ def mask_surname(original: str, masking_dict: Dict, instance_counters: Dict) -> 
             masked = fake_surname[:target_length] if len(fake_surname) > target_length else fake_surname
         else:
             # Для довгих зберігаємо початок та кінець
+            # NOTE: для прізвищ 5-7 символів prefix(3)+suffix(5) перекриваються,
+            # результат довший за оригінал — це відоме обмеження алгоритму
             middle_len = min(random.randint(2, 7), len(fake_surname)-2)
             middle = fake_surname[1:1+middle_len] if len(fake_surname) > 4 else fake_surname[1:-1]
             masked = original[:3] + middle + original[-5:]

@@ -4,7 +4,7 @@
 """
 Base helper functions for masking operations.
 
-Extracted from data_masking.py during v2.5.0 refactoring.
+Extracted from data_masking.py during v2.5.1 refactoring.
 """
 
 import hashlib
@@ -106,8 +106,8 @@ def is_pib_anchor(word: str) -> bool:
     if word.startswith("___") and word.endswith("___"): return False
     if not word or len(word) <= 2: return False
     word_lower = word.lower()
-    if word_lower in [w.lower() for w in _cfg.EXCLUDE_WORDS]: return False
-    if word_lower in [r.lower() for r in _cfg.RANKS_LIST]: return False
+    if word_lower in _cfg.EXCLUDE_WORDS_LOWER: return False
+    if word_lower in _cfg.RANKS_LIST_LOWER: return False
     return word[0].isupper()
 
 def get_deterministic_seed(original: str) -> int:

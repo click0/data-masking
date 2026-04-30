@@ -4,7 +4,7 @@
 """
 Masking package — data masking with instance tracking.
 
-Refactored from monolithic data_masking.py in v2.5.0.
+Refactored from monolithic data_masking.py in v2.5.1.
 """
 
 from masking.constants import __version__, __author__, __contact__, __license__, __year__

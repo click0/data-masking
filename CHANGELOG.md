@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.5.1] - 2026-04
+
+### Fixed
+- Unmask broken for v2.3+ mappings (`check_mapping_version` fell through to v1 logic)
+- `_mask_initial` now uses surname as seed context (different PIBs produce different initials)
+- `_UA_UPPER` completed with missing letters (Ї, Є, Ґ, Щ, Ч, Ш, Й)
+
+### Changed
+- Performance: `EXCLUDE_WORDS` and `RANKS_LIST` cached as `frozenset` for O(1) lookups
+- Performance: `normalize_broken_ranks` regex compiled once (lazy cached)
+
 ## [2.5.0] - 2026-04
 
 ### Changed

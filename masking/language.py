@@ -4,7 +4,7 @@
 """
 Language analysis functions: gender detection, grammatical case, declension.
 
-Extracted from data_masking.py during v2.5.0 refactoring.
+Extracted from data_masking.py during v2.5.1 refactoring.
 """
 
 import random
@@ -26,9 +26,9 @@ def looks_like_name(word: str) -> bool:
     clean_word = word.rstrip(',.!?;:')
     if len(clean_word) < 3: return False
     if '.' in clean_word: return False
-    if clean_word in _cfg.EXCLUDE_WORDS or clean_word.lower() in [w.lower() for w in _cfg.EXCLUDE_WORDS]: return False
+    if clean_word.lower() in _cfg.EXCLUDE_WORDS_LOWER: return False
     if re.search(r'\d', clean_word): return False
-    if clean_word.lower() in _cfg.RANKS_LIST: return False
+    if clean_word.lower() in _cfg.RANKS_LIST_LOWER: return False
     if clean_word.lower() in ['по', 'про', 'від', 'до', 'за', 'на', 'у', 'в', 'з', 'із']: return False
 
     if clean_word[0].isupper() and clean_word[1:].islower(): return True

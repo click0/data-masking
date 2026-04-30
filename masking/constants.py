@@ -4,7 +4,7 @@
 """
 Masking constants, patterns, and configuration flags.
 
-Extracted from data_masking.py during v2.5.0 refactoring.
+Extracted from data_masking.py during v2.5.1 refactoring.
 """
 
 import re
@@ -26,7 +26,7 @@ from rank_data import (
 # ============================================================================
 # МЕТАДАНІ
 # ============================================================================
-__version__ = "2.5.0"
+__version__ = "2.5.1"
 __author__ = "Vladyslav V. Prodan"
 __contact__ = "github.com/click0"
 __phone__ = "+38(099)6053340"
@@ -167,6 +167,9 @@ MONTHS_GENITIVE_PATTERN = '|'.join(re.escape(m) for m in MONTHS_GENITIVE.keys())
 
 # Maximum input file size in bytes (default: 100 MB)
 MAX_INPUT_FILE_SIZE = 100 * 1024 * 1024
+
+EXCLUDE_WORDS_LOWER = frozenset(w.lower() for w in EXCLUDE_WORDS)
+RANKS_LIST_LOWER = frozenset(r.lower() for r in RANKS_LIST)
 
 _MONTHS_UA_LIST = [
     "січня", "лютого", "березня", "квітня", "травня", "червня",
