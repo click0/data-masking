@@ -37,23 +37,27 @@ _SURNAME_RE = r'[А-ЯІЇЄҐ][а-яіїєґ\'ʼ\-]{2,}'
 _SURNAME_UPPER_RE = r'[А-ЯІЇЄҐ]{3,}'
 _NAME_RE = r'(?:' + _SURNAME_RE + r'|' + _SURNAME_UPPER_RE + r')'
 
+# Пробіл у межах рядка (НЕ \s — щоб ініціали не склеювались
+# з наступним рядком через \n)
+_SP = r'[  ]'
+
 # Прізвище + 2 ініціали: Іванов П.А. / Іванов П. А. / ІВАНОВ П.А.
 _RE_NAME_INI2 = re.compile(
-    r'(' + _NAME_RE + r')\s+([А-ЯІЇЄҐ])\.\s?([А-ЯІЇЄҐ])\.'
+    r'(' + _NAME_RE + r')' + _SP + r'+([А-ЯІЇЄҐ])\.' + _SP + r'?([А-ЯІЇЄҐ])\.'
 )
 # 2 ініціали + Прізвище: П.А. Іванов / П. А. Іванов
 _RE_INI2_NAME = re.compile(
     r'(?<![а-яіїєґА-ЯІЇЄҐa-zA-Z])'
-    r'([А-ЯІЇЄҐ])\.\s?([А-ЯІЇЄҐ])\.\s?(' + _NAME_RE + r')'
+    r'([А-ЯІЇЄҐ])\.' + _SP + r'?([А-ЯІЇЄҐ])\.' + _SP + r'?(' + _NAME_RE + r')'
 )
 # Прізвище + 1 ініціал: Іванов П.
 _RE_NAME_INI1 = re.compile(
-    r'(' + _NAME_RE + r')\s+([А-ЯІЇЄҐ])\.(?![а-яіїєґА-ЯІЇЄҐa-zA-Z])'
+    r'(' + _NAME_RE + r')' + _SP + r'+([А-ЯІЇЄҐ])\.(?![а-яіїєґА-ЯІЇЄҐa-zA-Z])'
 )
 # 1 ініціал + Прізвище: П. Іванов
 _RE_INI1_NAME = re.compile(
     r'(?<![а-яіїєґА-ЯІЇЄҐa-zA-Z])'
-    r'([А-ЯІЇЄҐ])\.\s?(' + _NAME_RE + r')'
+    r'([А-ЯІЇЄҐ])\.' + _SP + r'?(' + _NAME_RE + r')'
 )
 
 
@@ -90,76 +94,63 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
     Знаходить ПІБ з ініціалами та маскує їх.
 
     Шукає ініціали (П.А., К.П., Т. А.), перевіряє сусіда — чи це прізвище.
-    Збирає заміни, застосовує з кінця тексту щоб не збити позиції.
+    Фаза 1 збирає кандидатів без побічних ефектів, фаза 2 (після зняття
+    перекриттів, у порядку документа) пише mapping — інакше instance
+    tracking розійдеться з порядком входжень і unmask поверне не те.
     """
     if not _cfg.MASK_NAMES:
         return text
 
-    replacements = []  # (start, end, new_text)
+    # Фаза 1: збір кандидатів (start, end, surname, [ініціали], has_space, ini_first)
+    candidates = []
 
-    def _do(regex, handler):
-        for m in regex.finditer(text):
-            r = handler(m)
-            if r:
-                replacements.append(r)
-
-    # Прізвище + 2 ініціали: Іванов К.П. / Іванов К. П.
-    def _name_ini2(m):
+    for m in _RE_NAME_INI2.finditer(text):
         surname, i1, i2 = m.group(1), m.group(2), m.group(3)
-        if not _is_surname_candidate(surname):
-            return None
-        ms = mask_surname(surname, masking_dict, instance_counters)
-        mi1 = _mask_initial(i1, surname)
-        mi2 = _mask_initial(i2, surname)
-        has_space = f"{i1}. {i2}." in m.group(0)
-        ini = f"{mi1}. {mi2}." if has_space else f"{mi1}.{mi2}."
-        return (m.start(), m.end(), f"{ms} {ini}")
+        if _is_surname_candidate(surname):
+            has_space = f"{i1}. {i2}." in m.group(0)
+            candidates.append((m.start(), m.end(), surname, [i1, i2], has_space, False))
 
-    # 2 ініціали + Прізвище: К.П. Іванов / К. П. Іванов
-    def _ini2_name(m):
+    for m in _RE_INI2_NAME.finditer(text):
         i1, i2, surname = m.group(1), m.group(2), m.group(3)
-        if not _is_surname_candidate(surname):
-            return None
-        ms = mask_surname(surname, masking_dict, instance_counters)
-        mi1 = _mask_initial(i1, surname)
-        mi2 = _mask_initial(i2, surname)
-        has_space = f"{i1}. {i2}." in m.group(0)
-        ini = f"{mi1}. {mi2}." if has_space else f"{mi1}.{mi2}."
-        return (m.start(), m.end(), f"{ini} {ms}")
+        if _is_surname_candidate(surname):
+            has_space = f"{i1}. {i2}." in m.group(0)
+            candidates.append((m.start(), m.end(), surname, [i1, i2], has_space, True))
 
-    # Прізвище + 1 ініціал: Іванов П.
-    def _name_ini1(m):
+    for m in _RE_NAME_INI1.finditer(text):
         surname, i1 = m.group(1), m.group(2)
-        if not _is_surname_candidate(surname):
-            return None
-        ms = mask_surname(surname, masking_dict, instance_counters)
-        mi1 = _mask_initial(i1, surname)
-        return (m.start(), m.end(), f"{ms} {mi1}.")
+        if _is_surname_candidate(surname):
+            candidates.append((m.start(), m.end(), surname, [i1], False, False))
 
-    # 1 ініціал + Прізвище: П. Іванов
-    def _ini1_name(m):
+    for m in _RE_INI1_NAME.finditer(text):
         i1, surname = m.group(1), m.group(2)
-        if not _is_surname_candidate(surname):
-            return None
-        ms = mask_surname(surname, masking_dict, instance_counters)
-        mi1 = _mask_initial(i1, surname)
-        return (m.start(), m.end(), f"{mi1}. {ms}")
+        if _is_surname_candidate(surname):
+            candidates.append((m.start(), m.end(), surname, [i1], False, True))
 
-    _do(_RE_NAME_INI2, _name_ini2)
-    _do(_RE_INI2_NAME, _ini2_name)
-    _do(_RE_NAME_INI1, _name_ini1)
-    _do(_RE_INI1_NAME, _ini1_name)
-
-    # Довші патерни мають пріоритет; видаляємо перекриття
-    replacements.sort(key=lambda x: (x[1] - x[0]), reverse=True)
+    # Довші патерни мають пріоритет; знімаємо перекриття
+    candidates.sort(key=lambda x: (x[1] - x[0]), reverse=True)
     kept = []
-    for r in replacements:
-        if not any(r[0] < k[1] and r[1] > k[0] for k in kept):
-            kept.append(r)
+    for c in candidates:
+        if not any(c[0] < k[1] and c[1] > k[0] for k in kept):
+            kept.append(c)
 
-    # Заміни з кінця тексту
-    kept.sort(key=lambda x: x[0], reverse=True)
-    for start, end, new_text in kept:
+    # Фаза 2: у порядку документа маскуємо та записуємо mapping
+    masking_dict["mappings"].setdefault("initials", {})
+    kept.sort(key=lambda x: x[0])
+    replacements = []
+    for start, end, surname, initials, has_space, ini_first in kept:
+        ms = mask_surname(surname, masking_dict, instance_counters)
+        sep = '. ' if has_space else '.'
+        orig_ini = sep.join(initials) + '.'
+        masked_letters = [_mask_initial(i, surname) for i in initials]
+        masked_ini = sep.join(masked_letters) + '.'
+        # Зберігаємо у mapping — інакше unmask не зможе відновити ініціали
+        masked_ini = add_to_mapping(masking_dict, instance_counters,
+                                    "initials", orig_ini, masked_ini)
+        new_text = f"{masked_ini} {ms}" if ini_first else f"{ms} {masked_ini}"
+        replacements.append((start, end, new_text))
+
+    # Заміни з кінця тексту, щоб не збити позиції
+    for start, end, new_text in reversed(replacements):
         text = text[:start] + new_text + text[end:]
 
     return text
@@ -339,6 +330,19 @@ def mask_text_context_aware(text: str, masking_dict: Dict, instance_counters: Di
             if pib and _cfg.MASK_NAMES:
                 parts = pib.split()
                 if len(parts) >= 2:
+                    # Не маскуємо повторно те, що вже є маскою (наприклад,
+                    # прізвище, замасковане фазою ініціалів) — вкладену маску
+                    # unmask не зможе розкрутити за один прохід
+                    already_masked = {
+                        info["masked_as"].lower()
+                        for cat in ("surname", "name")
+                        for info in masking_dict["mappings"].get(cat, {}).values()
+                        if isinstance(info, dict) and "masked_as" in info
+                    }
+                    if any(p.lower() in already_masked for p in parts[:2]):
+                        current_line_for_parsing = current_line_for_parsing.replace(pib, "___PIB_MASKED___", 1)
+                        iteration += 1
+                        continue
                     if is_likely_surname_by_case(parts[1]):
                         name, surname = parts[0], parts[1]
                         patronymic = parts[2] if len(parts) >= 3 else ""

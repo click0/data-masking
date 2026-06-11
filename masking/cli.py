@@ -689,7 +689,8 @@ def main():
             "ipn", "passport_id", "military_id", "surname", "name",
             "military_unit", "order_number", "order_number_with_letters",
             "br_number", "br_number_slash", "br_number_complex",
-            "rank", "brigade_number", "date", "date_text", "patronymic"
+            "rank", "brigade_number", "date", "date_text", "patronymic",
+            "initials"
         ]},
         "instance_tracking": {}
     }

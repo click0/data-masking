@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.5.2] - 2026-06
+
+### Fixed
+- **Initials are now reversible**: masked initials (`Іванов П.А.` etc.) are stored
+  in the mapping under new `initials` category — unmask restores them
+- Initials regexes no longer match across line breaks (`П.А.\nСлово` false positive)
+- Main PIB parser no longer re-masks surnames already masked by the initials
+  phase (nested masks broke unmask)
+- Initials mapping is written in document order — instance tracking stays
+  consistent with occurrence order
+
+### Added
+- `tests/test_initials.py` — 27 tests covering all formats and mask→unmask roundtrip
+- Version asserts in tests are now dynamic (compare against `masking.constants`)
+
 ## [2.5.1] - 2026-04
 
 ### Fixed
