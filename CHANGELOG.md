@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.5.3] - 2026-06
+
+### Fixed
+- Repeated text dates (`06 жовтня 2025 року` twice in a document) now track
+  instances `[1, 2, ...]` — previously only the first occurrence was restored
+  by unmask
+- Text date masking inside the engine is now deterministic (the internal copy
+  of the function never seeded the RNG)
+
+### Changed
+- Removed duplicated `_mask_date_text` implementation (~50 lines);
+  it is now an alias of `mask_date_text`
+
 ## [2.5.2] - 2026-06
 
 ### Fixed

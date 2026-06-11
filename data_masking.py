@@ -23,7 +23,7 @@ Year: 2025-2026
 # Re-exports from masking package for backward compatibility
 # ============================================================================
 
-__version__ = "2.5.2"
+__version__ = "2.5.3"
 
 from masking.constants import (
     __version__, __author__, __contact__, __phone__, __license__, __year__,
