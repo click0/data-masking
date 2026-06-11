@@ -7,7 +7,7 @@ Data Unmasking Script v2.5.1
 
 ОНОВЛЕНО В v2.5.1:
 - Рефакторинг: розбито на пакет unmasking/ (helpers, engine, io, cli)
-- Додано __main__.py для запуску через python -m
+- Додано __main__.py: запуск з кореня репо — python . mask / python . unmask
 - Зворотна сумісність: всі імпорти з unmask_data продовжують працювати
 
 Author: Vladyslav V. Prodan

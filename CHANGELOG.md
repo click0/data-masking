@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.5.6] - 2026-06
+
+### Changed
+- README updated for the package architecture (`masking/`, `unmasking/`,
+  `__main__.py`), initials masking documented
+- README: new "Модель загроз та обмеження" section — honest statement that
+  this is pseudonymization (partial digit/letter preservation, deterministic
+  unsalted hashing, rank shift ±1-2, date shift ±30 days)
+- Wrapper docstrings: corrected `python -m` mention (actual invocation is
+  `python . mask` / `python . unmask` from the repo root)
+
 ## [2.5.5] - 2026-06
 
 ### Changed

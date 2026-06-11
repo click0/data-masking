@@ -8,7 +8,7 @@ Data Masking Script v2.5.1
 ОНОВЛЕНО В v2.5.1:
 - Рефакторинг: розбито на пакет masking/ (constants, helpers, language,
   context, mask_personal, mask_military, engine, cli)
-- Додано __main__.py для запуску через python -m
+- Додано __main__.py: запуск з кореня репо — python . mask / python . unmask
 - Зворотна сумісність: всі імпорти з data_masking продовжують працювати
 
 Author: Vladyslav V. Prodan
@@ -23,7 +23,7 @@ Year: 2025-2026
 # Re-exports from masking package for backward compatibility
 # ============================================================================
 
-__version__ = "2.5.5"
+__version__ = "2.5.6"
 
 from masking.constants import (
     __version__, __author__, __contact__, __phone__, __license__, __year__,
