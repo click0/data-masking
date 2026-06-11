@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.5.7] - 2026-06
+
+### Security
+- Generated encryption passwords are printed to **stderr** (not stdout) with
+  a "shown once" warning — keeps them out of redirected output, pipes and
+  CI logs
+
 ## [2.5.6] - 2026-06
 
 ### Changed

@@ -459,6 +459,15 @@ def _run_single_pass_masking(input_data, is_json: bool, masking_dict: Dict,
     return masked_data, total_unique
 
 
+def _print_generated_password(password: str) -> None:
+    """Показує згенерований пароль у stderr (не stdout), щоб він не
+    потрапляв у перенаправлений вивід, пайпи та логи CI."""
+    import sys
+    print("  Generated password (shown once, NOT saved anywhere):",
+          file=sys.stderr)
+    print(f"  {password}", file=sys.stderr)
+
+
 def _handle_encryption(args, config, masking_dict: Dict, map_path: Path,
                        logger) -> None:
     """Encrypt the mapping file if --encrypt is requested."""
@@ -477,10 +486,10 @@ def _handle_encryption(args, config, masking_dict: Dict, map_path: Path,
                 if logger:
                     logger.warning(f"Environment variable '{password_env}' is not set or empty")
                 password = generate_password_from_config(config)
-                print(f"  Generated password: {password}")
+                _print_generated_password(password)
         else:
             password = generate_password_from_config(config)
-            print(f"  Generated password: {password}")
+            _print_generated_password(password)
 
     manager = MappingSecurityManager()
     manager.encrypt_mapping(masking_dict, password, enc_path)
