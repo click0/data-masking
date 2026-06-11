@@ -4,7 +4,7 @@
 """
 Main masking engine: context-aware text masking and JSON processing.
 
-Extracted from data_masking.py during v2.5.1 refactoring.
+Extracted from data_masking.py during the package refactoring (v2.5.0).
 """
 
 import random

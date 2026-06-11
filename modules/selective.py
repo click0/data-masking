@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Selective Masking Module v2.5.1
+Selective Masking Module v2.6.0
 
 Provides --only / --exclude support: mask only selected data types.
 Supports type aliases (plural forms, Ukrainian names), type groups,
@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 
-__version__ = "2.5.1"
+__version__ = "2.6.0"
 
 # ============================================================================
 # AVAILABLE TYPES

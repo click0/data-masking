@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Інтеграційні тести для data_masking.py v2.5.1
+Інтеграційні тести для data_masking.py v2.6.0
 Тестує нові функції:
 - --init-config
 - --encrypt / --password
@@ -11,7 +11,7 @@
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 Phone: +38(099)6053340
-Version: 2.5.1
+Version: 2.6.0
 License: BSD 3-Clause "New" or "Revised" License
 Year: 2025-2026
 """
@@ -574,7 +574,7 @@ class TestCliMasking:
 
             text = sample_input_file.read_text(encoding="utf-8")
             masking_dict = {
-                "version": "2.5.1",
+                "version": "2.6.0",
                 "mappings": {k: {} for k in [
                     "ipn", "passport_id", "military_id", "surname", "name",
                     "military_unit", "order_number", "order_number_with_letters",
@@ -608,7 +608,7 @@ class TestCliMasking:
 
         # Симуляція --only ipn (маскуємо тільки ІПН)
         masking_dict = {
-            "version": "2.5.1",
+            "version": "2.6.0",
             "mappings": {k: {} for k in [
                 "ipn", "passport_id", "military_id", "surname", "name",
                 "military_unit", "order_number", "rank", "date", "date_text", "patronymic"
@@ -648,7 +648,7 @@ class TestCliMasking:
             text = sample_input_file.read_text(encoding="utf-8")
 
             masking_dict = {
-                "version": "2.5.1",
+                "version": "2.6.0",
                 "mappings": {k: {} for k in [
                     "ipn", "passport_id", "military_id", "surname", "name",
                     "military_unit", "order_number", "order_number_with_letters",
@@ -701,7 +701,7 @@ class TestCliDateMasking:
         text = 'від "06" жовтня 2025 року №292'
 
         masking_dict = {
-            "version": "2.5.1",
+            "version": "2.6.0",
             "mappings": {k: {} for k in [
                 "ipn", "passport_id", "military_id", "surname", "name",
                 "order_number", "rank", "date", "date_text", "patronymic"
@@ -724,7 +724,7 @@ class TestCliDateMasking:
         text = "Дата: 15.03.2024"
 
         masking_dict = {
-            "version": "2.5.1",
+            "version": "2.6.0",
             "mappings": {k: {} for k in [
                 "ipn", "passport_id", "military_id", "surname", "name",
                 "order_number", "rank", "date", "date_text", "patronymic"
@@ -765,7 +765,7 @@ class TestCliOutputFormats:
         # Симулюємо --no-report
         text = "Тестовий текст"
         masking_dict = {
-            "version": "2.5.1",
+            "version": "2.6.0",
             "mappings": {"surname": {}, "name": {}},
             "statistics": {},
             "instance_tracking": {}
@@ -800,7 +800,7 @@ class TestCliOutputFormats:
         }
 
         masking_dict = {
-            "version": "2.5.1",
+            "version": "2.6.0",
             "mappings": {k: {} for k in [
                 "ipn", "passport_id", "surname", "name", "rank", "patronymic"
             ]},
@@ -881,7 +881,7 @@ class TestChainRoundtrip:
     def _make_masking_dict(self):
         """Create a fresh masking dict."""
         from re_mask import make_empty_masking_dict
-        return make_empty_masking_dict("2.5.1")
+        return make_empty_masking_dict("2.6.0")
 
     def test_chain_roundtrip_2_passes(self):
         """Тест: маскування у 2 проходи, потім відновлення через ланцюг."""
