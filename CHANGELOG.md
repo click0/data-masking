@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.5.5] - 2026-06
+
+### Changed
+- `modules/rank_data.py` is now a re-export of the root `rank_data.py`
+  (was a full 636-line copy that could silently diverge)
+
 ## [2.5.4] - 2026-06
 
 ### Fixed
