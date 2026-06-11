@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Data Masking Modules Package v2.5.1
+Data Masking Modules Package v2.6.0
 
 Модулі системи маскування даних.
 """

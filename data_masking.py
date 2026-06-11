@@ -2,19 +2,26 @@
 # -*- coding: utf-8 -*-
 
 """
-Data Masking Script v2.5.1
+Data Masking Script v2.6.0
 Локально узгоджене маскування конфіденційних даних з INSTANCE TRACKING
 
-ОНОВЛЕНО В v2.5.1:
-- Рефакторинг: розбито на пакет masking/ (constants, helpers, language,
-  context, mask_personal, mask_military, engine, cli)
-- Додано __main__.py: запуск з кореня репо — python . mask / python . unmask
-- Зворотна сумісність: всі імпорти з data_masking продовжують працювати
+ОНОВЛЕНО В v2.6.0:
+- Зворотні ініціали: ПІБ типу "Іванов П.А." зберігаються у mapping
+  (категорія initials) та повністю відновлюються при unmask
+- Instance tracking у порядку документа; повторні текстові дати
+  відновлюються всі
+- "Живі" прапорці MASK_*: data_masking.MASK_NAMES = False знову діє
+- O(n) заміни замість O(n^2) на великих файлах
+- Згенеровані паролі виводяться у stderr
+
+Архітектура (з v2.5.0): тонка обгортка над пакетом masking/
+(constants, helpers, language, context, mask_personal, mask_military,
+engine, cli); запуск з кореня репо — python . mask / python . unmask
 
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 Phone: +38(099)6053340
-Version: 2.5.1
+Version: 2.6.0
 License: BSD 3-Clause "New" or "Revised" License
 Year: 2025-2026
 """
@@ -23,7 +30,7 @@ Year: 2025-2026
 # Re-exports from masking package for backward compatibility
 # ============================================================================
 
-__version__ = "2.5.7"
+__version__ = "2.6.0"
 
 from masking.constants import (
     __version__, __author__, __contact__, __phone__, __license__, __year__,

@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.6.0] - 2026-06
+
+Release rollup of 2.5.2–2.5.8 (reversible initials, instance tracking fixes,
+live `MASK_*` flags, O(n) replacements, threat model docs, stderr passwords).
+
+### Changed
+- Version strings synchronized across all file headers (were stuck at 2.5.1)
+- Historical "extracted during vX refactoring" phrases pinned to v2.5.0
+  so they no longer drift with version bumps
+
+## [2.5.8] - 2026-06
+
+### Performance
+- Replacement loops (mask engine, initials phase, both unmask passes) build
+  the result via segment join instead of rebuilding the whole string per
+  replacement — O(n) instead of O(n²) on large documents
+
+### Fixed
+- Mask engine processes items in document order: instance numbers now match
+  occurrence order (was reverse — wrong original could be restored when two
+  different values masked to the same string)
+
 ## [2.5.7] - 2026-06
 
 ### Security

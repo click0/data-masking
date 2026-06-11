@@ -4,7 +4,7 @@
 """
 Context analysis and line parsing functions.
 
-Extracted from data_masking.py during v2.5.1 refactoring.
+Extracted from data_masking.py during the package refactoring (v2.5.0).
 """
 
 import re

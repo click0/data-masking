@@ -2,18 +2,22 @@
 # -*- coding: utf-8 -*-
 
 """
-Data Unmasking Script v2.5.1
+Data Unmasking Script v2.6.0
 Відновлення оригінальних даних з замаскованого файлу
 
-ОНОВЛЕНО В v2.5.1:
-- Рефакторинг: розбито на пакет unmasking/ (helpers, engine, io, cli)
-- Додано __main__.py: запуск з кореня репо — python . mask / python . unmask
-- Зворотна сумісність: всі імпорти з unmask_data продовжують працювати
+ОНОВЛЕНО В v2.6.0:
+- Відновлення ініціалів (категорія initials у mapping)
+- Повторні текстові дати відновлюються всі (instance tracking)
+- Розпізнавання mapping-файлів усіх версій 2.x (раніше 2.3+ падали у v1-логіку)
+- O(n) заміни замість O(n^2) на великих файлах
+
+Архітектура (з v2.5.0): тонка обгортка над пакетом unmasking/
+(helpers, engine, io, cli); запуск з кореня репо — python . unmask
 
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 Phone: +38(099)6053340
-Version: 2.5.1
+Version: 2.6.0
 License: BSD 3-Clause "New" or "Revised" License
 Year: 2025-2026
 """

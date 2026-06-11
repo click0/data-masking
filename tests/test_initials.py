@@ -135,3 +135,26 @@ class TestInitialsRoundtrip:
         version = check_mapping_version(masking_dict)
         restored, _ = unmask_text_v2(masked, masking_dict, version)
         assert restored == text
+
+
+class TestLargeDocumentRoundtrip:
+    """Великий документ: instance tracking у порядку документа,
+    сегментна збірка замін не губить і не дублює текст."""
+
+    def test_many_items_roundtrip(self):
+        import random as rnd
+        rnd.seed(42)
+        lines = []
+        for i in range(300):
+            ipn = ''.join(rnd.choice('0123456789') for _ in range(10))
+            day = rnd.randint(1, 28)
+            lines.append(
+                f'Запис {i}: ІПН {ipn} від {day:02d}.03.2024, в/ч А{rnd.randint(1000, 9999)}'
+            )
+        text = '\n'.join(lines)
+
+        masked, masking_dict = mask(text)
+        assert masked != text
+        version = check_mapping_version(masking_dict)
+        restored, _ = unmask_text_v2(masked, masking_dict, version)
+        assert restored == text
