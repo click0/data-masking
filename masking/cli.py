@@ -28,14 +28,14 @@ import logging as _logging
 _opt_logger = _logging.getLogger(__name__)
 
 try:
-    from modules.selective import SelectiveFilter, apply_filter_to_globals, get_available_types
+    from modules.selective import get_available_types
     SELECTIVE_AVAILABLE = True
 except ImportError:
     SELECTIVE_AVAILABLE = False
     _opt_logger.debug("modules.selective not available — --only/--exclude disabled")
 
 try:
-    from modules.re_mask import ReMasker, MappingChain, make_empty_masking_dict
+    from modules.re_mask import MappingChain, make_empty_masking_dict
     REMASK_AVAILABLE = True
 except ImportError:
     REMASK_AVAILABLE = False
@@ -459,6 +459,15 @@ def _run_single_pass_masking(input_data, is_json: bool, masking_dict: Dict,
     return masked_data, total_unique
 
 
+def _print_generated_password(password: str) -> None:
+    """Показує згенерований пароль у stderr (не stdout), щоб він не
+    потрапляв у перенаправлений вивід, пайпи та логи CI."""
+    import sys
+    print("  Generated password (shown once, NOT saved anywhere):",
+          file=sys.stderr)
+    print(f"  {password}", file=sys.stderr)
+
+
 def _handle_encryption(args, config, masking_dict: Dict, map_path: Path,
                        logger) -> None:
     """Encrypt the mapping file if --encrypt is requested."""
@@ -477,10 +486,10 @@ def _handle_encryption(args, config, masking_dict: Dict, map_path: Path,
                 if logger:
                     logger.warning(f"Environment variable '{password_env}' is not set or empty")
                 password = generate_password_from_config(config)
-                print(f"  Generated password: {password}")
+                _print_generated_password(password)
         else:
             password = generate_password_from_config(config)
-            print(f"  Generated password: {password}")
+            _print_generated_password(password)
 
     manager = MappingSecurityManager()
     manager.encrypt_mapping(masking_dict, password, enc_path)
@@ -689,7 +698,8 @@ def main():
             "ipn", "passport_id", "military_id", "surname", "name",
             "military_unit", "order_number", "order_number_with_letters",
             "br_number", "br_number_slash", "br_number_complex",
-            "rank", "brigade_number", "date", "date_text", "patronymic"
+            "rank", "brigade_number", "date", "date_text", "patronymic",
+            "initials"
         ]},
         "instance_tracking": {}
     }

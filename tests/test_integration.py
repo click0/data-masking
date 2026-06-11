@@ -56,9 +56,38 @@ class TestVersion:
     """Тести версії."""
 
     def test_version(self):
-        """Тест: версія модуля."""
+        """Тест: версія обгортки узгоджена з пакетом (єдине джерело правди)."""
+        import re
         import data_masking
-        assert data_masking.__version__ == "2.5.1"
+        from masking.constants import __version__ as pkg_version
+        assert data_masking.__version__ == pkg_version
+        # CI release workflow дістає версію з data_masking.py статичним regex
+        content = (PROJECT_ROOT / "data_masking.py").read_text(encoding="utf-8")
+        match = re.search(r'__version__\s*=\s*"(.+?)"', content)
+        assert match and match.group(1) == pkg_version
+class TestLiveFlags:
+    """Прапорці MASK_* в обгортці мають бути «живими» (читання і запис
+    делегуються до masking.constants, який читає рушій)."""
+
+    def test_write_through_wrapper_reaches_engine(self):
+        import data_masking
+        from masking import constants as cfg
+        original = cfg.MASK_IPN
+        try:
+            data_masking.MASK_IPN = False
+            assert cfg.MASK_IPN is False
+        finally:
+            cfg.MASK_IPN = original
+
+    def test_read_reflects_engine_state(self):
+        import data_masking
+        from masking import constants as cfg
+        original = cfg.MASK_DATES
+        try:
+            cfg.MASK_DATES = not original
+            assert data_masking.MASK_DATES == (not original)
+        finally:
+            cfg.MASK_DATES = original
 # ============================================================================
 # ТЕСТИ --init-config
 # ============================================================================
@@ -104,7 +133,8 @@ class TestInitConfig:
         assert "router_rules:" in content
 
         # Перевіряємо версію
-        assert "v2.5.1" in content
+        from masking.constants import __version__ as pkg_version
+        assert f"v{pkg_version}" in content
 
         # Перевіряємо параметри безпеки
         assert "encrypt_output:" in content
@@ -386,8 +416,9 @@ class TestCliArguments:
     def test_version_in_help(self):
         """Тест: версія доступна."""
         from data_masking import __version__
+        from masking.constants import __version__ as pkg_version
 
-        assert __version__ == "2.5.1"
+        assert __version__ == pkg_version
 
         # Спробуємо subprocess
         try:
@@ -404,7 +435,7 @@ class TestCliArguments:
 
                 stdout = result.stdout or ""
                 if result.returncode == 0 and stdout.strip():
-                    assert "2.5.1" in stdout
+                    assert pkg_version in stdout
                     return
         except Exception:
             pass
@@ -447,15 +478,16 @@ class TestCliBasicCommands:
 
     def test_version_flag(self, run_cli):
         """Тест: -V/--version показує версію."""
+        from masking.constants import __version__ as pkg_version
         result = run_cli("-V", expect_success=False)
         # --version може повернути 0 або інший код
         output = (result.stdout or "") + (result.stderr or "")
-        if "2.5.1" in output:
+        if pkg_version in output:
             assert True
         else:
             # Fallback
             from data_masking import __version__
-            assert __version__ == "2.5.1"
+            assert __version__ == pkg_version
 
     def test_list_types(self, run_cli):
         """Тест: --list-types показує доступні типи."""

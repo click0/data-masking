@@ -197,6 +197,10 @@ def mask_date(original: str, masking_dict: Dict, instance_counters: Dict) -> str
 def mask_date_text(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
     """
     Маскує текстову дату у форматі: "06" жовтня 2025 року.
+
+    Детерміновано (seed від дати), instance tracking через add_to_mapping —
+    повторні входження тієї самої дати отримують instances [1, 2, ...]
+    і коректно відновлюються при unmask.
     """
     match = _cfg.DATE_TEXT_PATTERN.search(original)
     if not match:
@@ -204,92 +208,43 @@ def mask_date_text(original: str, masking_dict: Dict, instance_counters: Dict) -
 
     day, month_name, year = match.group(1), match.group(2), match.group(3)
     original_key = f"{day} {month_name} {year}"
-
-    category = "date_text"
-
-    # Перевіряємо чи вже маскували цю дату
-    if category not in masking_dict["mappings"]:
-        masking_dict["mappings"][category] = {}
-
-    existing = masking_dict["mappings"].get(category, {})
-    if original_key.lower() in existing:
-        masked_val = existing[original_key.lower()]
-        if isinstance(masked_val, dict):
-            masked_val = masked_val.get("masked_as", original)
-        parts = masked_val.split()
-        if len(parts) >= 3:
-            result = original.replace(day, parts[0], 1).replace(
-                month_name, parts[1], 1).replace(year, parts[2], 1)
-            return result
-        return original
-
-    # Генеруємо детермінований seed
-    seed = get_deterministic_seed(original_key)
-    random.seed(seed)
-
-    # Зміщуємо день на +-5 (в межах 1-28)
-    day_shift = random.choice([-5, -3, -2, 2, 3, 5])
-    new_day = str(max(1, min(28, int(day) + day_shift))).zfill(len(day))
-
-    # Замінюємо місяць на випадковий інший
-    available_months = [m for m in _cfg._MONTHS_UA_LIST if m != month_name.lower()]
-    new_month = random.choice(available_months)
-
-    # Зміщуємо рік на +-1
-    year_shift = random.choice([-1, 0, 1])
-    new_year = str(int(year) + year_shift)
-
-    # Формуємо замаскований текст
-    masked_text = original.replace(day, new_day, 1).replace(
-        month_name, new_month, 1).replace(year, new_year, 1)
-    masked_key = f"{new_day} {new_month} {new_year}"
-
-    # Зберігаємо у mappings
-    mappings = masking_dict["mappings"].setdefault(category, {})
     key = original_key.lower()
-    if key not in mappings:
-        mappings[key] = {"masked_as": masked_key, "instances": [1]}
-        instance_counters[masked_key] = instance_counters.get(masked_key, 0) + 1
-    masking_dict["statistics"][category] = masking_dict["statistics"].get(category, 0) + 1
 
-    return masked_text
+    masking_dict["mappings"].setdefault("date_text", {})
+    existing = masking_dict["mappings"]["date_text"].get(key)
+    if existing is not None:
+        masked_key = existing["masked_as"] if isinstance(existing, dict) else existing
+    else:
+        # Генеруємо детермінований seed
+        seed = get_deterministic_seed(original_key)
+        random.seed(seed)
 
+        # Зміщуємо день на +-5 (в межах 1-28)
+        day_shift = random.choice([-5, -3, -2, 2, 3, 5])
+        new_day = str(max(1, min(28, int(day) + day_shift))).zfill(len(day))
 
-def _mask_date_text(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
-    """Mask a text date like '"06" жовтня 2025 року'."""
-    match = _cfg.DATE_TEXT_PATTERN.search(original)
-    if not match:
+        # Замінюємо місяць на випадковий інший
+        available_months = [m for m in _cfg._MONTHS_UA_LIST if m != month_name.lower()]
+        new_month = random.choice(available_months)
+
+        # Зміщуємо рік на +-1
+        year_shift = random.choice([-1, 0, 1])
+        new_year = str(int(year) + year_shift)
+
+        masked_key = f"{new_day} {new_month} {new_year}"
+
+    masked_key = add_to_mapping(masking_dict, instance_counters,
+                                "date_text", key, masked_key)
+
+    parts = masked_key.split()
+    if len(parts) < 3:
         return original
+    return original.replace(day, parts[0], 1).replace(
+        month_name, parts[1], 1).replace(year, parts[2], 1)
 
-    day, month, year = match.group(1), match.group(2), match.group(3)
-    original_key = f"{day} {month} {year}"
 
-    category = "date_text"
-    existing = masking_dict["mappings"].get(category, {})
-    if original_key.lower() in existing:
-        masked_val = existing[original_key.lower()]
-        if isinstance(masked_val, dict):
-            masked_val = masked_val.get("masked_as", original)
-        return original.replace(day, masked_val.split()[0]).replace(
-            month, masked_val.split()[1] if len(masked_val.split()) > 1 else month).replace(
-            year, masked_val.split()[2] if len(masked_val.split()) > 2 else year)
-
-    # Shift day by +-5, month randomly, year +-1
-    new_day = str(max(1, min(28, int(day) + random.choice([-5, -3, -2, 2, 3, 5])))).zfill(len(day))
-    new_month = random.choice([m for m in _cfg._MONTHS_UA_LIST if m != month.lower()])
-    new_year = str(int(year) + random.choice([-1, 0, 1]))
-
-    masked_text = original.replace(day, new_day, 1).replace(month, new_month, 1).replace(year, new_year, 1)
-    masked_key = f"{new_day} {new_month} {new_year}"
-
-    # Store in mappings directly
-    mappings = masking_dict["mappings"].setdefault(category, {})
-    key = original_key.lower()
-    if key not in mappings:
-        mappings[key] = {"masked_as": masked_key, "instances": [1]}
-        instance_counters[masked_key] = instance_counters.get(masked_key, 0) + 1
-    masking_dict["statistics"][category] = masking_dict["statistics"].get(category, 0) + 1
-    return masked_text
+# Аліас для зворотної сумісності (історично було дві копії функції)
+_mask_date_text = mask_date_text
 
 
 # ============================================================================

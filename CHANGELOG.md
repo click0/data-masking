@@ -4,6 +4,70 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.5.7] - 2026-06
+
+### Security
+- Generated encryption passwords are printed to **stderr** (not stdout) with
+  a "shown once" warning — keeps them out of redirected output, pipes and
+  CI logs
+
+## [2.5.6] - 2026-06
+
+### Changed
+- README updated for the package architecture (`masking/`, `unmasking/`,
+  `__main__.py`), initials masking documented
+- README: new "Модель загроз та обмеження" section — honest statement that
+  this is pseudonymization (partial digit/letter preservation, deterministic
+  unsalted hashing, rank shift ±1-2, date shift ±30 days)
+- Wrapper docstrings: corrected `python -m` mention (actual invocation is
+  `python . mask` / `python . unmask` from the repo root)
+
+## [2.5.5] - 2026-06
+
+### Changed
+- `modules/rank_data.py` is now a re-export of the root `rank_data.py`
+  (was a full 636-line copy that could silently diverge)
+
+## [2.5.4] - 2026-06
+
+### Fixed
+- `data_masking.MASK_*`, `DEBUG_MODE`, `PRESERVE_CASE`, `HASH_ALGORITHM` are
+  live again: reads and writes through the wrapper delegate to
+  `masking.constants` (after the v2.5.0 refactoring writes were silently
+  ignored — broken backward compatibility)
+
+### Changed
+- Removed unused imports in `masking/cli.py` (`SelectiveFilter`,
+  `apply_filter_to_globals`, `ReMasker`)
+
+## [2.5.3] - 2026-06
+
+### Fixed
+- Repeated text dates (`06 жовтня 2025 року` twice in a document) now track
+  instances `[1, 2, ...]` — previously only the first occurrence was restored
+  by unmask
+- Text date masking inside the engine is now deterministic (the internal copy
+  of the function never seeded the RNG)
+
+### Changed
+- Removed duplicated `_mask_date_text` implementation (~50 lines);
+  it is now an alias of `mask_date_text`
+
+## [2.5.2] - 2026-06
+
+### Fixed
+- **Initials are now reversible**: masked initials (`Іванов П.А.` etc.) are stored
+  in the mapping under new `initials` category — unmask restores them
+- Initials regexes no longer match across line breaks (`П.А.\nСлово` false positive)
+- Main PIB parser no longer re-masks surnames already masked by the initials
+  phase (nested masks broke unmask)
+- Initials mapping is written in document order — instance tracking stays
+  consistent with occurrence order
+
+### Added
+- `tests/test_initials.py` — 27 tests covering all formats and mask→unmask roundtrip
+- Version asserts in tests are now dynamic (compare against `masking.constants`)
+
 ## [2.5.1] - 2026-04
 
 ### Fixed
