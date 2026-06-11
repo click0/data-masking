@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.5.4] - 2026-06
+
+### Fixed
+- `data_masking.MASK_*`, `DEBUG_MODE`, `PRESERVE_CASE`, `HASH_ALGORITHM` are
+  live again: reads and writes through the wrapper delegate to
+  `masking.constants` (after the v2.5.0 refactoring writes were silently
+  ignored — broken backward compatibility)
+
+### Changed
+- Removed unused imports in `masking/cli.py` (`SelectiveFilter`,
+  `apply_filter_to_globals`, `ReMasker`)
+
 ## [2.5.3] - 2026-06
 
 ### Fixed

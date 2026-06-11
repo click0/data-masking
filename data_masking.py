@@ -23,14 +23,12 @@ Year: 2025-2026
 # Re-exports from masking package for backward compatibility
 # ============================================================================
 
-__version__ = "2.5.3"
+__version__ = "2.5.4"
 
 from masking.constants import (
     __version__, __author__, __contact__, __phone__, __license__, __year__,
-    fake_uk, HASH_ALGORITHM,
-    MASK_NAMES, MASK_IPN, MASK_PASSPORT, MASK_MILITARY_ID, MASK_RANKS,
-    MASK_BRIGADES, MASK_UNITS, MASK_ORDERS, MASK_BR_NUMBERS, MASK_DATES,
-    RANK_SHIFT_OPTIONS, DEBUG_MODE, PRESERVE_CASE,
+    fake_uk,
+    RANK_SHIFT_OPTIONS,
     ABBREVIATION_WHITELIST, UKRAINIAN_DATE_PATTERN, DATE_TEXT_PATTERN,
     GOOD_UKRAINIAN_NAMES_MALE, GOOD_UKRAINIAN_NAMES_FEMALE, PROBLEMATIC_NAMES,
     EXCLUDE_WORDS,
@@ -95,6 +93,43 @@ from masking.cli import (
     CONFIG_AVAILABLE, LOGGING_AVAILABLE, PASSWORD_GENERATOR_AVAILABLE,
     main,
 )
+
+# ============================================================================
+# "Живі" конфігураційні прапорці
+# ============================================================================
+# Рушій читає прапорці з masking.constants. Просте from-import дало б копії:
+# старий код `data_masking.MASK_NAMES = False` мовчки не діяв би.
+# Тому читання делегуємо через __getattr__ (PEP 562), а запис — через
+# підміну класу модуля.
+
+import sys as _sys
+from types import ModuleType as _ModuleType
+
+from masking import constants as _cfg
+
+_LIVE_FLAGS = frozenset({
+    "MASK_NAMES", "MASK_IPN", "MASK_PASSPORT", "MASK_MILITARY_ID",
+    "MASK_RANKS", "MASK_BRIGADES", "MASK_UNITS", "MASK_ORDERS",
+    "MASK_BR_NUMBERS", "MASK_DATES",
+    "DEBUG_MODE", "PRESERVE_CASE", "HASH_ALGORITHM",
+})
+
+
+def __getattr__(name):
+    if name in _LIVE_FLAGS:
+        return getattr(_cfg, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+class _LiveFlagsModule(_ModuleType):
+    def __setattr__(self, name, value):
+        if name in _LIVE_FLAGS:
+            setattr(_cfg, name, value)
+        else:
+            super().__setattr__(name, value)
+
+
+_sys.modules[__name__].__class__ = _LiveFlagsModule
 
 if __name__ == "__main__":
     main()

@@ -28,14 +28,14 @@ import logging as _logging
 _opt_logger = _logging.getLogger(__name__)
 
 try:
-    from modules.selective import SelectiveFilter, apply_filter_to_globals, get_available_types
+    from modules.selective import get_available_types
     SELECTIVE_AVAILABLE = True
 except ImportError:
     SELECTIVE_AVAILABLE = False
     _opt_logger.debug("modules.selective not available — --only/--exclude disabled")
 
 try:
-    from modules.re_mask import ReMasker, MappingChain, make_empty_masking_dict
+    from modules.re_mask import MappingChain, make_empty_masking_dict
     REMASK_AVAILABLE = True
 except ImportError:
     REMASK_AVAILABLE = False

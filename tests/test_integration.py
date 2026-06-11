@@ -65,6 +65,29 @@ class TestVersion:
         content = (PROJECT_ROOT / "data_masking.py").read_text(encoding="utf-8")
         match = re.search(r'__version__\s*=\s*"(.+?)"', content)
         assert match and match.group(1) == pkg_version
+class TestLiveFlags:
+    """Прапорці MASK_* в обгортці мають бути «живими» (читання і запис
+    делегуються до masking.constants, який читає рушій)."""
+
+    def test_write_through_wrapper_reaches_engine(self):
+        import data_masking
+        from masking import constants as cfg
+        original = cfg.MASK_IPN
+        try:
+            data_masking.MASK_IPN = False
+            assert cfg.MASK_IPN is False
+        finally:
+            cfg.MASK_IPN = original
+
+    def test_read_reflects_engine_state(self):
+        import data_masking
+        from masking import constants as cfg
+        original = cfg.MASK_DATES
+        try:
+            cfg.MASK_DATES = not original
+            assert data_masking.MASK_DATES == (not original)
+        finally:
+            cfg.MASK_DATES = original
 # ============================================================================
 # ТЕСТИ --init-config
 # ============================================================================
