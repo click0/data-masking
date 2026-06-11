@@ -141,10 +141,21 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
         else:
             stats["skipped_count"] += 1
 
-    # КРОК 3: ВИКОНАННЯ ЗАМІН (з кінця до початку)
-    replacements_to_do.sort(key=lambda x: x[0], reverse=True)
+    # КРОК 3: ВИКОНАННЯ ЗАМІН
+    # Сегментами в порядку документа — O(n) замість квадратичної
+    # пересборки рядка на кожну заміну
+    replacements_to_do.sort(key=lambda x: x[0])
+    segments = []
+    prev_end = 0
     for start, end, original in replacements_to_do:
-        restored_text = restored_text[:start] + original + restored_text[end:]
+        if start < prev_end:
+            continue
+        segments.append(restored_text[prev_end:start])
+        segments.append(original)
+        prev_end = end
+    if segments:
+        segments.append(restored_text[prev_end:])
+        restored_text = ''.join(segments)
 
     return restored_text, stats
 
@@ -175,12 +186,24 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
             else:
                 stats["skipped_count"] += 1
 
-    replacements_to_do.sort(key=lambda x: x[0], reverse=True)
+    # Сегментами в порядку документа — O(n); перевірка відповідності маски
+    # йде по незмінному тексту, перекриття пропускаються
+    replacements_to_do.sort(key=lambda x: x[0])
+    segments = []
+    prev_end = 0
     for start_pos, end_pos, original_value, masked_value in replacements_to_do:
-        if restored_text[start_pos:end_pos].lower() == masked_value.lower():
-            masked_segment = restored_text[start_pos:end_pos]
-            original_value = _apply_original_case(masked_segment, original_value)
-            restored_text = restored_text[:start_pos] + original_value + restored_text[end_pos:]
+        if start_pos < prev_end:
+            continue
+        masked_segment = restored_text[start_pos:end_pos]
+        if masked_segment.lower() != masked_value.lower():
+            continue
+        original_value = _apply_original_case(masked_segment, original_value)
+        segments.append(restored_text[prev_end:start_pos])
+        segments.append(original_value)
+        prev_end = end_pos
+    if segments:
+        segments.append(restored_text[prev_end:])
+        restored_text = ''.join(segments)
 
     return restored_text, stats
 

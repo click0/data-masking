@@ -133,10 +133,12 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
         if not any(c[0] < k[1] and c[1] > k[0] for k in kept):
             kept.append(c)
 
-    # Фаза 2: у порядку документа маскуємо та записуємо mapping
+    # Фаза 2: у порядку документа маскуємо, записуємо mapping
+    # і збираємо результат сегментами (O(n))
     masking_dict["mappings"].setdefault("initials", {})
     kept.sort(key=lambda x: x[0])
-    replacements = []
+    segments = []
+    prev_end = 0
     for start, end, surname, initials, has_space, ini_first in kept:
         ms = mask_surname(surname, masking_dict, instance_counters)
         sep = '. ' if has_space else '.'
@@ -147,11 +149,13 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
         masked_ini = add_to_mapping(masking_dict, instance_counters,
                                     "initials", orig_ini, masked_ini)
         new_text = f"{masked_ini} {ms}" if ini_first else f"{ms} {masked_ini}"
-        replacements.append((start, end, new_text))
+        segments.append(text[prev_end:start])
+        segments.append(new_text)
+        prev_end = end
 
-    # Заміни з кінця тексту, щоб не збити позиції
-    for start, end, new_text in reversed(replacements):
-        text = text[:start] + new_text + text[end:]
+    if segments:
+        segments.append(text[prev_end:])
+        text = ''.join(segments)
 
     return text
 
@@ -265,43 +269,46 @@ def mask_text_context_aware(text: str, masking_dict: Dict, instance_counters: Di
             if not skip:
                 items_to_mask.append({'type': 'date_text', 'full_text': match.group(0), 'number_part': match.group(0), 'start': match.start(), 'end': match.end()})
 
-    items_to_mask.sort(key=lambda x: x['start'], reverse=True)
+    # Обхід у порядку документа: instance tracking збігається з порядком
+    # входжень (потрібно для unmask), а заміни збираються сегментами —
+    # O(n) замість квадратичного text[:i] + ... + text[j:] на кожен елемент
+    items_to_mask.sort(key=lambda x: x['start'])
 
+    segments = []
+    prev_end = 0
     for item in items_to_mask:
-        masked = ""
+        if item['start'] < prev_end: continue  # перекриття — пропускаємо
         if text[item['start']:item['end']] != item['full_text']: continue
-        if item['type'] == 'ipn': masked = mask_ipn(item['number_part'], masking_dict, instance_counters)
-        elif item['type'] == 'passport_id': masked = mask_passport_id(item['number_part'], masking_dict, instance_counters)
-        elif item['type'] == 'military_id': masked = mask_military_id(item['number_part'], masking_dict, instance_counters)
-        elif item['type'] == 'military_unit': masked = mask_military_unit(item['number_part'], masking_dict, instance_counters)
+
+        replacement = None
+        if item['type'] == 'ipn': replacement = mask_ipn(item['number_part'], masking_dict, instance_counters)
+        elif item['type'] == 'passport_id': replacement = mask_passport_id(item['number_part'], masking_dict, instance_counters)
+        elif item['type'] == 'military_id': replacement = mask_military_id(item['number_part'], masking_dict, instance_counters)
+        elif item['type'] == 'military_unit': replacement = mask_military_unit(item['number_part'], masking_dict, instance_counters)
         elif item['type'] == 'brigade_number':
-            masked = mask_brigade_number(item['full_text'], masking_dict, instance_counters)
-            text = text[:item['start']] + masked + text[item['end']:]
-            continue
+            replacement = mask_brigade_number(item['full_text'], masking_dict, instance_counters)
         elif item['type'] == 'date':
-            masked = mask_date(item['full_text'], masking_dict, instance_counters)
-            text = text[:item['start']] + masked + text[item['end']:]
-            continue
+            replacement = mask_date(item['full_text'], masking_dict, instance_counters)
         elif item['type'] == 'date_text':
-            masked = _mask_date_text(item['full_text'], masking_dict, instance_counters)
-            text = text[:item['start']] + masked + text[item['end']:]
-            continue
+            replacement = _mask_date_text(item['full_text'], masking_dict, instance_counters)
         elif item['type'] == 'order_simple':
             masked = mask_order_number(item['number_part'], masking_dict, instance_counters)
-            new_full = item['full_text'].replace(item['number_part'], masked, 1)
-            text = text[:item['start']] + new_full + text[item['end']:]
-            continue
+            replacement = item['full_text'].replace(item['number_part'], masked, 1)
         elif item['type'] == 'order_with_letters':
             masked = mask_order_number_with_letters(item['number_part'], masking_dict, instance_counters)
-            new_full = item['full_text'].replace(item['number_part'], masked, 1)
-            text = text[:item['start']] + new_full + text[item['end']:]
-            continue
+            replacement = item['full_text'].replace(item['number_part'], masked, 1)
         elif item['type'] in ['br_complex', 'br_with_slashes', 'br_with_suffix', 'br_standalone']:
-            masked = mask_br_number(item['full_text'], masking_dict, instance_counters)
-            text = text[:item['start']] + masked + text[item['end']:]
-            continue
+            replacement = mask_br_number(item['full_text'], masking_dict, instance_counters)
 
-        if masked: text = text[:item['start']] + masked + text[item['end']:]
+        if replacement is None or replacement == "":
+            continue
+        segments.append(text[prev_end:item['start']])
+        segments.append(replacement)
+        prev_end = item['end']
+
+    if segments:
+        segments.append(text[prev_end:])
+        text = ''.join(segments)
 
     lines = text.split('\n')
     masked_lines = []

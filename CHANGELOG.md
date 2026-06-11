@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.5.8] - 2026-06
+
+### Performance
+- Replacement loops (mask engine, initials phase, both unmask passes) build
+  the result via segment join instead of rebuilding the whole string per
+  replacement — O(n) instead of O(n²) on large documents
+
+### Fixed
+- Mask engine processes items in document order: instance numbers now match
+  occurrence order (was reverse — wrong original could be restored when two
+  different values masked to the same string)
+
 ## [2.5.7] - 2026-06
 
 ### Security
