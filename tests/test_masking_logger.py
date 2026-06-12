@@ -132,6 +132,9 @@ class TestMaskingLogger:
                 content = f.read()
             assert "file test message" in content
         finally:
+            for handler in ml.logger.handlers[:]:
+                handler.close()
+                ml.logger.removeHandler(handler)
             os.unlink(log_path)
 
     def test_stats_tracking(self):
@@ -159,4 +162,7 @@ class TestSetupLogging:
             logger = setup_logging(level="INFO", log_file=log_path)
             assert logger is not None
         finally:
+            for handler in logger.logger.handlers[:]:
+                handler.close()
+                logger.logger.removeHandler(handler)
             os.unlink(log_path)
