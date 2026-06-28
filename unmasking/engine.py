@@ -163,6 +163,12 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
 def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
     """
     Відновлення інших типів даних (окрім звань).
+
+    Один прохід по тексту єдиним alternation-regex з усіх масок —
+    O(текст) замість O(масок × текст). Альтернативи сортуються за довжиною
+    спадно, щоб довша маска мала пріоритет над коротшою (яка може бути її
+    підрядком). Instance tracking: per-mask лічильник входжень зліва направо
+    збігається з порядком, у якому instance-номери присвоювались при маскуванні.
     """
     restored_text = masked_text
 
@@ -171,23 +177,68 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
         del mappings_copy["rank"]
 
     instance_map = build_instance_map({"mappings": mappings_copy})
+    stats = {"restored_count": 0, "skipped_count": 0}
+    if not instance_map:
+        return restored_text, stats
 
+    # Case-insensitive lookup: lower(маска) -> {instance_num: original}
+    by_lower = {}
+    for masked_value, inst in instance_map.items():
+        by_lower.setdefault(masked_value.lower(), {}).update(inst)
+
+    # Єдиний regex; довші маски першими в alternation
+    masks_sorted = sorted(instance_map.keys(), key=len, reverse=True)
+    try:
+        big_re = re.compile(
+            r'(?<!\w)(' + '|'.join(re.escape(m) for m in masks_sorted) + r')(?!\w)',
+            re.IGNORECASE,
+        )
+    except re.error:
+        # Запасний шлях (екзотичні символи в масках)
+        return _unmask_other_data_slow(restored_text, instance_map)
+
+    seen = {}            # lower(маска) -> скільки входжень уже зустріли
+    segments = []
+    prev_end = 0
+    for m in big_re.finditer(restored_text):
+        key = m.group(0).lower()
+        inst = by_lower.get(key)
+        if not inst:
+            continue
+        n = seen.get(key, 0) + 1
+        seen[key] = n
+        original_value = inst.get(n)
+        if original_value is None:
+            stats["skipped_count"] += 1
+            continue
+        original_value = _apply_original_case(m.group(0), original_value)
+        segments.append(restored_text[prev_end:m.start()])
+        segments.append(original_value)
+        prev_end = m.end()
+        stats["restored_count"] += 1
+
+    if segments:
+        segments.append(restored_text[prev_end:])
+        restored_text = ''.join(segments)
+
+    return restored_text, stats
+
+
+def _unmask_other_data_slow(restored_text: str, instance_map: Dict) -> Tuple[str, Dict]:
+    """Запасна реалізація через find_all_occurrences (коли єдиний regex
+    не компілюється). Семантика збігається з основним шляхом."""
     stats = {"restored_count": 0, "skipped_count": 0}
     replacements_to_do = []
-
     for masked_value, instance_to_original in instance_map.items():
-        occurrences = find_all_occurrences(restored_text, masked_value)
-
-        for instance_num, (start_pos, end_pos) in enumerate(occurrences, 1):
+        for instance_num, (start_pos, end_pos) in enumerate(
+                find_all_occurrences(restored_text, masked_value), 1):
             if instance_num in instance_to_original:
-                original_value = instance_to_original[instance_num]
-                replacements_to_do.append((start_pos, end_pos, original_value, masked_value))
+                replacements_to_do.append(
+                    (start_pos, end_pos, instance_to_original[instance_num], masked_value))
                 stats["restored_count"] += 1
             else:
                 stats["skipped_count"] += 1
 
-    # Сегментами в порядку документа — O(n); перевірка відповідності маски
-    # йде по незмінному тексту, перекриття пропускаються
     replacements_to_do.sort(key=lambda x: x[0])
     segments = []
     prev_end = 0
@@ -204,7 +255,6 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
     if segments:
         segments.append(restored_text[prev_end:])
         restored_text = ''.join(segments)
-
     return restored_text, stats
 
 

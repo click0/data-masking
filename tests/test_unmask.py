@@ -488,5 +488,50 @@ class TestUnmaskIntegration:
         assert instance_map["Коваленко"][2] == "сидоренко"
 
 
+class TestUnmaskOtherDataSinglePass:
+    """Єдиний alternation-regex прохід (v2.6.4): колізії масок та регістр."""
+
+    def _map(self, mappings):
+        return {"version": "2.5.0", "mappings": mappings, "instance_tracking": {}}
+
+    def test_collision_restores_per_instance(self):
+        # Два різних оригінали замасковані в одне значення "Коваленко"
+        from unmasking.engine import unmask_other_data
+        masking_map = self._map({
+            "surname": {
+                "Петренко": {"masked_as": "Коваленко", "instances": [1]},
+                "Сидоренко": {"masked_as": "Коваленко", "instances": [2]},
+            }
+        })
+        text = "Коваленко прийшов, потім Коваленко пішов"
+        restored, stats = unmask_other_data(text, masking_map)
+        assert restored == "Петренко прийшов, потім Сидоренко пішов"
+        assert stats["restored_count"] == 2
+
+    def test_longer_mask_wins_over_substring(self):
+        # Коротша маска є підрядком довшої — довша має пріоритет
+        from unmasking.engine import unmask_other_data
+        masking_map = self._map({
+            "surname": {"Іван": {"masked_as": "Олег", "instances": [1]}},
+            "name": {"Іваненко": {"masked_as": "Олегенко", "instances": [1]}},
+        })
+        restored, _ = unmask_other_data("Олегенко", masking_map)
+        assert restored == "Іваненко"
+
+    def test_case_insensitive_match_preserves_case(self):
+        from unmasking.engine import unmask_other_data
+        masking_map = self._map({
+            "surname": {"петренко": {"masked_as": "коваленко", "instances": [1]}}
+        })
+        restored, _ = unmask_other_data("КОВАЛЕНКО склав звіт", masking_map)
+        assert restored == "ПЕТРЕНКО склав звіт"
+
+    def test_empty_mapping_noop(self):
+        from unmasking.engine import unmask_other_data
+        restored, stats = unmask_other_data("текст без масок", self._map({}))
+        assert restored == "текст без масок"
+        assert stats["restored_count"] == 0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
