@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.6.5] - 2026-06
+
+### Changed
+- The combined-unmask-regex fallback (v2.6.4) now logs a `WARNING` when the
+  alternation regex fails to compile, instead of silently switching to the
+  slow per-mask path
+
 ## [2.6.4] - 2026-06
 
 ### Performance

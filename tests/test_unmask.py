@@ -532,6 +532,29 @@ class TestUnmaskOtherDataSinglePass:
         assert restored == "текст без масок"
         assert stats["restored_count"] == 0
 
+    def test_regex_compile_failure_logs_warning_and_falls_back(self, monkeypatch, caplog):
+        # Якщо об'єднаний regex не компілюється — попередження в лог
+        # і коректний результат через повільний шлях
+        import re as _re
+        import unmasking.engine as eng
+
+        real_compile = _re.compile
+
+        def boom(pattern, *a, **k):
+            if "коваленко" in pattern.lower():
+                raise _re.error("forced failure")
+            return real_compile(pattern, *a, **k)
+
+        monkeypatch.setattr(eng.re, "compile", boom)
+        masking_map = self._map({
+            "surname": {"петренко": {"masked_as": "коваленко", "instances": [1]}}
+        })
+        with caplog.at_level("WARNING"):
+            restored, stats = eng.unmask_other_data("коваленко тут", masking_map)
+        assert restored == "петренко тут"
+        assert stats["restored_count"] == 1
+        assert any("falling back" in r.message for r in caplog.records)
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
