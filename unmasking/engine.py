@@ -7,8 +7,11 @@ Core unmasking logic: text and JSON restoration.
 Extracted from unmask_data.py during the package refactoring (v2.5.0).
 """
 
+import logging
 import re
 from typing import Any, Dict, List, Tuple
+
+_logger = logging.getLogger(__name__)
 
 from rank_data import (
     RANK_DECLENSIONS,
@@ -193,8 +196,14 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
             r'(?<!\w)(' + '|'.join(re.escape(m) for m in masks_sorted) + r')(?!\w)',
             re.IGNORECASE,
         )
-    except re.error:
-        # Запасний шлях (екзотичні символи в масках)
+    except re.error as e:
+        # Запасний шлях (екзотичні символи в масках). Не тихо: логуємо,
+        # бо повільний шлях значно дорожчий на великих документах.
+        _logger.warning(
+            "Combined unmask regex failed to compile (%s); falling back to "
+            "per-mask scan over %d masks — this is much slower on large files",
+            e, len(instance_map),
+        )
         return _unmask_other_data_slow(restored_text, instance_map)
 
     seen = {}            # lower(маска) -> скільки входжень уже зустріли
