@@ -100,6 +100,22 @@ class TestInitialsMasking:
             masked, _ = mask(text)
             assert masked == text, f"Хибне спрацювання на: {text!r}"
 
+    def test_lettered_subitem_not_masked(self):
+        # Літерний підпункт після службового скорочення — не ПІБ
+        for text in [
+            "розглянуто п. В. Петренко",
+            "згідно ст. А. Кодексу",
+            "абз. Б. Іванова",
+            "див. п. В. Сидоренко",
+        ]:
+            masked, _ = mask(text)
+            assert masked == text, f"Підпункт хибно замасковано: {text!r} -> {masked!r}"
+
+    def test_real_pib_after_normal_word_still_masked(self):
+        # Справжній ініціал після звичайного слова має маскуватись
+        masked, _ = mask("доручено В. Коваленку")
+        assert masked != "доручено В. Коваленку"
+
 
 class TestInitialsRoundtrip:
     """Зворотність: unmask відновлює оригінал, включно з ініціалами."""

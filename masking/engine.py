@@ -89,6 +89,24 @@ def _mask_initial(letter: str, context: str = "") -> str:
     return random.choice(candidates)
 
 
+# Службові скорочення з крапкою. Якщо такий токен стоїть безпосередньо
+# перед "ініціалом + прізвищем" (П. Іванов), то перша літера — це
+# буквений підпункт ("п. В. Петренко" = пункт В), а не ім'я.
+_NON_INITIAL_LEFT = frozenset({
+    'п', 'пп', 'ч', 'чч', 'ст', 'стст', 'абз', 'гл', 'розд', 'р', 'рр',
+    'арт', 'н', 'прим', 'дод', 'табл', 'мал', 'рис',
+})
+
+
+def _left_token(text: str, pos: int) -> str:
+    """Останнє слово (без розділових) безпосередньо ліворуч від pos."""
+    left = text[:pos].rstrip()
+    if not left:
+        return ""
+    tok = left.split()[-1]
+    return tok.rstrip('.').lower()
+
+
 def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -> str:
     """
     Знаходить ПІБ з ініціалами та маскує їх.
@@ -112,7 +130,7 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
 
     for m in _RE_INI2_NAME.finditer(text):
         i1, i2, surname = m.group(1), m.group(2), m.group(3)
-        if _is_surname_candidate(surname):
+        if _is_surname_candidate(surname) and _left_token(text, m.start()) not in _NON_INITIAL_LEFT:
             has_space = f"{i1}. {i2}." in m.group(0)
             candidates.append((m.start(), m.end(), surname, [i1, i2], has_space, True))
 
@@ -123,7 +141,7 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
 
     for m in _RE_INI1_NAME.finditer(text):
         i1, surname = m.group(1), m.group(2)
-        if _is_surname_candidate(surname):
+        if _is_surname_candidate(surname) and _left_token(text, m.start()) not in _NON_INITIAL_LEFT:
             candidates.append((m.start(), m.end(), surname, [i1], False, True))
 
     # Довші патерни мають пріоритет; знімаємо перекриття

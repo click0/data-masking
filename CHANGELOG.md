@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.6.3] - 2026-06
+
+### Fixed
+- Lettered sub-items no longer masked as initials: `п. В. Петренко` (item B),
+  `ст. А. Кодексу`, `абз. Б. …` etc. — when a service abbreviation
+  (`п.`, `пп.`, `ч.`, `ст.`, `абз.`, `гл.`, `розд.`, …) directly precedes an
+  initials+surname pattern, the leading letter is treated as a clause marker,
+  not a name
+
+## [2.6.2] - 2026-06
+
+### Fixed
+- Windows: close log file handlers before `os.unlink()` in tests
+  (`PermissionError: [WinError 32]` from held file locks)
+
+## [2.6.1] - 2026-06
+
+### Changed
+- `docs/README.md` translated to English; Ukrainian original moved to
+  `docs/README_UK.md`; both cross-linked
+
 ## [2.6.0] - 2026-06
 
 Release rollup of 2.5.2–2.5.8 (reversible initials, instance tracking fixes,
