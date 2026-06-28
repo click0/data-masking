@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.6.4] - 2026-06
+
+### Performance
+- Unmask of non-rank data is now a single alternation-regex pass instead of
+  one full-text scan per mask — ~10× faster on large documents
+  (278 KB: ~30 s → ~2.8 s). Longer masks take priority over substrings;
+  per-mask occurrence counter keeps instance tracking exact. Slow per-mask
+  path kept as fallback for masks that break regex compilation
+
 ## [2.6.3] - 2026-06
 
 ### Fixed
