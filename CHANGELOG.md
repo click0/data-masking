@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.6.7] - 2026-07
+
+### Fixed
+- **PIB preceded by service labels / noise is now masked.** In lines like
+  `ПІБ: Петренко Іван Васильович` or log lines
+  `… ІПН=3698521592 — ПІБ «138» → «Міронов Андрій Петрович» …` the real name
+  was skipped: the PIB anchor latched onto `ІПН=…` (starts uppercase) or the
+  marker `ПІБ`, then stopped. Now `is_pib_anchor` strips trailing punctuation
+  and rejects tokens containing digits/`=`; `ПІБ` and `звання` are excluded
+  markers.
+
+### Known limitation
+- A bare rank with **no** following PIB (e.g. `звання «…» → «молодший сержант»`)
+  is still not masked — long-standing behavior that avoids false positives on
+  rank words in prose; independent of this fix.
+
 ## [2.6.6] - 2026-06
 
 ### Fixed

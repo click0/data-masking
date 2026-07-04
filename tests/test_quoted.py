@@ -60,3 +60,29 @@ class TestQuotedMasking:
         a, _ = mask('Петренко Іван Сергійович')
         b, _ = mask('«Петренко Іван Сергійович»')
         assert b == '«' + a + '»'
+
+
+class TestServiceMarkers:
+    """ПІБ маскується, коли перед ним стоять службові мітки/шум
+    ("ПІБ:", "ІПН=…", лог-формати), а не сам ПІБ."""
+
+    def test_label_pib_colon(self):
+        masked, _ = mask('ПІБ: Петренко Іван Васильович')
+        assert 'Петренко' not in masked
+        assert masked.startswith('ПІБ: ')  # мітка лишається
+
+    def test_data_ipn_log_line(self):
+        line = ('[WARNING] data-ipn: ІПН=3698521592 — ПІБ «138» → '
+                '«Міронов Андрій Петрович» (джерело data-ipn головне)')
+        masked, md = mask(line)
+        assert 'Міронов' not in masked
+        assert '3698521592' not in masked  # ІПН теж
+        from unmasking.engine import unmask_text_v2
+        restored, _ = unmask_text_v2(masked, md, check_mapping_version(md))
+        assert restored == line
+
+    def test_ipn_assignment_not_treated_as_name(self):
+        # ІПН=NNNNNNNNNN не має ламати розпізнавання ПІБ далі в рядку
+        masked, _ = mask('ІПН=1234567890 Петренко Іван Васильович')
+        assert 'Петренко' not in masked
+        assert '1234567890' not in masked
