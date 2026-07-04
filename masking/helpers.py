@@ -107,8 +107,10 @@ def normalize_identifier(identifier: str) -> str:
 
 def is_pib_anchor(word: str) -> bool:
     if word.startswith("___") and word.endswith("___"): return False
-    word = word.strip(_cfg.QUOTE_CHARS)
+    word = word.strip(_cfg.QUOTE_CHARS).strip(",.!?;:")
     if not word or len(word) <= 2: return False
+    # Слова з цифрами/= — не ПІБ (ІПН=3698521592, «138», кодування)
+    if re.search(r'[\d=]', word): return False
     word_lower = word.lower()
     if word_lower in _cfg.EXCLUDE_WORDS_LOWER: return False
     if word_lower in _cfg.RANKS_LIST_LOWER: return False
