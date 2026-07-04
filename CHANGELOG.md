@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.6.6] - 2026-06
+
+### Fixed
+- **Quoted values are now masked.** Names, rank+PIB and IPNs wrapped in quotes
+  (`«…»`, `"…"`, `„…“`) were skipped because words stuck to the quote chars
+  (`«Петренко`, `сержант»`) and only `,.!?;:` was stripped. Quotes are now
+  stripped in recognition (`looks_like_name`, `is_pib_anchor`,
+  `is_likely_surname_by_case`, PIB/rank token extraction) and normalized to
+  spaces in `normalize_string`. Quotes stay in place; roundtrip preserved.
+  Note: a bare rank without a following PIB is still not masked (unchanged
+  behavior, independent of quotes).
+
 ## [2.6.5] - 2026-06
 
 ### Changed

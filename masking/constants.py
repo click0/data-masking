@@ -26,7 +26,7 @@ from rank_data import (
 # ============================================================================
 # МЕТАДАНІ
 # ============================================================================
-__version__ = "2.6.5"
+__version__ = "2.6.6"
 __author__ = "Vladyslav V. Prodan"
 __contact__ = "github.com/click0"
 __phone__ = "+38(099)6053340"
@@ -166,6 +166,10 @@ MONTHS_GENITIVE_BY_NUM = {v: k for k, v in MONTHS_GENITIVE.items()}
 MONTHS_GENITIVE_PATTERN = '|'.join(re.escape(m) for m in MONTHS_GENITIVE.keys())
 
 # Maximum input file size in bytes (default: 100 MB)
+# Лапки всіх стилів (українські «», німецькі „“, англійські "" '', ‟).
+# Значення в лапках («сержант», «Петренко») мають розпізнаватись і маскуватись.
+QUOTE_CHARS = '«»„“”‟“”„"\''
+
 MAX_INPUT_FILE_SIZE = 100 * 1024 * 1024
 
 EXCLUDE_WORDS_LOWER = frozenset(w.lower() for w in EXCLUDE_WORDS)

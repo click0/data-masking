@@ -202,7 +202,8 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
         rank_matches.sort(key=lambda x: x[0])
         rank_index, found_rank, rank_position, rank_word_count = rank_matches[0]
         pib_start_index = rank_position + rank_word_count
-        rank_words = line.split()[rank_position:rank_position + rank_word_count]
+        rank_words = [w.strip(_cfg.QUOTE_CHARS) for w in
+                      line.split()[rank_position:rank_position + rank_word_count]]
         found_rank_original_case = ' '.join(rank_words) if rank_words else found_rank
 
     if pib_start_index == -1:
@@ -221,7 +222,7 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
     pib_words = []
     for word in parts[pib_start_index:pib_start_index + 3]:
         if looks_like_name(word):
-            pib_words.append(word.rstrip(',.!?;:'))
+            pib_words.append(word.strip(_cfg.QUOTE_CHARS).rstrip(',.!?;:'))
         else:
             break
     pib = " ".join(pib_words) if pib_words else None

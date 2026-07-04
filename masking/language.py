@@ -17,13 +17,14 @@ from masking.helpers import get_deterministic_seed
 
 def is_likely_surname_by_case(word: str) -> bool:
     if word.startswith("___") and word.endswith("___"): return False
+    word = word.strip(_cfg.QUOTE_CHARS)
     if not word or len(word) < 3: return False
     letters_only = re.sub(r"[-']", '', word)
     return letters_only.isupper() and len(letters_only) >= 3
 
 def looks_like_name(word: str) -> bool:
     if word.startswith("___") and word.endswith("___"): return False
-    clean_word = word.rstrip(',.!?;:')
+    clean_word = word.strip(_cfg.QUOTE_CHARS).rstrip(',.!?;:')
     if len(clean_word) < 3: return False
     if '.' in clean_word: return False
     if clean_word.lower() in _cfg.EXCLUDE_WORDS_LOWER: return False

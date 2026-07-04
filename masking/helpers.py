@@ -95,6 +95,9 @@ def normalize_string(s: str) -> str:
     if not s: return ""
     s_str = str(s).lower()
     s_str = s_str.replace("'", "'").replace('\xa0', ' ').replace(".", " ").replace(";", " ")
+    # Лапки → пробіл, щоб значення в лапках («сержант») знаходились під час пошуку
+    for q in _cfg.QUOTE_CHARS:
+        s_str = s_str.replace(q, ' ')
     return re.sub(r'\s+', ' ', s_str).strip()
 
 def normalize_identifier(identifier: str) -> str:
@@ -104,6 +107,7 @@ def normalize_identifier(identifier: str) -> str:
 
 def is_pib_anchor(word: str) -> bool:
     if word.startswith("___") and word.endswith("___"): return False
+    word = word.strip(_cfg.QUOTE_CHARS)
     if not word or len(word) <= 2: return False
     word_lower = word.lower()
     if word_lower in _cfg.EXCLUDE_WORDS_LOWER: return False
