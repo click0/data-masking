@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.6.8] - 2026-07
+
+### Added
+- **Standalone ranks in quotes are now masked.** A rank wrapped in quotes as
+  a value on its own — `«молодший сержант»`, `звання «капітан» присвоєно`,
+  or log lines `… → «молодший сержант» …` — is masked even without an
+  accompanying PIB. Only exact known rank forms (`ALL_RANK_FORMS`) inside the
+  quotes are touched; arbitrary quoted text (`«важливо»`, `«138»`) is left
+  alone. Quotes stay in place; unmask restores via the `rank` mapping.
+
+### Known limitation
+- If a masked rank happens to collide with a *different, unmasked* bare rank
+  elsewhere in the same line (e.g. `капітан «майор»` where `майор` masks to
+  `капітан`), roundtrip may be ambiguous — an inherent property of
+  deterministic masking on collisions, not specific to quotes. Realistic
+  formats (one quoted rank, or several distinct quoted ranks) round-trip
+  correctly.
+
 ## [2.6.7] - 2026-07
 
 ### Fixed
