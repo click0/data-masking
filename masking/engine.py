@@ -206,6 +206,51 @@ def normalize_broken_ranks(text: str) -> str:
     return pattern.sub(replace_match, text)
 
 
+# Лапки (відкриваючі/закриваючі будь-якого стилю) для пошуку значень у лапках
+_QUOTED_RE = re.compile(r'([«"„“\'])([^«»"„“”\']{1,60})([»"”“\'])')
+
+
+def _mask_quoted_ranks(text: str, masking_dict: Dict, instance_counters: Dict) -> str:
+    """
+    Маскує звання, взяте в лапки як самостійне значення: «молодший сержант».
+
+    Основний парсер маскує звання лише в парі з ПІБ. Але у форматах-логах
+    звання йде як окреме значення в лапках без ПІБ. Тут маскуємо ТІЛЬКИ якщо
+    весь вміст лапок — рівно відома форма звання (ALL_RANK_FORMS), щоб не
+    зачепити довільний текст. Лапки лишаються на місці; unmask відновлює
+    звання зі словника rank як звичайно.
+    """
+    if not _cfg.MASK_RANKS:
+        return text
+
+    # Вже використані маски звань — щоб не маскувати результат повторно
+    already = {
+        info["masked_as"].lower()
+        for info in masking_dict["mappings"].get("rank", {}).values()
+        if isinstance(info, dict) and "masked_as" in info
+    }
+
+    segments = []
+    prev_end = 0
+    for m in _QUOTED_RE.finditer(text):
+        inner = m.group(2).strip()
+        low = inner.lower()
+        if low not in _cfg.ALL_RANK_FORMS_LOWER or low in already:
+            continue
+        masked = mask_rank_preserve_case(inner, masking_dict, instance_counters)
+        if masked == inner:
+            continue
+        already.add(masked.lower())
+        segments.append(text[prev_end:m.start()])
+        segments.append(m.group(1) + masked + m.group(3))
+        prev_end = m.end()
+
+    if segments:
+        segments.append(text[prev_end:])
+        text = ''.join(segments)
+    return text
+
+
 def mask_text_context_aware(text: str, masking_dict: Dict, instance_counters: Dict) -> str:
     """
     Головна функція маскування тексту з контекстним аналізом.
@@ -391,7 +436,13 @@ def mask_text_context_aware(text: str, masking_dict: Dict, instance_counters: Di
             iteration += 1
         masked_lines.append(final_line)
 
-    return '\n'.join(masked_lines)
+    text = '\n'.join(masked_lines)
+
+    # Звання-значення в лапках без ПІБ («молодший сержант») — після
+    # основного циклу, з пропуском уже замаскованих форм
+    text = _mask_quoted_ranks(text, masking_dict, instance_counters)
+
+    return text
 
 def mask_json_recursive(data: Any, masking_dict: Dict, instance_counters: Dict) -> Any:
     if isinstance(data, dict): return {key: mask_json_recursive(value, masking_dict, instance_counters) for key, value in data.items()}

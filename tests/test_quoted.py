@@ -86,3 +86,32 @@ class TestServiceMarkers:
         masked, _ = mask('ІПН=1234567890 Петренко Іван Васильович')
         assert 'Петренко' not in masked
         assert '1234567890' not in masked
+
+
+class TestQuotedRankStandalone:
+    """Звання в лапках як самостійне значення (без ПІБ) — v2.6.8."""
+
+    def test_data_ipn_rank_log_line(self):
+        line = ('[WARNING] data-ipn: ІПН=3577412582 — звання «1258963214» → '
+                '«молодший сержант» (джерело data-ipn головне)')
+        masked, md = mask(line)
+        assert '«молодший сержант»' not in masked  # звання замасковано
+        from unmasking.engine import unmask_text_v2
+        restored, _ = unmask_text_v2(masked, md, check_mapping_version(md))
+        assert restored == line
+
+    def test_quoted_rank_label(self):
+        masked, _ = mask('звання «капітан» присвоєно')
+        assert '«капітан»' not in masked
+        assert masked.count('«') == 1 and masked.count('»') == 1
+
+    def test_two_distinct_quoted_ranks_roundtrip(self):
+        line = 'звання «молодший сержант» та «сержант»'
+        masked, md = mask(line)
+        from unmasking.engine import unmask_text_v2
+        restored, _ = unmask_text_v2(masked, md, check_mapping_version(md))
+        assert restored == line
+
+    def test_non_rank_in_quotes_untouched(self):
+        assert mask('слово «важливо» тут')[0] == 'слово «важливо» тут'
+        assert mask('позиція «138» ключ')[0] == 'позиція «138» ключ'
