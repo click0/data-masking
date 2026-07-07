@@ -27,6 +27,10 @@ def looks_like_name(word: str) -> bool:
     clean_word = word.strip(_cfg.QUOTE_CHARS).rstrip(',.!?;:')
     if len(clean_word) < 3: return False
     if '.' in clean_word: return False
+    # Дієслова 1-2 особи множини (Повідомляємо, Просимо, Надаєте) —
+    # ніколи не імена/прізвища
+    if clean_word.lower().endswith(('ємо', 'имо', 'емо', 'єте', 'ите', 'ете')):
+        return False
     if clean_word.lower() in _cfg.EXCLUDE_WORDS_LOWER: return False
     if re.search(r'\d', clean_word): return False
     if clean_word.lower() in _cfg.RANKS_LIST_LOWER: return False

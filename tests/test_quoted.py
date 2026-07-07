@@ -115,3 +115,28 @@ class TestQuotedRankStandalone:
     def test_non_rank_in_quotes_untouched(self):
         assert mask('слово «важливо» тут')[0] == 'слово «важливо» тут'
         assert mask('позиція «138» ключ')[0] == 'позиція «138» ключ'
+
+
+class TestOfficialPhrases:
+    """Канцелярські звороти не маскуються як ПІБ (v2.6.9)."""
+
+    def test_povidomlyaemo_vam_untouched(self):
+        t = ('Повідомляємо Вам, що відповідно до пункту 15 розділу XII '
+             'Інструкції з організації обліку особового складу в системі '
+             'Міністерства оборони України,')
+        masked, _ = mask(t)
+        assert masked == t, f"Канцеляризм замасковано: {masked!r}"
+
+    def test_first_person_plural_verbs_not_names(self):
+        for t in [
+            'Просимо Вас надати необхідні документи до кінця тижня',
+            'Направляємо Вам копію наказу для ознайомлення згідно вимог',
+        ]:
+            masked, _ = mask(t)
+            assert masked == t, f"Хибне спрацювання: {t!r} -> {masked!r}"
+
+    def test_real_pib_after_official_phrase_still_masked(self):
+        t = 'Повідомляємо, що сержант Коваленко Марія Іванівна прибула'
+        masked, _ = mask(t)
+        assert 'Коваленко' not in masked
+        assert masked.startswith('Повідомляємо, що ')
