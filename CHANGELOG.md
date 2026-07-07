@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.6.10] - 2026-07
+
+### Removed
+- Rank **«рекрут»** removed from all rank lists: `RANK_DECLENSIONS`,
+  `ARMY_RANKS` (rank_data.py), army regex in `RANK_PATTERNS`
+  (masking/constants.py) and its copy in `modules/tools.py`, plus README
+  rank tables and examples. The rank is no longer recognized in text and
+  is never produced as a mask.
+
+### Note
+- Removing «рекрут» from the army hierarchy shifts deterministic mask
+  choices for adjacent low ranks — the same input text may now mask ranks
+  differently than in ≤2.6.9. Unmasking of old files is unaffected:
+  it uses the mapping JSON, not the hierarchy.
+
 ## [2.6.9] - 2026-07
 
 ### Fixed
