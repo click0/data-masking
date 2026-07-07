@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.6.9] - 2026-07
+
+### Fixed
+- Official letter openings are no longer masked as PIB:
+  `Повідомляємо Вам, що …` was treated as "Surname Name". Words with
+  1st/2nd-person-plural verb endings (`-ємо`, `-имо`, `-емо`, `-єте`,
+  `-ите`, `-ете`) are rejected as name candidates; pronouns
+  `Вам/Вами/Ваш(-а/-е)` and common verbs (`Повідомляємо`, `Просимо`,
+  `Направляємо`, `Надаємо`) added to `EXCLUDE_WORDS`. Real PIB after such
+  phrases is still masked.
+
 ## [2.6.8] - 2026-07
 
 ### Added
