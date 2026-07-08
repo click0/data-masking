@@ -10,7 +10,7 @@ Extracted from data_masking.py during the package refactoring (v2.5.0).
 import re
 from faker import Faker
 
-from rank_data import (
+from datamasking.rank_data import (
     RANK_DECLENSIONS,
     RANK_FEMININE_MAP,
     RANK_DECLENSIONS_FEMALE,
@@ -26,7 +26,7 @@ from rank_data import (
 # ============================================================================
 # МЕТАДАНІ
 # ============================================================================
-__version__ = "2.6.10"
+__version__ = "3.0.0.dev1"
 __author__ = "Vladyslav V. Prodan"
 __contact__ = "github.com/click0"
 __phone__ = "+38(099)6053340"

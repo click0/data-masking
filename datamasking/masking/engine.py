@@ -11,20 +11,20 @@ import random
 import re
 from typing import Any, Dict
 
-from masking import constants as _cfg
-from masking.context import (
+from datamasking.masking import constants as _cfg
+from datamasking.masking.context import (
     analyze_number_sign_context, analyze_br_keyword,
     looks_like_pib_line, parse_hybrid_line,
 )
-from masking.helpers import get_deterministic_seed, add_to_mapping
-from masking.language import (
+from datamasking.masking.helpers import get_deterministic_seed, add_to_mapping
+from datamasking.masking.language import (
     is_likely_surname_by_case, detect_gender_by_patronymic,
 )
-from masking.mask_personal import (
+from datamasking.masking.mask_personal import (
     mask_ipn, mask_passport_id, mask_military_id,
     mask_surname, mask_name, mask_patronymic,
 )
-from masking.mask_military import (
+from datamasking.masking.mask_military import (
     mask_military_unit, mask_order_number, mask_order_number_with_letters,
     mask_br_number, mask_br_number_slash, mask_br_number_complex,
     mask_brigade_number, mask_date, _mask_date_text,

@@ -496,7 +496,7 @@ class TestUnmaskOtherDataSinglePass:
 
     def test_collision_restores_per_instance(self):
         # Два різних оригінали замасковані в одне значення "Коваленко"
-        from unmasking.engine import unmask_other_data
+        from datamasking.unmasking.engine import unmask_other_data
         masking_map = self._map({
             "surname": {
                 "Петренко": {"masked_as": "Коваленко", "instances": [1]},
@@ -510,7 +510,7 @@ class TestUnmaskOtherDataSinglePass:
 
     def test_longer_mask_wins_over_substring(self):
         # Коротша маска є підрядком довшої — довша має пріоритет
-        from unmasking.engine import unmask_other_data
+        from datamasking.unmasking.engine import unmask_other_data
         masking_map = self._map({
             "surname": {"Іван": {"masked_as": "Олег", "instances": [1]}},
             "name": {"Іваненко": {"masked_as": "Олегенко", "instances": [1]}},
@@ -519,7 +519,7 @@ class TestUnmaskOtherDataSinglePass:
         assert restored == "Іваненко"
 
     def test_case_insensitive_match_preserves_case(self):
-        from unmasking.engine import unmask_other_data
+        from datamasking.unmasking.engine import unmask_other_data
         masking_map = self._map({
             "surname": {"петренко": {"masked_as": "коваленко", "instances": [1]}}
         })
@@ -527,7 +527,7 @@ class TestUnmaskOtherDataSinglePass:
         assert restored == "ПЕТРЕНКО склав звіт"
 
     def test_empty_mapping_noop(self):
-        from unmasking.engine import unmask_other_data
+        from datamasking.unmasking.engine import unmask_other_data
         restored, stats = unmask_other_data("текст без масок", self._map({}))
         assert restored == "текст без масок"
         assert stats["restored_count"] == 0

@@ -9,7 +9,7 @@ import os
 import tempfile
 import pytest
 
-from modules.masking_logger import (
+from datamasking.extras.masking_logger import (
     JsonFormatter,
     ConsoleFormatter,
     MaskingLogger,

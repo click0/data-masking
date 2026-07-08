@@ -2,49 +2,45 @@
 # -*- coding: utf-8 -*-
 
 """
-Data Masking Modules Package v2.6.0
+DEPRECATED compatibility shim (v3.0): пакет переїхав у datamasking.extras.
 
-Модулі системи маскування даних.
+Старі імпорти (from modules.tools import ... / from modules.security
+import ...) працюють, але видадуть DeprecationWarning.
+Використовуйте datamasking.extras.
 """
 
-from .config import Config, ConfigLoader, load_config, generate_config
-from .security import MappingSecurityManager, is_encryption_available
-from .masking_logger import setup_logging, MaskingLogger
-from .selective import SelectiveFilter, get_available_types, parse_type_list, apply_filter_to_globals
-from .re_mask import ReMasker, MappingChain, ChainUnmasker, make_empty_masking_dict, load_chain, get_chain_info
-from .tools import mask_ipn_direct, mask_rank_direct, mask_pib_force
-from .password_generator import generate_password, generate_passwords, PasswordConfig
+import importlib as _importlib
+import sys as _sys
+import warnings as _warnings
 
-__all__ = [
-    # config
-    "Config",
-    "ConfigLoader",
-    "load_config",
-    "generate_config",
-    # security
-    "MappingSecurityManager",
-    "is_encryption_available",
-    # masking_logger
-    "setup_logging",
-    "MaskingLogger",
-    # selective
-    "SelectiveFilter",
-    "get_available_types",
-    "parse_type_list",
-    "apply_filter_to_globals",
-    # re_mask
-    "ReMasker",
-    "MappingChain",
-    "ChainUnmasker",
-    "make_empty_masking_dict",
-    "load_chain",
-    "get_chain_info",
-    # tools
-    "mask_ipn_direct",
-    "mask_rank_direct",
-    "mask_pib_force",
-    # password_generator
-    "generate_password",
-    "generate_passwords",
-    "PasswordConfig",
-]
+_warnings.warn(
+    "top-level package 'modules' is deprecated since 3.0; "
+    "use 'datamasking.extras' instead",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+_TARGET = "datamasking.extras"
+_SUBMODULES = (
+    "config", "masking_logger", "password_generator", "rank_data",
+    "re_mask", "security", "selective", "tools",
+)
+
+_real = _importlib.import_module(_TARGET)
+
+# Аліаси підмодулів: from modules.tools import ... повертає той самий
+# об'єкт модуля, що й datamasking.extras.tools (єдиний стан).
+# Опційні залежності (cryptography, yaml) захищені всередині самих
+# модулів try/except-ами, тож імпорт тут безпечний.
+for _sub in _SUBMODULES:
+    _mod = _importlib.import_module(f"{_TARGET}.{_sub}")
+    _sys.modules[f"{__name__}.{_sub}"] = _mod
+    globals()[_sub] = _mod
+
+globals().update({
+    _k: _v for _k, _v in vars(_real).items()
+    if _k not in {
+        "__name__", "__file__", "__path__", "__package__",
+        "__spec__", "__loader__", "__builtins__", "__doc__",
+    }
+})

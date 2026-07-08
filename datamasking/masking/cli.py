@@ -15,9 +15,9 @@ from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
-from masking import constants as _cfg
-from masking.helpers import validate_file_size
-from masking.engine import (
+from datamasking.masking import constants as _cfg
+from datamasking.masking.helpers import validate_file_size
+from datamasking.masking.engine import (
     mask_text_context_aware, mask_json_recursive,
 )
 
@@ -28,46 +28,46 @@ import logging as _logging
 _opt_logger = _logging.getLogger(__name__)
 
 try:
-    from modules.selective import get_available_types
+    from datamasking.extras.selective import get_available_types
     SELECTIVE_AVAILABLE = True
 except ImportError:
     SELECTIVE_AVAILABLE = False
-    _opt_logger.debug("modules.selective not available — --only/--exclude disabled")
+    _opt_logger.debug("datamasking.extras.selective not available — --only/--exclude disabled")
 
 try:
-    from modules.re_mask import MappingChain, make_empty_masking_dict
+    from datamasking.extras.re_mask import MappingChain, make_empty_masking_dict
     REMASK_AVAILABLE = True
 except ImportError:
     REMASK_AVAILABLE = False
-    _opt_logger.debug("modules.re_mask not available — re-masking disabled")
+    _opt_logger.debug("datamasking.extras.re_mask not available — re-masking disabled")
 
 try:
-    from modules.security import MappingSecurityManager
+    from datamasking.extras.security import MappingSecurityManager
     SECURITY_AVAILABLE = True
 except ImportError:
     SECURITY_AVAILABLE = False
-    _opt_logger.debug("modules.security not available — encryption disabled")
+    _opt_logger.debug("datamasking.extras.security not available — encryption disabled")
 
 try:
-    from modules.config import ConfigLoader
+    from datamasking.extras.config import ConfigLoader
     CONFIG_AVAILABLE = True
 except ImportError:
     CONFIG_AVAILABLE = False
-    _opt_logger.debug("modules.config not available — YAML config disabled")
+    _opt_logger.debug("datamasking.extras.config not available — YAML config disabled")
 
 try:
-    from modules.masking_logger import setup_logging
+    from datamasking.extras.masking_logger import setup_logging
     LOGGING_AVAILABLE = True
 except ImportError:
     LOGGING_AVAILABLE = False
-    _opt_logger.debug("modules.masking_logger not available — structured logging disabled")
+    _opt_logger.debug("datamasking.extras.masking_logger not available — structured logging disabled")
 
 try:
-    from modules.password_generator import generate_password
+    from datamasking.extras.password_generator import generate_password
     PASSWORD_GENERATOR_AVAILABLE = True
 except ImportError:
     PASSWORD_GENERATOR_AVAILABLE = False
-    _opt_logger.debug("modules.password_generator not available — password generation disabled")
+    _opt_logger.debug("datamasking.extras.password_generator not available — password generation disabled")
 
 
 # ============================================================================

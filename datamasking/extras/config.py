@@ -561,7 +561,7 @@ def load_config(
 
     This is the primary entry point for other modules::
 
-        from modules.config import load_config
+        from datamasking.extras.config import load_config
         cfg = load_config("config.yaml")
         print(cfg.system.hash_algorithm)
     """

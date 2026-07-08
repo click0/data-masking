@@ -14,8 +14,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tests.test_initials import mask
-from unmasking.engine import unmask_text_v2
-from unmasking.helpers import check_mapping_version
+from datamasking.unmasking.engine import unmask_text_v2
+from datamasking.unmasking.helpers import check_mapping_version
 
 
 QUOTED_CASES = [
@@ -77,7 +77,7 @@ class TestServiceMarkers:
         masked, md = mask(line)
         assert 'Міронов' not in masked
         assert '3698521592' not in masked  # ІПН теж
-        from unmasking.engine import unmask_text_v2
+        from datamasking.unmasking.engine import unmask_text_v2
         restored, _ = unmask_text_v2(masked, md, check_mapping_version(md))
         assert restored == line
 
@@ -96,7 +96,7 @@ class TestQuotedRankStandalone:
                 '«молодший сержант» (джерело data-ipn головне)')
         masked, md = mask(line)
         assert '«молодший сержант»' not in masked  # звання замасковано
-        from unmasking.engine import unmask_text_v2
+        from datamasking.unmasking.engine import unmask_text_v2
         restored, _ = unmask_text_v2(masked, md, check_mapping_version(md))
         assert restored == line
 
@@ -108,7 +108,7 @@ class TestQuotedRankStandalone:
     def test_two_distinct_quoted_ranks_roundtrip(self):
         line = 'звання «молодший сержант» та «сержант»'
         masked, md = mask(line)
-        from unmasking.engine import unmask_text_v2
+        from datamasking.unmasking.engine import unmask_text_v2
         restored, _ = unmask_text_v2(masked, md, check_mapping_version(md))
         assert restored == line
 

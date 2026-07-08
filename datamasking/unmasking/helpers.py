@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from rank_data import (
+from datamasking.rank_data import (
     RANK_DECLENSIONS,
     RANK_FEMININE_MAP,
     RANK_DECLENSIONS_FEMALE,
@@ -126,12 +126,18 @@ def check_mapping_version(masking_map: Dict) -> str:
     """
     version = masking_map.get("version", "1.0.0")
 
-    if version.startswith("2.") and not version.startswith("2.0"):
-        return "v2.1"
-    elif version.startswith("2.0"):
-        return "v2.0"
-    else:
+    match = re.match(r"v?(\d+)\.(\d+)", version)
+    if not match:
         return "v1"
+    major, minor = int(match.group(1)), int(match.group(2))
+
+    if major >= 3:
+        # Формат mapping не змінювався з 2.1 — новіші версії читаємо
+        # тією ж логікою (інакше mapping 3.x падав би у v1)
+        return "v2.1"
+    if major == 2:
+        return "v2.0" if minor == 0 else "v2.1"
+    return "v1"
 
 
 def find_all_occurrences(text: str, pattern: str) -> List[Tuple[int, int]]:

@@ -2,18 +2,44 @@
 # -*- coding: utf-8 -*-
 
 """
-Masking package — data masking with instance tracking.
+DEPRECATED compatibility shim (v3.0): пакет переїхав у datamasking.masking.
 
-Refactored from monolithic data_masking.py (v2.5.0).
+Старі імпорти (import masking / from masking.engine import ...) працюють,
+але видадуть DeprecationWarning. Використовуйте datamasking.masking.
 """
 
-from masking.constants import __version__, __author__, __contact__, __license__, __year__
+import importlib as _importlib
+import sys as _sys
+import warnings as _warnings
 
+_warnings.warn(
+    "top-level package 'masking' is deprecated since 3.0; "
+    "use 'datamasking.masking' instead",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
-def main():
-    """Entry point — lazy import to avoid heavy module loading at import time."""
-    from masking.cli import main as _main
-    _main()
+_TARGET = "datamasking.masking"
+_SUBMODULES = (
+    "constants", "helpers", "language", "context",
+    "mask_personal", "mask_military", "engine", "cli",
+)
 
+_real = _importlib.import_module(_TARGET)
 
-__all__ = ["__version__", "main"]
+# Аліаси підмодулів: import masking.constants має повертати ТОЙ САМИЙ
+# об'єкт модуля, що й datamasking.masking.constants (єдиний стан —
+# критично для "живих" прапорців MASK_* у constants).
+for _sub in _SUBMODULES:
+    _mod = _importlib.import_module(f"{_TARGET}.{_sub}")
+    _sys.modules[f"{__name__}.{_sub}"] = _mod
+    globals()[_sub] = _mod
+
+# Публічні імена самого пакета (main, __version__, ...)
+globals().update({
+    _k: _v for _k, _v in vars(_real).items()
+    if _k not in {
+        "__name__", "__file__", "__path__", "__package__",
+        "__spec__", "__loader__", "__builtins__", "__doc__",
+    }
+})

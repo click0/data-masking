@@ -59,7 +59,7 @@ class TestVersion:
         """Тест: версія обгортки узгоджена з пакетом (єдине джерело правди)."""
         import re
         import data_masking
-        from masking.constants import __version__ as pkg_version
+        from datamasking.masking.constants import __version__ as pkg_version
         assert data_masking.__version__ == pkg_version
         # CI release workflow дістає версію з data_masking.py статичним regex
         content = (PROJECT_ROOT / "data_masking.py").read_text(encoding="utf-8")
@@ -133,7 +133,7 @@ class TestInitConfig:
         assert "router_rules:" in content
 
         # Перевіряємо версію
-        from masking.constants import __version__ as pkg_version
+        from datamasking.masking.constants import __version__ as pkg_version
         assert f"v{pkg_version}" in content
 
         # Перевіряємо параметри безпеки
@@ -196,7 +196,7 @@ class TestConfiguration:
 
     def test_load_default_config(self):
         """Тест: завантаження конфігурації за замовчуванням."""
-        from config import ConfigLoader
+        from datamasking.extras.config import ConfigLoader
 
         loader = ConfigLoader()
         config = loader.config
@@ -216,7 +216,7 @@ class TestSelectiveMasking:
 
     def test_get_available_types(self):
         """Тест: список доступних типів."""
-        from selective import get_available_types
+        from datamasking.extras.selective import get_available_types
 
         types = get_available_types()
 
@@ -241,14 +241,14 @@ class TestSecurity:
 
     def test_mapping_security_manager(self):
         """Тест: MappingSecurityManager доступний."""
-        from security import MappingSecurityManager
+        from datamasking.extras.security import MappingSecurityManager
 
         manager = MappingSecurityManager()
         assert manager is not None
 
     def test_encrypt_decrypt_roundtrip(self, temp_dir):
         """Тест: шифрування та розшифрування."""
-        from security import MappingSecurityManager
+        from datamasking.extras.security import MappingSecurityManager
 
         original_data = {"test": "value", "українські": "дані"}
         password = "TestPassword123!"
@@ -278,7 +278,7 @@ class TestLogging:
 
     def test_setup_logging(self):
         """Тест: налаштування логування."""
-        from masking_logger import setup_logging
+        from datamasking.extras.masking_logger import setup_logging
 
         logger = setup_logging(level="DEBUG")
         assert logger is not None
@@ -291,7 +291,7 @@ class TestToolsApi:
     def test_tools_available(self):
         """Тест: модуль tools доступний."""
         try:
-            from tools import mask_ipn_direct, mask_rank_direct, mask_pib_force
+            from datamasking.extras.tools import mask_ipn_direct, mask_rank_direct, mask_pib_force
             available = True
         except ImportError:
             available = False
@@ -299,7 +299,7 @@ class TestToolsApi:
 
     def test_mask_ipn_direct(self):
         """Тест: mask_ipn_direct."""
-        from tools import mask_ipn_direct
+        from datamasking.extras.tools import mask_ipn_direct
 
         masking_dict = {"mappings": {}}
         instance_counters = {}
@@ -314,7 +314,7 @@ class TestToolsApi:
 
     def test_mask_rank_direct(self):
         """Тест: mask_rank_direct."""
-        from tools import mask_rank_direct
+        from datamasking.extras.tools import mask_rank_direct
 
         masking_dict = {"mappings": {}}
         instance_counters = {}
@@ -326,7 +326,7 @@ class TestToolsApi:
 
     def test_mask_pib_force(self):
         """Тест: mask_pib_force."""
-        from tools import mask_pib_force
+        from datamasking.extras.tools import mask_pib_force
 
         masking_dict = {"mappings": {}}
         instance_counters = {}
@@ -351,7 +351,7 @@ class TestReMask:
 
     def test_remasker_class(self):
         """Тест: клас ReMasker доступний."""
-        from re_mask import ReMasker
+        from datamasking.extras.re_mask import ReMasker
 
         original_mapping = {
             "Петренко": "Коваленко",
@@ -363,7 +363,7 @@ class TestReMask:
 
     def test_mapping_chain(self):
         """Тест: клас MappingChain доступний."""
-        from re_mask import MappingChain
+        from datamasking.extras.re_mask import MappingChain
 
         chain = MappingChain()
         assert chain is not None
@@ -416,7 +416,7 @@ class TestCliArguments:
     def test_version_in_help(self):
         """Тест: версія доступна."""
         from data_masking import __version__
-        from masking.constants import __version__ as pkg_version
+        from datamasking.masking.constants import __version__ as pkg_version
 
         assert __version__ == pkg_version
 
@@ -478,7 +478,7 @@ class TestCliBasicCommands:
 
     def test_version_flag(self, run_cli):
         """Тест: -V/--version показує версію."""
-        from masking.constants import __version__ as pkg_version
+        from datamasking.masking.constants import __version__ as pkg_version
         result = run_cli("-V", expect_success=False)
         # --version може повернути 0 або інший код
         output = (result.stdout or "") + (result.stderr or "")
@@ -504,7 +504,7 @@ class TestCliBasicCommands:
             assert any(t in output.lower() for t in ["ipn", "name", "rank", "date"])
         else:
             # Fallback через імпорт
-            from selective import get_available_types
+            from datamasking.extras.selective import get_available_types
             types = get_available_types()
             assert "ipn" in types or "names" in types
 
@@ -688,7 +688,7 @@ class TestCliMasking:
             assert len(enc_files) > 0 or "--encrypt" in stdout
         else:
             # Fallback: перевіряємо модуль
-            from security import MappingSecurityManager
+            from datamasking.extras.security import MappingSecurityManager
             manager = MappingSecurityManager("test_password")
             assert manager is not None
 class TestCliDateMasking:
@@ -855,7 +855,7 @@ class TestCliErrorHandling:
         if SECURITY_AVAILABLE:
             # При шифруванні без пароля має бути запит або помилка
             # або автоматична генерація пароля
-            from security import MappingSecurityManager
+            from datamasking.extras.security import MappingSecurityManager
 
             # Без пароля не можна створити manager
             try:
@@ -880,14 +880,14 @@ class TestChainRoundtrip:
 
     def _make_masking_dict(self):
         """Create a fresh masking dict."""
-        from re_mask import make_empty_masking_dict
+        from datamasking.extras.re_mask import make_empty_masking_dict
         return make_empty_masking_dict("2.6.0")
 
     def test_chain_roundtrip_2_passes(self):
         """Тест: маскування у 2 проходи, потім відновлення через ланцюг."""
         from data_masking import mask_text_context_aware, REMASK_AVAILABLE
         from unmask_data import unmask_chain
-        from re_mask import MappingChain
+        from datamasking.extras.re_mask import MappingChain
 
         if not REMASK_AVAILABLE:
             pytest.skip("ReMask module not available")
@@ -931,7 +931,7 @@ class TestChainRoundtrip:
         """Тест: маскування у 3 проходи, потім відновлення через ланцюг."""
         from data_masking import mask_text_context_aware, REMASK_AVAILABLE
         from unmask_data import unmask_chain
-        from re_mask import MappingChain
+        from datamasking.extras.re_mask import MappingChain
 
         if not REMASK_AVAILABLE:
             pytest.skip("ReMask module not available")
@@ -965,7 +965,7 @@ class TestChainRoundtrip:
         """Тест: збереження та завантаження ланцюга."""
         from data_masking import mask_text_context_aware, REMASK_AVAILABLE
         from unmask_data import unmask_chain
-        from re_mask import MappingChain
+        from datamasking.extras.re_mask import MappingChain
 
         if not REMASK_AVAILABLE:
             pytest.skip("ReMask module not available")

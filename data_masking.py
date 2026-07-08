@@ -30,9 +30,9 @@ Year: 2025-2026
 # Re-exports from masking package for backward compatibility
 # ============================================================================
 
-__version__ = "2.6.10"
+__version__ = "3.0.0.dev1"
 
-from masking.constants import (
+from datamasking.masking.constants import (
     __version__, __author__, __contact__, __phone__, __license__, __year__,
     fake_uk,
     RANK_SHIFT_OPTIONS,
@@ -46,36 +46,36 @@ from masking.constants import (
     _MONTHS_UA_LIST,
 )
 
-from masking.constants import (
+from datamasking.masking.constants import (
     RANK_DECLENSIONS, RANK_FEMININE_MAP, RANK_DECLENSIONS_FEMALE,
     RANK_TO_NOMINATIVE, ALL_RANK_FORMS,
     ARMY_RANKS, NAVAL_RANKS, LEGAL_RANKS, MEDICAL_RANKS, RANKS_LIST,
 )
 
-from masking.helpers import (
+from datamasking.masking.helpers import (
     validate_file_size, get_next_instance, add_to_mapping,
     _apply_original_case, normalize_string, normalize_identifier,
     is_pib_anchor, get_deterministic_seed,
 )
 
-from masking.language import (
+from datamasking.masking.language import (
     is_likely_surname_by_case, looks_like_name,
     detect_gender_by_patronymic, detect_name_case_and_gender,
     is_easy_to_decline, apply_case_to_name, generate_easy_name,
 )
 
-from masking.context import (
+from datamasking.masking.context import (
     analyze_number_sign_context, analyze_br_keyword,
     clean_line_before_parsing, extract_identifier_from_line,
     extract_base_rank, looks_like_pib_line, parse_hybrid_line,
 )
 
-from masking.mask_personal import (
+from datamasking.masking.mask_personal import (
     mask_ipn, mask_passport_id, mask_military_id,
     mask_surname, mask_patronymic, mask_name,
 )
 
-from masking.mask_military import (
+from datamasking.masking.mask_military import (
     mask_military_unit, mask_order_number, mask_order_number_with_letters,
     mask_br_number, mask_br_number_slash, mask_br_number_complex,
     mask_brigade_number, is_valid_date, mask_date, mask_date_text,
@@ -84,12 +84,12 @@ from masking.mask_military import (
     mask_rank, mask_rank_preserve_case,
 )
 
-from masking.engine import (
+from datamasking.masking.engine import (
     normalize_broken_ranks, mask_text_context_aware,
     mask_json_recursive, mask_text_wrapper,
 )
 
-from masking.cli import (
+from datamasking.masking.cli import (
     generate_default_config, generate_password_from_config,
     _build_parser, _load_config, _setup_logger,
     _apply_selective_filters, _apply_config_settings,
@@ -112,7 +112,7 @@ from masking.cli import (
 import sys as _sys
 from types import ModuleType as _ModuleType
 
-from masking import constants as _cfg
+from datamasking.masking import constants as _cfg
 
 _LIVE_FLAGS = frozenset({
     "MASK_NAMES", "MASK_IPN", "MASK_PASSPORT", "MASK_MILITARY_ID",

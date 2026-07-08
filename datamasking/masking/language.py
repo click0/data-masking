@@ -11,8 +11,8 @@ import random
 import re
 from typing import Tuple
 
-from masking import constants as _cfg
-from masking.helpers import get_deterministic_seed
+from datamasking.masking import constants as _cfg
+from datamasking.masking.helpers import get_deterministic_seed
 
 
 def is_likely_surname_by_case(word: str) -> bool:

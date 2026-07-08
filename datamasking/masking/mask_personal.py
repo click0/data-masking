@@ -11,12 +11,12 @@ import random
 import re
 from typing import Dict
 
-from masking import constants as _cfg
-from masking.helpers import (
+from datamasking.masking import constants as _cfg
+from datamasking.masking.helpers import (
     add_to_mapping, get_deterministic_seed, get_next_instance,
     _apply_original_case, normalize_identifier,
 )
-from masking.language import (
+from datamasking.masking.language import (
     detect_gender_by_patronymic, detect_name_case_and_gender,
     generate_easy_name, apply_case_to_name,
 )

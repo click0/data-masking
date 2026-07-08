@@ -23,12 +23,12 @@ import tempfile
 import pytest
 from pathlib import Path
 
-# Import modules/config.py directly to avoid triggering modules/__init__.py
+# Import datamasking/extras/config.py directly to avoid triggering package __init__
 # which may pull in heavy/optional dependencies unrelated to configuration.
-_config_path = str(Path(__file__).resolve().parent.parent / "modules" / "config.py")
-_spec = importlib.util.spec_from_file_location("modules.config", _config_path)
+_config_path = str(Path(__file__).resolve().parent.parent / "datamasking" / "extras" / "config.py")
+_spec = importlib.util.spec_from_file_location("datamasking.extras.config", _config_path)
 _mod = importlib.util.module_from_spec(_spec)
-sys.modules.setdefault("modules.config", _mod)
+sys.modules.setdefault("datamasking.extras.config", _mod)
 _spec.loader.exec_module(_mod)
 
 Config = _mod.Config

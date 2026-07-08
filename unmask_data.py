@@ -26,7 +26,7 @@ Year: 2025-2026
 # Re-exports from unmasking package for backward compatibility
 # ============================================================================
 
-from unmasking.cli import __version__
+from datamasking.unmasking.cli import __version__
 
 __author__ = "Vladyslav V. Prodan"
 __contact__ = "github.com/click0"
@@ -34,7 +34,7 @@ __phone__ = "+38(099)6053340"
 __license__ = "BSD 3-Clause"
 __year__ = "2025-2026"
 
-from unmasking.helpers import (
+from datamasking.unmasking.helpers import (
     validate_file_size,
     get_rank_info, find_file_pairs, auto_find_latest_pair,
     check_mapping_version, find_all_occurrences,
@@ -43,19 +43,19 @@ from unmasking.helpers import (
     SEARCH_DIRECTORIES, MAX_INPUT_FILE_SIZE,
 )
 
-from unmasking.engine import (
+from datamasking.unmasking.engine import (
     unmask_ranks_gender_aware, unmask_other_data,
     unmask_text_v2, unmask_text_v1,
     unmask_json_recursive,
     unmask_chain, unmask_json_chain, is_chain_mapping,
 )
 
-from unmasking.io import (
+from datamasking.unmasking.io import (
     load_mapping_file, validate_mapping_schema, show_chain_info,
     SECURITY_AVAILABLE, REMASK_AVAILABLE,
 )
 
-from unmasking.cli import (
+from datamasking.unmasking.cli import (
     CONFIG_AVAILABLE, LOGGING_AVAILABLE,
     main,
 )

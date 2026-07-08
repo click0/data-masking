@@ -6,7 +6,7 @@
 import string
 import pytest
 
-from modules.password_generator import (
+from datamasking.extras.password_generator import (
     generate_password,
     generate_password_from_config,
     generate_passwords,

@@ -16,15 +16,15 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict
 
-from unmasking.helpers import (
+from datamasking.unmasking.helpers import (
     validate_file_size, auto_find_latest_pair, check_mapping_version,
 )
-from unmasking.engine import (
+from datamasking.unmasking.engine import (
     unmask_text_v2, unmask_text_v1,
     unmask_json_recursive, unmask_chain, unmask_json_chain,
     is_chain_mapping,
 )
-from unmasking.io import (
+from datamasking.unmasking.io import (
     load_mapping_file, validate_mapping_schema, show_chain_info,
     SECURITY_AVAILABLE, REMASK_AVAILABLE,
 )
@@ -35,30 +35,30 @@ from unmasking.io import (
 
 CONFIG_AVAILABLE = False
 try:
-    from modules.config import load_config, ConfigLoader
+    from datamasking.extras.config import load_config, ConfigLoader
     CONFIG_AVAILABLE = True
 except ImportError:
     import logging as _logging
-    _logging.getLogger(__name__).debug("modules.config not available — YAML config disabled")
+    _logging.getLogger(__name__).debug("datamasking.extras.config not available — YAML config disabled")
 
 LOGGING_AVAILABLE = False
 try:
-    from modules.masking_logger import MaskingLogger, setup_logging
+    from datamasking.extras.masking_logger import MaskingLogger, setup_logging
     LOGGING_AVAILABLE = True
 except ImportError:
     import logging as _logging
-    _logging.getLogger(__name__).debug("modules.masking_logger not available — structured logging disabled")
+    _logging.getLogger(__name__).debug("datamasking.extras.masking_logger not available — structured logging disabled")
 
 # Re-mask (for --to-version and --chain-info CLI args)
 try:
-    from modules.re_mask import ChainUnmasker, load_chain, get_chain_info
+    from datamasking.extras.re_mask import ChainUnmasker, load_chain, get_chain_info
 except ImportError:
     pass
 
 # ============================================================================
 # МЕТАДАНІ
 # ============================================================================
-__version__ = "2.6.10"
+__version__ = "3.0.0.dev1"
 
 
 def main():

@@ -12,9 +12,9 @@ import re
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple
 
-from masking import constants as _cfg
-from masking.helpers import add_to_mapping, get_deterministic_seed, _apply_original_case
-from masking.context import extract_base_rank
+from datamasking.masking import constants as _cfg
+from datamasking.masking.helpers import add_to_mapping, get_deterministic_seed, _apply_original_case
+from datamasking.masking.context import extract_base_rank
 
 
 def mask_military_unit(original: str, masking_dict: Dict, instance_counters: Dict) -> str:

@@ -73,7 +73,7 @@ except ImportError:
 # RANK DATA IMPORT
 # ============================================================================
 try:
-    from rank_data import (
+    from datamasking.rank_data import (
         RANK_DECLENSIONS,
         RANK_TO_NOMINATIVE,
         ARMY_RANKS,

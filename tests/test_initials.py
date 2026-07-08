@@ -16,10 +16,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from masking.constants import __version__
-from masking.engine import mask_text_context_aware
-from unmasking.engine import unmask_text_v2
-from unmasking.helpers import check_mapping_version
+from datamasking.masking.constants import __version__
+from datamasking.masking.engine import mask_text_context_aware
+from datamasking.unmasking.engine import unmask_text_v2
+from datamasking.unmasking.helpers import check_mapping_version
 
 
 def make_masking_dict():

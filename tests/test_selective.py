@@ -5,7 +5,7 @@
 
 import pytest
 
-from modules.selective import (
+from datamasking.extras.selective import (
     AVAILABLE_TYPES,
     TYPE_ALIASES,
     TYPE_GROUPS,

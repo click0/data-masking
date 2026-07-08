@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.0.dev1] - Unreleased (гілка v3)
+
+### Changed — package restructure (step 1 of the 3.0 packaging track)
+- All code moved under a single top-level package **`datamasking`**:
+  `masking/` → `datamasking/masking/`, `unmasking/` → `datamasking/unmasking/`,
+  `modules/` → `datamasking/extras/`, `rank_data.py` → `datamasking/rank_data.py`.
+  This removes the generic top-level names (`modules`, `rank_data`) that would
+  collide in site-packages once the project is pip-installable.
+- New module entry point: `python -m datamasking mask|unmask|--version`
+  (the old `python . mask` still works).
+
+### Backward compatibility
+- Root shims keep every historical import path working with a
+  `DeprecationWarning`: `import masking`, `import unmasking`,
+  `from modules.tools import …`, `from rank_data import …`. Shims alias
+  `sys.modules` so old and new paths share a single module instance
+  (live `MASK_*` flags keep one state).
+- `data_masking.py` / `unmask_data.py` remain supported entry scripts
+  (unchanged CLI), now re-exporting from `datamasking.*`.
+
+### Fixed
+- `check_mapping_version` treated any mapping version not starting with
+  "2." as v1 logic — mapping files written by 3.x would silently be
+  unmasked with the v1 path. Now the major/minor are parsed properly:
+  2.0→v2.0, 2.1+→v2.1, 3.x+→v2.1 (mapping format unchanged since 2.1).
+  Same fix applied to schema validation in `unmasking/io.py`.
+
+### Not in this step (deliberately)
+- `pyproject.toml`, console-script entry points, PyInstaller/release
+  pipeline changes and docs rewrite — next steps of the 3.0 track;
+  `release.yml` is untouched and still builds from the root scripts.
+
 ## [2.6.10] - 2026-07
 
 ### Removed
