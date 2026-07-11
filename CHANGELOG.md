@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.0.dev2] - Unreleased (гілка v3)
+
+### Added — packaging (step 2 of the 3.0 track)
+- **`pyproject.toml`**: the project is now pip-installable
+  (`pip install .`). The wheel ships ONLY the `datamasking` package —
+  root compatibility shims (`masking/`, `unmasking/`, `modules/`,
+  `rank_data.py`) never reach site-packages.
+- **Console scripts**: `data-mask`, `data-unmask`, `data-masking-diagnose`.
+- Optional dependencies: `data-masking[security]` (cryptography),
+  `[yaml]` (pyyaml), `[full]`, `[dev]`. Core depends on faker only;
+  encryption/YAML config degrade gracefully when extras are absent.
+- Single version source **`datamasking/_version.py`** (no imports —
+  setuptools reads it statically at build time). `masking/constants.py`
+  and `unmasking/cli.py` now import it instead of holding copies.
+
+### Changed
+- `diagnose_mapping.py` moved to `datamasking/diagnose.py`; the root
+  script remains as a supported thin wrapper (PyInstaller target
+  unchanged).
+
 ## [3.0.0.dev1] - Unreleased (гілка v3)
 
 ### Changed — package restructure (step 1 of the 3.0 packaging track)

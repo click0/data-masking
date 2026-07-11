@@ -26,7 +26,7 @@ from datamasking.rank_data import (
 # ============================================================================
 # МЕТАДАНІ
 # ============================================================================
-__version__ = "3.0.0.dev1"
+from datamasking._version import __version__  # єдине джерело версії
 __author__ = "Vladyslav V. Prodan"
 __contact__ = "github.com/click0"
 __phone__ = "+38(099)6053340"
