@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.0.dev3] - Unreleased (гілка v3)
+
+### Changed — release pipeline (step 3 of the 3.0 track)
+- `release.yml` rewritten for the `datamasking` package layout:
+  PyInstaller hidden-imports updated (`datamasking.*` instead of the old
+  flat names), `--add-data rank_data.py` dropped (bundled via the import
+  graph), source archives now include `datamasking/` and `pyproject.toml`.
+- The release now also builds and attaches a **wheel + sdist**
+  (`python -m build`) with a smoke test that installs the wheel, runs all
+  console scripts and asserts the shims did not leak into site-packages.
+- New **`workflow_dispatch` dry-run mode**: the full pipeline (tests,
+  archives, wheel, Windows exe) can be run from any branch without a tag;
+  artifacts are attached to the workflow run instead of a release.
+- Windows job gained a real mask→unmask roundtrip test of the built exes
+  (previously only `--help` smoke tests).
+- `*dev*` versions are now marked as pre-release automatically.
+
 ## [3.0.0.dev2] - Unreleased (гілка v3)
 
 ### Added — packaging (step 2 of the 3.0 track)

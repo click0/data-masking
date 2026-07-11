@@ -4,6 +4,14 @@ on:
   push:
     tags:
       - 'v*'
+  # Dry-run: повна збірка без створення релізу; артефакти чіпляються
+  # до workflow run. Дозволяє тестувати пайплайн з будь-якої гілки.
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for the dry-run build'
+        required: false
+        default: 'pipeline test'
 
 permissions:
   contents: write
@@ -26,13 +34,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
+          pip install build
 
       - name: Run tests (release gate)
         run: pytest --timeout=300
 
-      - name: Extract version from tag
+      - name: Extract version
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION=${GITHUB_REF_NAME#v}
+          else
+            VERSION=$(python -c "exec(open('datamasking/_version.py').read()); print(__version__)")
+          fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Verify version consistency
@@ -40,15 +53,22 @@ jobs:
           python -c "
           import re
           tag_ver = '${{ env.VERSION }}'
+          exec(open('datamasking/_version.py').read())
+          pkg_ver = __version__
           with open('data_masking.py') as f:
               content = f.read()
           match = re.search(r'__version__\s*=\s*\"(.+?)\"', content)
-          src_ver = match.group(1)
-          assert tag_ver == src_ver, f'Tag v{tag_ver} != source v{src_ver}'
-          print(f'Version verified: v{src_ver}')
+          wrapper_ver = match.group(1)
+          assert pkg_ver == wrapper_ver, f'datamasking._version {pkg_ver} != data_masking.py {wrapper_ver}'
+          if '${{ github.ref_type }}' == 'tag':
+              assert tag_ver == pkg_ver, f'Tag v{tag_ver} != source v{pkg_ver}'
+          print(f'Version verified: v{pkg_ver}')
           "
 
-      - name: Build archives
+      - name: Build wheel and sdist
+        run: python -m build
+
+      - name: Build source archives
         run: |
           mkdir -p dist
           ARCHIVE="data-masking-${{ env.VERSION }}"
@@ -62,9 +82,9 @@ jobs:
             --exclude='*.pyc' \
             --transform="s,^,${ARCHIVE}/," \
             data_masking.py unmask_data.py diagnose_mapping.py rank_data.py \
-            __main__.py \
+            __main__.py pyproject.toml \
             config_example.py config_example.yaml \
-            masking/ unmasking/ modules/ docs/ tests/ \
+            datamasking/ masking/ unmasking/ modules/ docs/ tests/ \
             requirements.txt requirements-dev.txt \
             LICENSE pytest.ini .gitignore \
             input_example.txt input_example.2.txt
@@ -72,15 +92,39 @@ jobs:
           cd "$(git rev-parse --show-toplevel)"
           zip -r "dist/${ARCHIVE}.zip" \
             data_masking.py unmask_data.py diagnose_mapping.py rank_data.py \
-            __main__.py \
+            __main__.py pyproject.toml \
             config_example.py config_example.yaml \
-            masking/ unmasking/ modules/ docs/ tests/ \
+            datamasking/ masking/ unmasking/ modules/ docs/ tests/ \
             requirements.txt requirements-dev.txt \
             LICENSE pytest.ini .gitignore \
             input_example.txt input_example.2.txt \
             -x '*__pycache__*' '*.pyc'
 
+      - name: Smoke test wheel install
+        run: |
+          python -m venv /tmp/wheeltest
+          /tmp/wheeltest/bin/pip install --quiet dist/*.whl
+          /tmp/wheeltest/bin/data-mask --version
+          /tmp/wheeltest/bin/data-unmask --version
+          /tmp/wheeltest/bin/data-masking-diagnose --help > /dev/null
+          /tmp/wheeltest/bin/python -m datamasking --version
+          # Shim-и НЕ повинні потрапляти у site-packages
+          /tmp/wheeltest/bin/python -c "
+          import importlib.util, sys
+          for name in ('modules', 'rank_data'):
+              assert importlib.util.find_spec(name) is None, f'{name} leaked into the wheel!'
+          print('Wheel contents OK: only datamasking is installed')
+          "
+
+      - name: Upload build artifacts (dry-run)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-python
+          path: dist/
+
       - name: Generate changelog
+        if: github.ref_type == 'tag'
         run: |
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           if [ -n "$PREV_TAG" ]; then
@@ -95,15 +139,17 @@ jobs:
           } >> $GITHUB_ENV
 
       - name: Determine release flags
+        if: github.ref_type == 'tag'
         id: release_flags
         run: |
           FLAGS=""
           case "${{ env.VERSION }}" in
-            *rc*|*beta*|*alpha*) FLAGS="--prerelease" ;;
+            *rc*|*beta*|*alpha*|*dev*) FLAGS="--prerelease" ;;
           esac
           echo "flags=$FLAGS" >> $GITHUB_OUTPUT
 
       - name: Create or update GitHub Release
+        if: github.ref_type == 'tag'
         run: |
           cat > /tmp/release-body.md <<BODY_EOF
           ## Data Masking System v${{ env.VERSION }}
@@ -124,6 +170,7 @@ jobs:
             gh release upload "${{ github.ref_name }}" \
               dist/data-masking-${{ env.VERSION }}.tar.gz \
               dist/data-masking-${{ env.VERSION }}.zip \
+              dist/*.whl \
               --clobber
             gh release edit "${{ github.ref_name }}" \
               --title "Data Masking System v${{ env.VERSION }}" \
@@ -137,7 +184,8 @@ jobs:
               --notes-file /tmp/release-body.md \
               ${{ steps.release_flags.outputs.flags }} \
               dist/data-masking-${{ env.VERSION }}.tar.gz \
-              dist/data-masking-${{ env.VERSION }}.zip
+              dist/data-masking-${{ env.VERSION }}.zip \
+              dist/*.whl
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -161,10 +209,14 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Extract version from tag
+      - name: Extract version
         shell: bash
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION=${GITHUB_REF_NAME#v}
+          else
+            VERSION=$(python -c "exec(open('datamasking/_version.py').read()); print(__version__)")
+          fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Build data_masking.exe
@@ -174,26 +226,27 @@ jobs:
             --runtime-hook=pyinstaller_utf8_hook.py \
             --collect-all=faker \
             --collect-all=cryptography \
-            --hidden-import=rank_data \
-            --hidden-import=masking \
-            --hidden-import=masking.constants \
-            --hidden-import=masking.helpers \
-            --hidden-import=masking.language \
-            --hidden-import=masking.context \
-            --hidden-import=masking.mask_personal \
-            --hidden-import=masking.mask_military \
-            --hidden-import=masking.engine \
-            --hidden-import=masking.cli \
-            --hidden-import=modules \
-            --hidden-import=modules.config \
-            --hidden-import=modules.security \
-            --hidden-import=modules.masking_logger \
-            --hidden-import=modules.selective \
-            --hidden-import=modules.re_mask \
-            --hidden-import=modules.password_generator \
+            --hidden-import=datamasking \
+            --hidden-import=datamasking._version \
+            --hidden-import=datamasking.rank_data \
+            --hidden-import=datamasking.masking \
+            --hidden-import=datamasking.masking.constants \
+            --hidden-import=datamasking.masking.helpers \
+            --hidden-import=datamasking.masking.language \
+            --hidden-import=datamasking.masking.context \
+            --hidden-import=datamasking.masking.mask_personal \
+            --hidden-import=datamasking.masking.mask_military \
+            --hidden-import=datamasking.masking.engine \
+            --hidden-import=datamasking.masking.cli \
+            --hidden-import=datamasking.extras \
+            --hidden-import=datamasking.extras.config \
+            --hidden-import=datamasking.extras.security \
+            --hidden-import=datamasking.extras.masking_logger \
+            --hidden-import=datamasking.extras.selective \
+            --hidden-import=datamasking.extras.re_mask \
+            --hidden-import=datamasking.extras.password_generator \
             --hidden-import=yaml \
             --hidden-import=_cffi_backend \
-            --add-data='rank_data.py;.' \
             --name data_masking \
             data_masking.py
 
@@ -203,21 +256,22 @@ jobs:
           pyinstaller --onefile --noconfirm --clean \
             --runtime-hook=pyinstaller_utf8_hook.py \
             --collect-all=cryptography \
-            --hidden-import=rank_data \
-            --hidden-import=unmasking \
-            --hidden-import=unmasking.helpers \
-            --hidden-import=unmasking.engine \
-            --hidden-import=unmasking.io \
-            --hidden-import=unmasking.cli \
-            --hidden-import=modules \
-            --hidden-import=modules.config \
-            --hidden-import=modules.security \
-            --hidden-import=modules.masking_logger \
-            --hidden-import=modules.re_mask \
-            --hidden-import=modules.rank_data \
+            --hidden-import=datamasking \
+            --hidden-import=datamasking._version \
+            --hidden-import=datamasking.rank_data \
+            --hidden-import=datamasking.unmasking \
+            --hidden-import=datamasking.unmasking.helpers \
+            --hidden-import=datamasking.unmasking.engine \
+            --hidden-import=datamasking.unmasking.io \
+            --hidden-import=datamasking.unmasking.cli \
+            --hidden-import=datamasking.extras \
+            --hidden-import=datamasking.extras.config \
+            --hidden-import=datamasking.extras.security \
+            --hidden-import=datamasking.extras.masking_logger \
+            --hidden-import=datamasking.extras.re_mask \
+            --hidden-import=datamasking.extras.rank_data \
             --hidden-import=yaml \
             --hidden-import=_cffi_backend \
-            --add-data='rank_data.py;.' \
             --name unmask_data \
             unmask_data.py
 
@@ -226,6 +280,7 @@ jobs:
         run: |
           pyinstaller --onefile --noconfirm --clean \
             --runtime-hook=pyinstaller_utf8_hook.py \
+            --hidden-import=datamasking.diagnose \
             --name diagnose_mapping \
             diagnose_mapping.py
 
@@ -243,6 +298,15 @@ jobs:
           ./dist/unmask_data.exe --help
           ./dist/diagnose_mapping.exe --help
 
+      - name: Roundtrip test (mask -> unmask)
+        shell: pwsh
+        run: |
+          ./dist/data_masking.exe -i input_example.txt
+          $map = Get-ChildItem masking_map_*.json | Select-Object -First 1
+          $out = Get-ChildItem output_*.txt | Select-Object -First 1
+          ./dist/unmask_data.exe $out.FullName --map $map.FullName -o recovered.txt
+          if (!(Test-Path recovered.txt)) { throw "unmask produced no output" }
+
       - name: Package Windows binaries
         shell: bash
         run: |
@@ -250,7 +314,15 @@ jobs:
           7z a "data-masking-${{ env.VERSION }}-windows-x64.zip" \
             data_masking.exe unmask_data.exe diagnose_mapping.exe
 
+      - name: Upload build artifacts (dry-run)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-windows
+          path: dist/data-masking-${{ env.VERSION }}-windows-x64.zip
+
       - name: Upload to release
+        if: github.ref_type == 'tag'
         shell: bash
         run: |
           gh release upload "${{ github.ref_name }}" \
