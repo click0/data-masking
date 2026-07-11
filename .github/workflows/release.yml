@@ -104,6 +104,9 @@ jobs:
         run: |
           python -m venv /tmp/wheeltest
           /tmp/wheeltest/bin/pip install --quiet dist/*.whl
+          # Нейтральний cwd: python -c додає '.' у sys.path, і з кореня
+          # checkout find_spec бачив би shim-и репозиторію, а не wheel
+          cd /tmp
           /tmp/wheeltest/bin/data-mask --version
           /tmp/wheeltest/bin/data-unmask --version
           /tmp/wheeltest/bin/data-masking-diagnose --help > /dev/null

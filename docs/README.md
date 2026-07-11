@@ -10,16 +10,26 @@ Current version — see [CHANGELOG.md](../CHANGELOG.md) or `python data_masking.
 
 ## 📋 Project Structure
 
+Since v3.0 all code lives in a single top-level package **`datamasking`**
+(pip-installable — see [INSTALL.md](INSTALL.md)).
+
 ### Entry Points
-- **`data_masking.py`** — data masking (thin wrapper over the `masking/` package)
-- **`unmask_data.py`** — unmasking (thin wrapper over the `unmasking/` package)
-- **`diagnose_mapping.py`** — diagnostics, mapping comparison and recovery verification
+- **`data-mask` / `data-unmask` / `data-masking-diagnose`** — console scripts (after `pip install`)
+- **`python -m datamasking mask|unmask [args]`** — run as a module
+- **`data_masking.py`** — data masking (thin wrapper over `datamasking.masking`)
+- **`unmask_data.py`** — unmasking (thin wrapper over `datamasking.unmasking`)
+- **`diagnose_mapping.py`** — diagnostics, mapping comparison and recovery verification (wrapper over `datamasking.diagnose`)
 - **`__main__.py`** — run from the repository root: `python . mask [args]` / `python . unmask [args]`
 
-### `masking/` Package (masking core, v2.5.0+)
+> **Compatibility:** the old flat import paths (`import masking`, `import unmasking`,
+> `from modules.tools import …`, `from rank_data import …`) still work from a
+> repository checkout via shims, but emit a `DeprecationWarning`. They are not
+> installed by `pip install` — use `datamasking.*` in new code.
+
+### `datamasking.masking` Package (masking core, v2.5.0+)
 | Module | Description |
 |--------|-------------|
-| `constants.py` | `MASK_*` flags, patterns, name dictionaries, metadata (single source of version) |
+| `constants.py` | `MASK_*` flags, patterns, name dictionaries, metadata |
 | `helpers.py` | Seed, mapping, instance tracking, normalization |
 | `language.py` | Gender, grammatical case, name declension |
 | `context.py` | Recognition of lines containing PIB (Прізвище Ім'я По-батькові), context parsing |
@@ -28,7 +38,7 @@ Current version — see [CHANGELOG.md](../CHANGELOG.md) or `python data_masking.
 | `engine.py` | Main engine: context-aware masking of text/JSON, initials |
 | `cli.py` | CLI, config, reports, `main()` |
 
-### `unmasking/` Package (unmasking core, v2.5.0+)
+### `datamasking.unmasking` Package (unmasking core, v2.5.0+)
 | Module | Description |
 |--------|-------------|
 | `helpers.py` | Instance map, file pair lookup, mapping versions |
@@ -37,9 +47,10 @@ Current version — see [CHANGELOG.md](../CHANGELOG.md) or `python data_masking.
 | `cli.py` | CLI, `main()` |
 
 ### Data
-- **`rank_data.py`** — UAF ranks (army, navy, medical/legal service) with declensions; `modules/rank_data.py` — re-export
+- **`datamasking/rank_data.py`** — UAF ranks (army, navy, medical/legal service) with declensions; `datamasking/extras/rank_data.py` — re-export
+- **`datamasking/_version.py`** — single source of the package version
 
-### `modules/` Package (optional features)
+### `datamasking.extras` Package (optional features)
 | Module | Description |
 |--------|-------------|
 | `config.py` | YAML + ENV + CLI configuration with priorities (CLI > ENV > YAML > Default) |
@@ -56,6 +67,14 @@ Current version — see [CHANGELOG.md](../CHANGELOG.md) or `python data_masking.
 ---
 
 ## 🚀 Quick Start
+
+### Install (v3.0+)
+```bash
+pip install '.[full]'        # from a repository checkout
+data-mask input.txt          # console scripts appear on PATH
+data-unmask masked_file.txt
+```
+Running from source without installation also works — see below.
 
 ### Masking
 ```bash
@@ -199,7 +218,7 @@ The system generates **identical** mapping files when processing **identical** i
 
 ## 🔧 Modules v2.3.0
 
-### Mapping File Encryption (`modules/security.py`)
+### Mapping File Encryption (`datamasking/extras/security.py`)
 
 Mapping files can be encrypted with AES-256-GCM:
 
@@ -212,7 +231,7 @@ python data_masking.py input.txt --encrypt --password mypassword
 python unmask_data.py masked.txt --map mapping.enc --password mypassword
 ```
 
-### Configuration (`modules/config.py`)
+### Configuration (`datamasking/extras/config.py`)
 
 Priority: CLI > ENV > config.yaml > Default
 
@@ -223,7 +242,7 @@ python data_masking.py input.txt -c config.yaml
 # Генерація прикладу конфігурації — див. config_example.py
 ```
 
-### Selective Masking (`modules/selective.py`)
+### Selective Masking (`datamasking/extras/selective.py`)
 
 ```bash
 # Маскувати тільки ІПН та паспорти
@@ -233,31 +252,31 @@ python data_masking.py input.txt --only ipn,passport
 python data_masking.py input.txt --exclude dates
 ```
 
-### Chain Re-masking (`modules/re_mask.py`)
+### Chain Re-masking (`datamasking/extras/re_mask.py`)
 
 For re-masking already masked files while preserving the full mapping chain:
 
 ```python
-from modules.re_mask import ReMasker, MappingChain
+from datamasking.extras.re_mask import ReMasker, MappingChain
 
 chain = MappingChain()
 remasker = ReMasker(chain=chain, mask_function=my_mask_fn)
 ```
 
-### Programmatic API (`modules/tools.py`)
+### Programmatic API (`datamasking/extras/tools.py`)
 
 Atomic functions for integration into external applications:
 
 ```python
-from modules.tools import mask_ipn_direct, mask_rank_direct, mask_pib_force
+from datamasking.extras.tools import mask_ipn_direct, mask_rank_direct, mask_pib_force
 
 result = mask_ipn_direct("1234567890", masking_dict, instance_counters)
 ```
 
-### Password Generator (`modules/password_generator.py`)
+### Password Generator (`datamasking/extras/password_generator.py`)
 
 ```python
-from modules.password_generator import generate_password
+from datamasking.extras.password_generator import generate_password
 
 # Стандартний пароль (24 символи)
 pwd = generate_password()
@@ -266,15 +285,15 @@ pwd = generate_password()
 pwd = generate_password(length=32, include_cyrillic_lower=True)
 
 # CLI
-# python -m modules.password_generator --length 32 --cyrillic
+# python -m datamasking.extras.password_generator --length 32 --cyrillic
 ```
 
-### Logging (`modules/masking_logger.py`)
+### Logging (`datamasking/extras/masking_logger.py`)
 
 Structured logging with JSON and colored console output:
 
 ```python
-from modules.masking_logger import MaskingLogger, setup_logging
+from datamasking.extras.masking_logger import MaskingLogger, setup_logging
 
 logger = MaskingLogger("masking")
 setup_logging(level="DEBUG", json_output=True)

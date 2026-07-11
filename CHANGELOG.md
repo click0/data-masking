@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.0.dev4] - Unreleased (гілка v3)
+
+### Documentation (step 4 of the 3.0 track)
+- README (EN/UK): project structure rewritten for the `datamasking`
+  package, compatibility note about deprecated flat imports, pip-install
+  quick start, `datamasking.extras.*` import examples.
+- INSTALL.md: new "Python package (pip)" section with extras
+  (`[security]`, `[yaml]`, `[full]`), console-script usage; local
+  PyInstaller build instructions updated to `datamasking.*`
+  hidden-imports.
+
+### Fixed
+- Release dry-run: the wheel smoke test ran from the repository root, so
+  `python -c` picked up the checkout shims via `sys.path` and the
+  "shims must not leak into the wheel" assert fired on a clean wheel.
+  The check now runs from a neutral cwd.
+
 ## [3.0.0.dev3] - Unreleased (гілка v3)
 
 ### Changed — release pipeline (step 3 of the 3.0 track)

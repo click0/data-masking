@@ -1,6 +1,6 @@
 # Installation
 
-## Python (source)
+## Python package (pip, v3.0+)
 
 ### Requirements
 
@@ -8,6 +8,32 @@
 - pip
 
 ### Install
+
+```bash
+git clone https://github.com/click0/data-masking.git
+cd data-masking
+pip install .                 # core (faker only)
+pip install '.[full]'         # + encryption (cryptography) + YAML config (pyyaml)
+pip install '.[security]'     # + encryption only
+pip install '.[yaml]'         # + YAML config only
+```
+
+### Run (console scripts)
+
+```bash
+data-mask -i input.txt
+data-unmask masked.txt --map mapping.json
+data-masking-diagnose
+# або як модуль:
+python -m datamasking mask -i input.txt
+python -m datamasking unmask masked.txt --map mapping.json
+```
+
+---
+
+## Python (source, no install)
+
+### Install dependencies
 
 ```bash
 git clone https://github.com/click0/data-masking.git
@@ -69,33 +95,31 @@ pyinstaller --onefile --noconfirm --clean \
   --runtime-hook=pyinstaller_utf8_hook.py \
   --collect-all=faker \
   --collect-all=cryptography \
-  --hidden-import=rank_data \
-  --hidden-import=masking --hidden-import=masking.constants \
-  --hidden-import=masking.helpers --hidden-import=masking.language \
-  --hidden-import=masking.context --hidden-import=masking.mask_personal \
-  --hidden-import=masking.mask_military --hidden-import=masking.engine \
-  --hidden-import=masking.cli \
-  --hidden-import=modules --hidden-import=modules.config \
-  --hidden-import=modules.security --hidden-import=modules.masking_logger \
-  --hidden-import=modules.selective --hidden-import=modules.re_mask \
-  --hidden-import=modules.password_generator \
+  --hidden-import=datamasking --hidden-import=datamasking.rank_data \
+  --hidden-import=datamasking.masking --hidden-import=datamasking.masking.constants \
+  --hidden-import=datamasking.masking.helpers --hidden-import=datamasking.masking.language \
+  --hidden-import=datamasking.masking.context --hidden-import=datamasking.masking.mask_personal \
+  --hidden-import=datamasking.masking.mask_military --hidden-import=datamasking.masking.engine \
+  --hidden-import=datamasking.masking.cli \
+  --hidden-import=datamasking.extras --hidden-import=datamasking.extras.config \
+  --hidden-import=datamasking.extras.security --hidden-import=datamasking.extras.masking_logger \
+  --hidden-import=datamasking.extras.selective --hidden-import=datamasking.extras.re_mask \
+  --hidden-import=datamasking.extras.password_generator \
   --hidden-import=yaml --hidden-import=_cffi_backend \
-  --add-data='rank_data.py;.' \
   --name data_masking \
   data_masking.py
 
 pyinstaller --onefile --noconfirm --clean \
   --runtime-hook=pyinstaller_utf8_hook.py \
   --collect-all=cryptography \
-  --hidden-import=rank_data \
-  --hidden-import=unmasking --hidden-import=unmasking.helpers \
-  --hidden-import=unmasking.engine --hidden-import=unmasking.io \
-  --hidden-import=unmasking.cli \
-  --hidden-import=modules --hidden-import=modules.config \
-  --hidden-import=modules.security --hidden-import=modules.masking_logger \
-  --hidden-import=modules.re_mask --hidden-import=modules.rank_data \
+  --hidden-import=datamasking --hidden-import=datamasking.rank_data \
+  --hidden-import=datamasking.unmasking --hidden-import=datamasking.unmasking.helpers \
+  --hidden-import=datamasking.unmasking.engine --hidden-import=datamasking.unmasking.io \
+  --hidden-import=datamasking.unmasking.cli \
+  --hidden-import=datamasking.extras --hidden-import=datamasking.extras.config \
+  --hidden-import=datamasking.extras.security --hidden-import=datamasking.extras.masking_logger \
+  --hidden-import=datamasking.extras.re_mask --hidden-import=datamasking.extras.rank_data \
   --hidden-import=yaml --hidden-import=_cffi_backend \
-  --add-data='rank_data.py;.' \
   --name unmask_data \
   unmask_data.py
 ```
@@ -111,18 +135,17 @@ pyinstaller --onefile --noconfirm --clean \
   --runtime-hook=pyinstaller_utf8_hook.py \
   --collect-all=faker \
   --collect-all=cryptography \
-  --hidden-import=rank_data \
-  --hidden-import=masking --hidden-import=masking.constants \
-  --hidden-import=masking.helpers --hidden-import=masking.language \
-  --hidden-import=masking.context --hidden-import=masking.mask_personal \
-  --hidden-import=masking.mask_military --hidden-import=masking.engine \
-  --hidden-import=masking.cli \
-  --hidden-import=modules --hidden-import=modules.config \
-  --hidden-import=modules.security --hidden-import=modules.masking_logger \
-  --hidden-import=modules.selective --hidden-import=modules.re_mask \
-  --hidden-import=modules.password_generator \
+  --hidden-import=datamasking --hidden-import=datamasking.rank_data \
+  --hidden-import=datamasking.masking --hidden-import=datamasking.masking.constants \
+  --hidden-import=datamasking.masking.helpers --hidden-import=datamasking.masking.language \
+  --hidden-import=datamasking.masking.context --hidden-import=datamasking.masking.mask_personal \
+  --hidden-import=datamasking.masking.mask_military --hidden-import=datamasking.masking.engine \
+  --hidden-import=datamasking.masking.cli \
+  --hidden-import=datamasking.extras --hidden-import=datamasking.extras.config \
+  --hidden-import=datamasking.extras.security --hidden-import=datamasking.extras.masking_logger \
+  --hidden-import=datamasking.extras.selective --hidden-import=datamasking.extras.re_mask \
+  --hidden-import=datamasking.extras.password_generator \
   --hidden-import=yaml --hidden-import=_cffi_backend \
-  --add-data='rank_data.py;.' \
   --name data_masking_debug \
   data_masking.py
 
@@ -130,15 +153,14 @@ pyinstaller --onefile --noconfirm --clean \
   --debug all --log-level DEBUG \
   --runtime-hook=pyinstaller_utf8_hook.py \
   --collect-all=cryptography \
-  --hidden-import=rank_data \
-  --hidden-import=unmasking --hidden-import=unmasking.helpers \
-  --hidden-import=unmasking.engine --hidden-import=unmasking.io \
-  --hidden-import=unmasking.cli \
-  --hidden-import=modules --hidden-import=modules.config \
-  --hidden-import=modules.security --hidden-import=modules.masking_logger \
-  --hidden-import=modules.re_mask --hidden-import=modules.rank_data \
+  --hidden-import=datamasking --hidden-import=datamasking.rank_data \
+  --hidden-import=datamasking.unmasking --hidden-import=datamasking.unmasking.helpers \
+  --hidden-import=datamasking.unmasking.engine --hidden-import=datamasking.unmasking.io \
+  --hidden-import=datamasking.unmasking.cli \
+  --hidden-import=datamasking.extras --hidden-import=datamasking.extras.config \
+  --hidden-import=datamasking.extras.security --hidden-import=datamasking.extras.masking_logger \
+  --hidden-import=datamasking.extras.re_mask --hidden-import=datamasking.extras.rank_data \
   --hidden-import=yaml --hidden-import=_cffi_backend \
-  --add-data='rank_data.py;.' \
   --name unmask_data_debug \
   unmask_data.py
 ```
