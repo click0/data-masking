@@ -226,6 +226,7 @@ jobs:
         shell: bash
         run: |
           pyinstaller --onefile --noconfirm --clean \
+            --paths=. \
             --runtime-hook=pyinstaller_utf8_hook.py \
             --collect-all=faker \
             --collect-all=cryptography \
@@ -257,6 +258,7 @@ jobs:
         shell: bash
         run: |
           pyinstaller --onefile --noconfirm --clean \
+            --paths=. \
             --runtime-hook=pyinstaller_utf8_hook.py \
             --collect-all=cryptography \
             --hidden-import=datamasking \
@@ -282,6 +284,7 @@ jobs:
         shell: bash
         run: |
           pyinstaller --onefile --noconfirm --clean \
+            --paths=. \
             --runtime-hook=pyinstaller_utf8_hook.py \
             --hidden-import=datamasking.diagnose \
             --name diagnose_mapping \

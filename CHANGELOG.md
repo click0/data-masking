@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.0.dev5] - Unreleased (гілка v3)
+
+### Fixed
+- **Windows exe could not find `datamasking`**: a stale root
+  `__init__.py` made PyInstaller treat the repository root as a package
+  and search modules in its *parent* directory, so the `datamasking`
+  package was never bundled. The stale file is removed (`python . mask`
+  needs only `__main__.py`) and all PyInstaller invocations now pass an
+  explicit `--paths=.`.
+
 ## [3.0.0.dev4] - Unreleased (гілка v3)
 
 ### Documentation (step 4 of the 3.0 track)

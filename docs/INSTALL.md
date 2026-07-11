@@ -92,6 +92,7 @@ pip install pyinstaller
 
 ```bash
 pyinstaller --onefile --noconfirm --clean \
+  --paths=. \
   --runtime-hook=pyinstaller_utf8_hook.py \
   --collect-all=faker \
   --collect-all=cryptography \
@@ -110,6 +111,7 @@ pyinstaller --onefile --noconfirm --clean \
   data_masking.py
 
 pyinstaller --onefile --noconfirm --clean \
+  --paths=. \
   --runtime-hook=pyinstaller_utf8_hook.py \
   --collect-all=cryptography \
   --hidden-import=datamasking --hidden-import=datamasking.rank_data \
@@ -131,6 +133,7 @@ PyInstaller analysis log, and keeps the build directory for inspection.
 
 ```bash
 pyinstaller --onefile --noconfirm --clean \
+  --paths=. \
   --debug all --log-level DEBUG \
   --runtime-hook=pyinstaller_utf8_hook.py \
   --collect-all=faker \
@@ -150,6 +153,7 @@ pyinstaller --onefile --noconfirm --clean \
   data_masking.py
 
 pyinstaller --onefile --noconfirm --clean \
+  --paths=. \
   --debug all --log-level DEBUG \
   --runtime-hook=pyinstaller_utf8_hook.py \
   --collect-all=cryptography \
