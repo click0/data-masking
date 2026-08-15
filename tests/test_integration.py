@@ -71,7 +71,7 @@ class TestLiveFlags:
 
     def test_write_through_wrapper_reaches_engine(self):
         import data_masking
-        from masking import constants as cfg
+        from datamasking.masking import constants as cfg
         original = cfg.MASK_IPN
         try:
             data_masking.MASK_IPN = False
@@ -81,7 +81,7 @@ class TestLiveFlags:
 
     def test_read_reflects_engine_state(self):
         import data_masking
-        from masking import constants as cfg
+        from datamasking.masking import constants as cfg
         original = cfg.MASK_DATES
         try:
             cfg.MASK_DATES = not original

@@ -38,7 +38,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-__version__ = "2.6.0"
+from datamasking._version import __version__  # єдине джерело версії
 
 # Standard mapping categories used by data_masking.py
 MAPPING_CATEGORIES = [
@@ -49,7 +49,7 @@ MAPPING_CATEGORIES = [
 ]
 
 
-def make_empty_masking_dict(version: str = "2.6.0") -> Dict:
+def make_empty_masking_dict(version: str = __version__) -> Dict:
     """Create a fresh empty masking dict with all required category keys.
 
     Args:

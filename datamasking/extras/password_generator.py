@@ -34,7 +34,7 @@ import string
 import argparse
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any, Union
-__version__ = "2.6.0"
+from datamasking._version import __version__  # єдине джерело версії
 __author__ = "Vladyslav V. Prodan"
 # =============================================================================
 # КОНСТАНТИ

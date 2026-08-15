@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.0.dev6] - Unreleased (гілка v3)
+
+### Fixed (audit findings)
+- **`diagnose_mapping` is stdlib-only again.** `datamasking/__init__`
+  eagerly imported `masking.constants` (which instantiates
+  `Faker('uk_UA')`), so the standalone QA script suddenly required faker
+  and the Windows diagnose exe dragged the whole stack. Package metadata
+  (`__author__`, …) is now lazily delegated via PEP 562; `__version__`
+  comes from the light `_version.py`. Regression test added.
+- `extras/re_mask.py` stamped hardcoded `"2.6.0"` into newly created
+  chain mappings; all seven `extras/*` modules carried stale local
+  `__version__ = "2.6.0"` — everything now imports the single package
+  version.
+- Release: the sdist built by `python -m build` was never attached to
+  GitHub releases (only wheel + custom archives) — added.
+- Windows CI roundtrip picked mapping/output files sorted by *name*, not
+  time, and only checked that the recovered file exists — now sorts by
+  `LastWriteTime` and asserts the IPN is masked in the output and
+  restored after unmask.
+- `unmasking/io.py` schema check now parses the mapping major version
+  numerically (former regex would skip validation for majors ≥ 10).
+- `tests/test_integration.py` had two leftover deprecated
+  `from masking import …` imports; wrapper/module docstrings still
+  claimed v2.6.0/v2.2.14; pyproject classifier said Production/Stable
+  for a dev version (now Beta — flip back at the 3.0.0 release).
+
 ## [3.0.0.dev5] - Unreleased (гілка v3)
 
 ### Fixed

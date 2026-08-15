@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 
-__version__ = "2.6.0"
+from datamasking._version import __version__  # єдине джерело версії
 
 
 class JsonFormatter(logging.Formatter):

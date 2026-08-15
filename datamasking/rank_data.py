@@ -36,7 +36,7 @@ rank_data.py - Модуль даних для українських війсь�
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 Phone: +38(099)6053340
-Version: 2.2.14
+Version: див. datamasking/_version.py
 License: BSD 3-Clause "New" or "Revised" License
 Year: 2025-2026
 

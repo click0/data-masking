@@ -21,8 +21,20 @@ rank_data / data_masking / unmask_data) працює через кореневі
 до кінця циклу 3.x.
 """
 
-from datamasking.masking.constants import (
-    __version__, __author__, __contact__, __phone__, __license__, __year__,
-)
+from datamasking._version import __version__
+
+# Метадані живуть у masking.constants, але той тягне faker (створює
+# Faker('uk_UA') при імпорті). Ліниве делегування (PEP 562) лишає
+# `import datamasking` та легкі підмодулі (diagnose) без важких
+# залежностей — diagnose_mapping.py має працювати на чистому stdlib.
+_METADATA = frozenset({"__author__", "__contact__", "__phone__", "__license__", "__year__"})
+
+
+def __getattr__(name):
+    if name in _METADATA:
+        from datamasking.masking import constants as _cfg
+        return getattr(_cfg, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = ["__version__", "__author__", "__contact__", "__license__", "__year__"]

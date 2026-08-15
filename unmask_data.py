@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Data Unmasking Script v2.6.0
+Data Unmasking Script (пакет datamasking, 3.x)
 Відновлення оригінальних даних з замаскованого файлу
 
 ОНОВЛЕНО В v2.6.0:
@@ -11,13 +11,14 @@ Data Unmasking Script v2.6.0
 - Розпізнавання mapping-файлів усіх версій 2.x (раніше 2.3+ падали у v1-логіку)
 - O(n) заміни замість O(n^2) на великих файлах
 
-Архітектура (з v2.5.0): тонка обгортка над пакетом unmasking/
-(helpers, engine, io, cli); запуск з кореня репо — python . unmask
+Архітектура (з v3.0): тонка обгортка над пакетом datamasking.unmasking
+(helpers, engine, io, cli); запуск — python . unmask,
+python -m datamasking unmask, або console script data-unmask (pip install)
 
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 Phone: +38(099)6053340
-Version: 2.6.0
+Version: див. datamasking/_version.py
 License: BSD 3-Clause "New" or "Revised" License
 Year: 2025-2026
 """

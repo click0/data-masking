@@ -112,6 +112,36 @@ class TestOldImportForms:
         import masking
         assert data_masking.__version__ == datamasking.__version__ == masking.__version__
 
+    def test_metadata_lazily_delegated(self):
+        # PEP 562 у datamasking/__init__: метадані читаються з constants
+        import datamasking
+        import datamasking.masking.constants as cfg
+        assert datamasking.__author__ == cfg.__author__
+
+
+class TestDiagnoseStaysLight:
+    """diagnose — stdlib-only інструмент; імпорт не має тягнути faker.
+
+    Регресія 3.0: datamasking/__init__ еагерно імпортував masking.constants
+    (→ Faker('uk_UA')), і standalone-скрипт diagnose_mapping.py вимагав
+    установленого faker.
+    """
+
+    def test_diagnose_import_does_not_load_faker(self):
+        import subprocess, sys
+        code = (
+            "import sys; import datamasking.diagnose; "
+            "assert 'faker' not in sys.modules, 'faker loaded'; "
+            "import diagnose_mapping; "
+            "assert 'faker' not in sys.modules, 'faker loaded by wrapper'"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True, text=True,
+            cwd=str(Path(__file__).resolve().parent.parent),
+        )
+        assert result.returncode == 0, result.stderr
+
 
 class TestMappingVersionDetection:
     """Mapping-файли всіх поколінь розпізнаються правильною логікою.

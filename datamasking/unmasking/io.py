@@ -84,7 +84,8 @@ def validate_mapping_schema(mapping: Dict) -> None:
         return
 
     version = mapping.get("version")
-    if version and re.match(r"v?[2-9]\d*\.", version):
+    _major = re.match(r"v?(\d+)\.", version) if version else None
+    if _major and int(_major.group(1)) >= 2:
         if "mappings" not in mapping:
             raise ValueError(
                 f"Mapping v{version} must contain 'mappings' key"

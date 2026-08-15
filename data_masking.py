@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Data Masking Script v2.6.0
+Data Masking Script (пакет datamasking, 3.x)
 Локально узгоджене маскування конфіденційних даних з INSTANCE TRACKING
 
 ОНОВЛЕНО В v2.6.0:
@@ -14,14 +14,15 @@ Data Masking Script v2.6.0
 - O(n) заміни замість O(n^2) на великих файлах
 - Згенеровані паролі виводяться у stderr
 
-Архітектура (з v2.5.0): тонка обгортка над пакетом masking/
+Архітектура (з v3.0): тонка обгортка над пакетом datamasking.masking
 (constants, helpers, language, context, mask_personal, mask_military,
-engine, cli); запуск з кореня репо — python . mask / python . unmask
+engine, cli); запуск — python . mask, python -m datamasking mask,
+або console script data-mask (pip install)
 
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 Phone: +38(099)6053340
-Version: 2.6.0
+Version: див. datamasking/_version.py
 License: BSD 3-Clause "New" or "Revised" License
 Year: 2025-2026
 """
@@ -30,7 +31,7 @@ Year: 2025-2026
 # Re-exports from masking package for backward compatibility
 # ============================================================================
 
-__version__ = "3.0.0.dev5"
+__version__ = "3.0.0.dev6"
 
 from datamasking.masking.constants import (
     __version__, __author__, __contact__, __phone__, __license__, __year__,
