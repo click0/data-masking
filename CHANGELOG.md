@@ -4,127 +4,59 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [3.0.0.dev6] - Unreleased (гілка v3)
+## [3.0.0] - 2026-07
 
-### Fixed (audit findings)
-- **`diagnose_mapping` is stdlib-only again.** `datamasking/__init__`
-  eagerly imported `masking.constants` (which instantiates
-  `Faker('uk_UA')`), so the standalone QA script suddenly required faker
-  and the Windows diagnose exe dragged the whole stack. Package metadata
-  (`__author__`, …) is now lazily delegated via PEP 562; `__version__`
-  comes from the light `_version.py`. Regression test added.
-- `extras/re_mask.py` stamped hardcoded `"2.6.0"` into newly created
-  chain mappings; all seven `extras/*` modules carried stale local
-  `__version__ = "2.6.0"` — everything now imports the single package
-  version.
-- Release: the sdist built by `python -m build` was never attached to
-  GitHub releases (only wheel + custom archives) — added.
-- Windows CI roundtrip picked mapping/output files sorted by *name*, not
-  time, and only checked that the recovered file exists — now sorts by
-  `LastWriteTime` and asserts the IPN is masked in the output and
-  restored after unmask.
-- `unmasking/io.py` schema check now parses the mapping major version
-  numerically (former regex would skip validation for majors ≥ 10).
-- `tests/test_integration.py` had two leftover deprecated
-  `from masking import …` imports; wrapper/module docstrings still
-  claimed v2.6.0/v2.2.14; pyproject classifier said Production/Stable
-  for a dev version (now Beta — flip back at the 3.0.0 release).
+**Major release: пакетна структура.** Повна зворотна сумісність:
+старі імпорти працюють через shim-и, mapping-файли 2.x розмасковуються
+без змін, CLI-скрипти та їхні аргументи не змінилися.
 
-## [3.0.0.dev5] - Unreleased (гілка v3)
-
-### Fixed
-- **Windows exe could not find `datamasking`**: a stale root
-  `__init__.py` made PyInstaller treat the repository root as a package
-  and search modules in its *parent* directory, so the `datamasking`
-  package was never bundled. The stale file is removed (`python . mask`
-  needs only `__main__.py`) and all PyInstaller invocations now pass an
-  explicit `--paths=.`.
-
-## [3.0.0.dev4] - Unreleased (гілка v3)
-
-### Documentation (step 4 of the 3.0 track)
-- README (EN/UK): project structure rewritten for the `datamasking`
-  package, compatibility note about deprecated flat imports, pip-install
-  quick start, `datamasking.extras.*` import examples.
-- INSTALL.md: new "Python package (pip)" section with extras
-  (`[security]`, `[yaml]`, `[full]`), console-script usage; local
-  PyInstaller build instructions updated to `datamasking.*`
-  hidden-imports.
-
-### Fixed
-- Release dry-run: the wheel smoke test ran from the repository root, so
-  `python -c` picked up the checkout shims via `sys.path` and the
-  "shims must not leak into the wheel" assert fired on a clean wheel.
-  The check now runs from a neutral cwd.
-
-## [3.0.0.dev3] - Unreleased (гілка v3)
-
-### Changed — release pipeline (step 3 of the 3.0 track)
-- `release.yml` rewritten for the `datamasking` package layout:
-  PyInstaller hidden-imports updated (`datamasking.*` instead of the old
-  flat names), `--add-data rank_data.py` dropped (bundled via the import
-  graph), source archives now include `datamasking/` and `pyproject.toml`.
-- The release now also builds and attaches a **wheel + sdist**
-  (`python -m build`) with a smoke test that installs the wheel, runs all
-  console scripts and asserts the shims did not leak into site-packages.
-- New **`workflow_dispatch` dry-run mode**: the full pipeline (tests,
-  archives, wheel, Windows exe) can be run from any branch without a tag;
-  artifacts are attached to the workflow run instead of a release.
-- Windows job gained a real mask→unmask roundtrip test of the built exes
-  (previously only `--help` smoke tests).
-- `*dev*` versions are now marked as pre-release automatically.
-
-## [3.0.0.dev2] - Unreleased (гілка v3)
-
-### Added — packaging (step 2 of the 3.0 track)
-- **`pyproject.toml`**: the project is now pip-installable
-  (`pip install .`). The wheel ships ONLY the `datamasking` package —
-  root compatibility shims (`masking/`, `unmasking/`, `modules/`,
-  `rank_data.py`) never reach site-packages.
-- **Console scripts**: `data-mask`, `data-unmask`, `data-masking-diagnose`.
-- Optional dependencies: `data-masking[security]` (cryptography),
-  `[yaml]` (pyyaml), `[full]`, `[dev]`. Core depends on faker only;
-  encryption/YAML config degrade gracefully when extras are absent.
-- Single version source **`datamasking/_version.py`** (no imports —
-  setuptools reads it statically at build time). `masking/constants.py`
-  and `unmasking/cli.py` now import it instead of holding copies.
-
-### Changed
-- `diagnose_mapping.py` moved to `datamasking/diagnose.py`; the root
-  script remains as a supported thin wrapper (PyInstaller target
-  unchanged).
-
-## [3.0.0.dev1] - Unreleased (гілка v3)
-
-### Changed — package restructure (step 1 of the 3.0 packaging track)
-- All code moved under a single top-level package **`datamasking`**:
+### Changed — BREAKING (import paths)
+- Увесь код переїхав в один top-level пакет **`datamasking`**:
   `masking/` → `datamasking/masking/`, `unmasking/` → `datamasking/unmasking/`,
-  `modules/` → `datamasking/extras/`, `rank_data.py` → `datamasking/rank_data.py`.
-  This removes the generic top-level names (`modules`, `rank_data`) that would
-  collide in site-packages once the project is pip-installable.
-- New module entry point: `python -m datamasking mask|unmask|--version`
-  (the old `python . mask` still works).
+  `modules/` → `datamasking/extras/`, `rank_data.py` → `datamasking/rank_data.py`,
+  `diagnose_mapping.py` → `datamasking/diagnose.py`. Це прибирає загальні
+  top-level імена (`modules`, `rank_data`), які конфліктували б у
+  site-packages.
+- Старі пласкі шляхи (`import masking`, `from modules.tools import …`,
+  `from rank_data import …`) працюють з checkout репозиторію через
+  кореневі shim-и з `DeprecationWarning`; `sys.modules`-аліаси гарантують
+  єдиний стан модулів (живі прапорці `MASK_*` спільні для обох шляхів).
+  У wheel shim-и не потрапляють.
 
-### Backward compatibility
-- Root shims keep every historical import path working with a
-  `DeprecationWarning`: `import masking`, `import unmasking`,
-  `from modules.tools import …`, `from rank_data import …`. Shims alias
-  `sys.modules` so old and new paths share a single module instance
-  (live `MASK_*` flags keep one state).
-- `data_masking.py` / `unmask_data.py` remain supported entry scripts
-  (unchanged CLI), now re-exporting from `datamasking.*`.
+### Added — packaging
+- **`pyproject.toml`**: `pip install .`; extras `[security]` (cryptography),
+  `[yaml]` (pyyaml), `[full]`, `[dev]`; ядро залежить лише від faker.
+- **Console scripts**: `data-mask`, `data-unmask`, `data-masking-diagnose`;
+  запуск модулем: `python -m datamasking mask|unmask`.
+- Єдине джерело версії — `datamasking/_version.py` (без імпортів,
+  setuptools читає статично).
+
+### Changed — release pipeline
+- `release.yml` переписано під нову структуру: PyInstaller
+  hidden-imports `datamasking.*`, збірка та публікація wheel+sdist,
+  smoke-тест wheel (console scripts + перевірка, що shim-и не втекли у
+  site-packages), реальний mask→unmask roundtrip зібраних Windows-exe
+  з перевіркою маскування/відновлення ІПН, dry-run режим
+  (`workflow_dispatch`) з будь-якої гілки без тега, dev-версії
+  автоматично позначаються pre-release.
 
 ### Fixed
-- `check_mapping_version` treated any mapping version not starting with
-  "2." as v1 logic — mapping files written by 3.x would silently be
-  unmasked with the v1 path. Now the major/minor are parsed properly:
-  2.0→v2.0, 2.1+→v2.1, 3.x+→v2.1 (mapping format unchanged since 2.1).
-  Same fix applied to schema validation in `unmasking/io.py`.
+- `check_mapping_version` відправляв mapping версії 3.x у v1-логіку
+  розмаскування; major/minor тепер парсяться числами (те саме у
+  валідації схеми `unmasking/io.py`, включно з major ≥ 10).
+- Застарілий кореневий `__init__.py` змушував PyInstaller шукати модулі
+  в батьківській директорії — Windows-exe збирався без пакета; файл
+  видалено, усі PyInstaller-виклики отримали явний `--paths=.`.
+- `datamasking/__init__` ліниво делегує метадані (PEP 562):
+  `diagnose_mapping.py` знову stdlib-only і не потребує faker.
+- `extras/re_mask.py` штампував захардкоджену версію "2.6.0" у нові
+  chain-mapping; сім модулів `extras/*` несли застарілі локальні
+  `__version__` — всюди єдина версія пакета.
 
-### Not in this step (deliberately)
-- `pyproject.toml`, console-script entry points, PyInstaller/release
-  pipeline changes and docs rewrite — next steps of the 3.0 track;
-  `release.yml` is untouched and still builds from the root scripts.
+### Documentation
+- README (EN/UK) і INSTALL.md переписані під пакетну структуру:
+  pip-установка з extras, консольні команди, приклади
+  `datamasking.extras.*`, оновлені інструкції локальної PyInstaller-збірки.
 
 ## [2.6.10] - 2026-07
 

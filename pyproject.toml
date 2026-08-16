@@ -17,7 +17,7 @@ keywords = [
     "ukrainian", "military", "documents", "data-protection",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: Information Technology",
     "Intended Audience :: Legal Industry",
