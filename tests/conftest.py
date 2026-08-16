@@ -12,9 +12,8 @@ from pathlib import Path
 # Коренева директорія проекту (батьківська від tests/)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# Додаємо PROJECT_ROOT та modules до PYTHONPATH
+# Додаємо PROJECT_ROOT до PYTHONPATH
 sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "modules"))
 
 # Force UTF-8 for subprocess on Windows (fixes cp1251 UnicodeDecodeError)
 if sys.platform == "win32":

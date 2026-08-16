@@ -2,12 +2,12 @@
 # -*- coding: utf-8 -*-
 
 """
-Entry point for running data-masking as a module.
+Entry point for running datamasking as a module.
 
 Usage:
-    python -m data-masking mask [args]     # or just: python . mask [args]
-    python -m data-masking unmask [args]
-    python -m data-masking --version
+    python -m datamasking mask [args]
+    python -m datamasking unmask [args]
+    python -m datamasking --version
 
 If no subcommand is given, defaults to 'mask' mode.
 """

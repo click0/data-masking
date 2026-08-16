@@ -10,16 +10,26 @@
 
 ## 📋 Структура проекту
 
+З v3.0 увесь код живе в одному top-level пакеті **`datamasking`**
+(встановлюється через pip — див. [INSTALL.md](INSTALL.md)).
+
 ### Точки входу
-- **`data_masking.py`** — маскування даних (тонка обгортка над пакетом `masking/`)
-- **`unmask_data.py`** — розмаскування (тонка обгортка над пакетом `unmasking/`)
-- **`diagnose_mapping.py`** — діагностика, порівняння маппінгів та верифікація відновлення
+- **`data-mask` / `data-unmask` / `data-masking-diagnose`** — консольні команди (після `pip install`)
+- **`python -m datamasking mask|unmask [args]`** — запуск як модуля
+- **`data_masking.py`** — маскування даних (тонка обгортка над `datamasking.masking`)
+- **`unmask_data.py`** — розмаскування (тонка обгортка над `datamasking.unmasking`)
+- **`diagnose_mapping.py`** — діагностика, порівняння маппінгів та верифікація відновлення (обгортка над `datamasking.diagnose`)
 - **`__main__.py`** — запуск з кореня репозиторію: `python . mask [args]` / `python . unmask [args]`
 
-### Пакет `masking/` (ядро маскування, v2.5.0+)
+> **Сумісність:** старі пласкі шляхи імпорту (`import masking`, `import unmasking`,
+> `from modules.tools import …`, `from rank_data import …`) досі працюють з checkout
+> репозиторію через shim-и, але видають `DeprecationWarning`. Через `pip install`
+> вони не встановлюються — у новому коді використовуйте `datamasking.*`.
+
+### Пакет `datamasking.masking` (ядро маскування, v2.5.0+)
 | Модуль | Опис |
 |--------|------|
-| `constants.py` | Прапорці `MASK_*`, патерни, словники імен, метадані (єдине джерело версії) |
+| `constants.py` | Прапорці `MASK_*`, патерни, словники імен, метадані |
 | `helpers.py` | Seed, mapping, instance tracking, нормалізація |
 | `language.py` | Рід, відмінок, відмінювання імен |
 | `context.py` | Розпізнавання рядків з ПІБ, парсинг контексту |
@@ -28,7 +38,7 @@
 | `engine.py` | Головний рушій: контекстне маскування тексту/JSON, ініціали |
 | `cli.py` | CLI, конфіг, звіти, `main()` |
 
-### Пакет `unmasking/` (ядро розмаскування, v2.5.0+)
+### Пакет `datamasking.unmasking` (ядро розмаскування, v2.5.0+)
 | Модуль | Опис |
 |--------|------|
 | `helpers.py` | Instance map, пошук пар файлів, версії маппінгів |
@@ -37,9 +47,10 @@
 | `cli.py` | CLI, `main()` |
 
 ### Дані
-- **`rank_data.py`** — звання ЗСУ (армія, флот, медична/юридична служба) з відмінками; `modules/rank_data.py` — ре-експорт
+- **`datamasking/rank_data.py`** — звання ЗСУ (армія, флот, медична/юридична служба) з відмінками; `datamasking/extras/rank_data.py` — ре-експорт
+- **`datamasking/_version.py`** — єдине джерело версії пакета
 
-### Пакет `modules/` (опційні можливості)
+### Пакет `datamasking.extras` (опційні можливості)
 | Модуль | Опис |
 |--------|------|
 | `config.py` | YAML + ENV + CLI конфігурація з пріоритетами (CLI > ENV > YAML > Default) |
@@ -56,6 +67,14 @@
 ---
 
 ## 🚀 Швидкий старт
+
+### Встановлення (v3.0+)
+```bash
+pip install '.[full]'        # з checkout репозиторію
+data-mask input.txt          # консольні команди з'являються в PATH
+data-unmask masked_file.txt
+```
+Запуск із сирців без установки теж працює — див. нижче.
 
 ### Маскування
 ```bash
@@ -199,7 +218,7 @@ Unmask правильно відновить обидва входження
 
 ## 🔧 Модулі v2.3.0
 
-### Шифрування mapping файлів (`modules/security.py`)
+### Шифрування mapping файлів (`datamasking/extras/security.py`)
 
 Mapping файли можна шифрувати AES-256-GCM:
 
@@ -212,7 +231,7 @@ python data_masking.py input.txt --encrypt --password mypassword
 python unmask_data.py masked.txt --map mapping.enc --password mypassword
 ```
 
-### Конфігурація (`modules/config.py`)
+### Конфігурація (`datamasking/extras/config.py`)
 
 Пріоритет: CLI > ENV > config.yaml > Default
 
@@ -223,7 +242,7 @@ python data_masking.py input.txt -c config.yaml
 # Генерація прикладу конфігурації — див. config_example.py
 ```
 
-### Вибіркове маскування (`modules/selective.py`)
+### Вибіркове маскування (`datamasking/extras/selective.py`)
 
 ```bash
 # Маскувати тільки ІПН та паспорти
@@ -233,31 +252,31 @@ python data_masking.py input.txt --only ipn,passport
 python data_masking.py input.txt --exclude dates
 ```
 
-### Ланцюгове перемаскування (`modules/re_mask.py`)
+### Ланцюгове перемаскування (`datamasking/extras/re_mask.py`)
 
 Для повторного маскування вже замаскованих файлів зі збереженням повного ланцюга маппінгів:
 
 ```python
-from modules.re_mask import ReMasker, MappingChain
+from datamasking.extras.re_mask import ReMasker, MappingChain
 
 chain = MappingChain()
 remasker = ReMasker(chain=chain, mask_function=my_mask_fn)
 ```
 
-### Програмний API (`modules/tools.py`)
+### Програмний API (`datamasking/extras/tools.py`)
 
 Атомарні функції для інтеграції в зовнішні додатки:
 
 ```python
-from modules.tools import mask_ipn_direct, mask_rank_direct, mask_pib_force
+from datamasking.extras.tools import mask_ipn_direct, mask_rank_direct, mask_pib_force
 
 result = mask_ipn_direct("1234567890", masking_dict, instance_counters)
 ```
 
-### Генератор паролів (`modules/password_generator.py`)
+### Генератор паролів (`datamasking/extras/password_generator.py`)
 
 ```python
-from modules.password_generator import generate_password
+from datamasking.extras.password_generator import generate_password
 
 # Стандартний пароль (24 символи)
 pwd = generate_password()
@@ -266,15 +285,15 @@ pwd = generate_password()
 pwd = generate_password(length=32, include_cyrillic_lower=True)
 
 # CLI
-# python -m modules.password_generator --length 32 --cyrillic
+# python -m datamasking.extras.password_generator --length 32 --cyrillic
 ```
 
-### Логування (`modules/masking_logger.py`)
+### Логування (`datamasking/extras/masking_logger.py`)
 
 Структуроване логування з JSON та кольоровим console output:
 
 ```python
-from modules.masking_logger import MaskingLogger, setup_logging
+from datamasking.extras.masking_logger import MaskingLogger, setup_logging
 
 logger = MaskingLogger("masking")
 setup_logging(level="DEBUG", json_output=True)

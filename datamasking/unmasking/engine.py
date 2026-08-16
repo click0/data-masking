@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Tuple
 
 _logger = logging.getLogger(__name__)
 
-from rank_data import (
+from datamasking.rank_data import (
     RANK_DECLENSIONS,
     RANK_FEMININE_MAP,
     RANK_DECLENSIONS_FEMALE,
@@ -21,7 +21,7 @@ from rank_data import (
     ALL_RANK_FORMS
 )
 
-from unmasking.helpers import (
+from datamasking.unmasking.helpers import (
     get_rank_info, check_mapping_version,
     find_all_occurrences, build_instance_map,
     _apply_original_case, is_real_mask, extract_base_rank,

@@ -17,7 +17,7 @@ import sys
 # Додаємо батьківську директорію, щоб імпортувати diagnose_mapping
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from diagnose_mapping import verify_text_recovery, analyze_category_structure
+from datamasking.diagnose import verify_text_recovery, analyze_category_structure
 
 
 # ============================================================================

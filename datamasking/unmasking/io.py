@@ -9,23 +9,24 @@ Extracted from unmask_data.py during the package refactoring (v2.5.0).
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Dict
 
-from unmasking.helpers import validate_file_size
-from unmasking.engine import is_chain_mapping
+from datamasking.unmasking.helpers import validate_file_size
+from datamasking.unmasking.engine import is_chain_mapping
 
 # Optional modules
 SECURITY_AVAILABLE = False
 try:
-    from modules.security import MappingSecurityManager, is_encryption_available
+    from datamasking.extras.security import MappingSecurityManager, is_encryption_available
     SECURITY_AVAILABLE = True
 except ImportError:
     pass
 
 REMASK_AVAILABLE = False
 try:
-    from modules.re_mask import ChainUnmasker, load_chain, get_chain_info
+    from datamasking.extras.re_mask import ChainUnmasker, load_chain, get_chain_info
     REMASK_AVAILABLE = True
 except ImportError:
     pass
@@ -83,7 +84,8 @@ def validate_mapping_schema(mapping: Dict) -> None:
         return
 
     version = mapping.get("version")
-    if version and version.startswith("2"):
+    _major = re.match(r"v?(\d+)\.", version) if version else None
+    if _major and int(_major.group(1)) >= 2:
         if "mappings" not in mapping:
             raise ValueError(
                 f"Mapping v{version} must contain 'mappings' key"

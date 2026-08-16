@@ -4,6 +4,60 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.0] - 2026-07
+
+**Major release: пакетна структура.** Повна зворотна сумісність:
+старі імпорти працюють через shim-и, mapping-файли 2.x розмасковуються
+без змін, CLI-скрипти та їхні аргументи не змінилися.
+
+### Changed — BREAKING (import paths)
+- Увесь код переїхав в один top-level пакет **`datamasking`**:
+  `masking/` → `datamasking/masking/`, `unmasking/` → `datamasking/unmasking/`,
+  `modules/` → `datamasking/extras/`, `rank_data.py` → `datamasking/rank_data.py`,
+  `diagnose_mapping.py` → `datamasking/diagnose.py`. Це прибирає загальні
+  top-level імена (`modules`, `rank_data`), які конфліктували б у
+  site-packages.
+- Старі пласкі шляхи (`import masking`, `from modules.tools import …`,
+  `from rank_data import …`) працюють з checkout репозиторію через
+  кореневі shim-и з `DeprecationWarning`; `sys.modules`-аліаси гарантують
+  єдиний стан модулів (живі прапорці `MASK_*` спільні для обох шляхів).
+  У wheel shim-и не потрапляють.
+
+### Added — packaging
+- **`pyproject.toml`**: `pip install .`; extras `[security]` (cryptography),
+  `[yaml]` (pyyaml), `[full]`, `[dev]`; ядро залежить лише від faker.
+- **Console scripts**: `data-mask`, `data-unmask`, `data-masking-diagnose`;
+  запуск модулем: `python -m datamasking mask|unmask`.
+- Єдине джерело версії — `datamasking/_version.py` (без імпортів,
+  setuptools читає статично).
+
+### Changed — release pipeline
+- `release.yml` переписано під нову структуру: PyInstaller
+  hidden-imports `datamasking.*`, збірка та публікація wheel+sdist,
+  smoke-тест wheel (console scripts + перевірка, що shim-и не втекли у
+  site-packages), реальний mask→unmask roundtrip зібраних Windows-exe
+  з перевіркою маскування/відновлення ІПН, dry-run режим
+  (`workflow_dispatch`) з будь-якої гілки без тега, dev-версії
+  автоматично позначаються pre-release.
+
+### Fixed
+- `check_mapping_version` відправляв mapping версії 3.x у v1-логіку
+  розмаскування; major/minor тепер парсяться числами (те саме у
+  валідації схеми `unmasking/io.py`, включно з major ≥ 10).
+- Застарілий кореневий `__init__.py` змушував PyInstaller шукати модулі
+  в батьківській директорії — Windows-exe збирався без пакета; файл
+  видалено, усі PyInstaller-виклики отримали явний `--paths=.`.
+- `datamasking/__init__` ліниво делегує метадані (PEP 562):
+  `diagnose_mapping.py` знову stdlib-only і не потребує faker.
+- `extras/re_mask.py` штампував захардкоджену версію "2.6.0" у нові
+  chain-mapping; сім модулів `extras/*` несли застарілі локальні
+  `__version__` — всюди єдина версія пакета.
+
+### Documentation
+- README (EN/UK) і INSTALL.md переписані під пакетну структуру:
+  pip-установка з extras, консольні команди, приклади
+  `datamasking.extras.*`, оновлені інструкції локальної PyInstaller-збірки.
+
 ## [2.6.10] - 2026-07
 
 ### Removed

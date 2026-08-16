@@ -10,9 +10,9 @@ Extracted from data_masking.py during the package refactoring (v2.5.0).
 import re
 from typing import Dict, Optional, Tuple
 
-from masking import constants as _cfg
-from masking.helpers import normalize_string, normalize_identifier, is_pib_anchor
-from masking.language import looks_like_name
+from datamasking.masking import constants as _cfg
+from datamasking.masking.helpers import normalize_string, normalize_identifier, is_pib_anchor
+from datamasking.masking.language import looks_like_name
 
 
 def analyze_number_sign_context(text: str, match: re.Match) -> Optional[Dict]:

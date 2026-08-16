@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "data-masking"
+dynamic = ["version"]
+description = "Deterministic masking/unmasking of confidential data in Ukrainian military documents (PIB, ranks, IPN, document numbers, dates)"
+readme = "docs/README.md"
+requires-python = ">=3.9"
+license = { text = "BSD-3-Clause" }
+authors = [
+    { name = "Vladyslav V. Prodan" },
+]
+keywords = [
+    "masking", "anonymization", "pii", "pseudonymization",
+    "ukrainian", "military", "documents", "data-protection",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Legal Industry",
+    "License :: OSI Approved :: BSD License",
+    "Natural Language :: Ukrainian",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Text Processing :: Filters",
+]
+# Ядро потребує лише faker; cryptography та pyyaml — опційні
+# (код деградує коректно: шифрування/YAML-конфіг вимикаються)
+dependencies = [
+    "faker>=20.0.0",
+]
+
+[project.optional-dependencies]
+security = ["cryptography>=41.0.0"]
+yaml = ["pyyaml>=6.0"]
+full = ["cryptography>=41.0.0", "pyyaml>=6.0"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-timeout>=2.0",
+    "cryptography>=41.0.0",
+    "pyyaml>=6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/click0/data-masking"
+Changelog = "https://github.com/click0/data-masking/blob/main/CHANGELOG.md"
+Issues = "https://github.com/click0/data-masking/issues"
+
+[project.scripts]
+data-mask = "datamasking.masking.cli:main"
+data-unmask = "datamasking.unmasking.cli:main"
+data-masking-diagnose = "datamasking.diagnose:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "datamasking._version.__version__" }
+
+[tool.setuptools.packages.find]
+# Встановлюється ЛИШЕ пакет datamasking. Кореневі shim-и (masking/,
+# unmasking/, modules/, rank_data.py) — тільки для роботи з checkout
+# репозиторію; у wheel вони не потрапляють, щоб не засмічувати
+# site-packages загальними іменами.
+include = ["datamasking*"]

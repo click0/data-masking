@@ -52,7 +52,7 @@ from typing import Dict, Optional, Tuple
 # ============================================================================
 # METADATA
 # ============================================================================
-__version__ = "2.6.0"
+from datamasking._version import __version__  # єдине джерело версії
 __author__ = "Vladyslav V. Prodan"
 __contact__ = "github.com/click0"
 __license__ = "BSD 3-Clause"
@@ -73,7 +73,7 @@ except ImportError:
 # RANK DATA IMPORT
 # ============================================================================
 try:
-    from rank_data import (
+    from datamasking.rank_data import (
         RANK_DECLENSIONS,
         RANK_TO_NOMINATIVE,
         ARMY_RANKS,

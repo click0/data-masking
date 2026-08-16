@@ -8,5 +8,5 @@
 у зворотний бік зробила б cryptography обов'язковою).
 """
 
-from rank_data import *  # noqa: F401,F403
-from rank_data import _DECLENSION_FORMS_LIST  # noqa: F401
+from datamasking.rank_data import *  # noqa: F401,F403
+from datamasking.rank_data import _DECLENSION_FORMS_LIST  # noqa: F401

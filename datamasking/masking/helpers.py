@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 from typing import Dict
 
-from masking import constants as _cfg
+from datamasking.masking import constants as _cfg
 
 
 def validate_file_size(file_path: Path, max_size: int = None) -> None:

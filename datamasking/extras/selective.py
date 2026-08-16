@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 
-__version__ = "2.6.0"
+from datamasking._version import __version__  # єдине джерело версії
 
 # ============================================================================
 # AVAILABLE TYPES
