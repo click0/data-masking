@@ -10,12 +10,12 @@ Extracted from data_masking.py during the package refactoring (v2.5.0).
 import hashlib
 import re
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict, Optional
 
 from datamasking.masking import constants as _cfg
 
 
-def validate_file_size(file_path: Path, max_size: int = None) -> None:
+def validate_file_size(file_path: Path, max_size: Optional[int] = None) -> None:
     """
     Перевіряє розмір файлу перед зчитуванням у пам'ять.
 
@@ -125,6 +125,7 @@ def get_deterministic_seed(original: str) -> int:
     Використовує hashlib для створення унікального, але повторюваного seed'а.
     """
     algo = _cfg.HASH_ALGORITHM
+    hasher: Any
     if algo == 'md5': hasher = hashlib.md5()
     elif algo == 'sha1': hasher = hashlib.sha1()
     elif algo == 'sha256': hasher = hashlib.sha256()

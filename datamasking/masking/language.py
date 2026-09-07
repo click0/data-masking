@@ -9,7 +9,7 @@ Extracted from data_masking.py during the package refactoring (v2.5.0).
 
 import random
 import re
-from typing import Tuple
+from typing import Optional, Tuple
 
 from datamasking.masking import constants as _cfg
 from datamasking.masking.helpers import get_deterministic_seed
@@ -142,7 +142,7 @@ def apply_case_to_name(name: str, case: str, gender: str) -> str:
     return name
 
 def generate_easy_name(gender: str, first_letter: str, seed: int, max_attempts: int = 50,
-                       exclude: str = None) -> str:
+                       exclude: Optional[str] = None) -> str:
     """Синтетичне ім'я на ту саму літеру, що легко відмінюється.
 
     *exclude* — оригінал (нижній регістр), який НЕ можна повернути: до 3.0.3

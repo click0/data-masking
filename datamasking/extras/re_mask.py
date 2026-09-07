@@ -36,7 +36,7 @@ import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from datamasking._version import __version__  # єдине джерело версії
 
@@ -427,16 +427,13 @@ class ChainUnmasker:
         pass_data = self.chain.get_pass(pass_number)
         if pass_data is None:
             return text
-        mappings = pass_data.get("mappings", {})
-        inverted: Dict[str, str] = {}
-        for _cat, pairs in mappings.items():
-            if isinstance(pairs, dict):
-                for orig, masked in pairs.items():
-                    inverted[masked] = orig
-        # Sort by length descending to avoid partial replacements
-        for masked_token in sorted(inverted, key=len, reverse=True):
-            text = text.replace(masked_token, inverted[masked_token])
-        return text
+        # Раніше тут була наївна заміна рядків, яка брала значення mapping
+        # (dict з masked_as) як рядок і не знала про instance tracking —
+        # делегуємо справжньому рушію розмаскування
+        from datamasking.unmasking.engine import unmask_text_v2
+        from datamasking.unmasking.helpers import check_mapping_version
+        restored, _stats = unmask_text_v2(text, pass_data, check_mapping_version(pass_data))
+        return restored
 
 
 # ============================================================================
@@ -456,8 +453,12 @@ def load_chain(path: Any) -> MappingChain:
     return MappingChain.load(path)
 
 
-def get_chain_info(chain: MappingChain) -> Dict[str, Any]:
-    """Return a human-readable summary of a MappingChain."""
+def get_chain_info(chain: Union[MappingChain, Dict[str, Any]]) -> Dict[str, Any]:
+    """Return a human-readable summary of a MappingChain (або його dict-форми)."""
+    if isinstance(chain, dict):
+        if not MappingChain.is_chain_file(chain):
+            return {}
+        chain = MappingChain.from_dict(chain)
     summaries: List[Dict[str, Any]] = []
     for p in chain.passes:
         mappings = p.get("mappings", {})

@@ -47,7 +47,7 @@ import hashlib
 import random
 import re
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 # ============================================================================
 # METADATA
@@ -61,12 +61,12 @@ __year__ = "2025-2026"
 # ============================================================================
 # OPTIONAL DEPENDENCY: Faker
 # ============================================================================
+fake_uk: Any = None
 try:
     from faker import Faker
     fake_uk = Faker('uk_UA')
     FAKER_AVAILABLE = True
 except ImportError:
-    fake_uk = None
     FAKER_AVAILABLE = False
 
 # ============================================================================
@@ -195,6 +195,7 @@ def get_deterministic_seed(value: str, algorithm: str = 'blake2b') -> int:
     Returns:
         An integer in range [0, 2**32) suitable for ``random.seed()``.
     """
+    hasher: Any
     if algorithm == 'md5':
         hasher = hashlib.md5()
     elif algorithm == 'sha1':
@@ -913,7 +914,7 @@ def mask_rank_direct(
         "legal": LEGAL_RANKS,
         "medical": MEDICAL_RANKS,
     }
-    hierarchy = hierarchy_map.get(category_name)
+    hierarchy = hierarchy_map.get(category_name or "")
     if hierarchy is None:
         return value
 

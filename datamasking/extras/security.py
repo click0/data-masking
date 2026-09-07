@@ -157,7 +157,10 @@ class MappingSecurityManager:
                 "Decryption failed. Wrong password or corrupted file."
             ) from exc
 
-        return json.loads(plaintext.decode("utf-8"))
+        data = json.loads(plaintext.decode("utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("Decrypted mapping is not a JSON object")
+        return data
 
     # ------------------------------------------------------------------
     # Universal load / save helpers
@@ -179,7 +182,10 @@ class MappingSecurityManager:
 
         if path.suffix == ".json":
             with open(path, "r", encoding="utf-8") as fp:
-                return json.load(fp)
+                data = json.load(fp)
+            if not isinstance(data, dict):
+                raise ValueError("Mapping file is not a JSON object")
+            return data
 
         if path.suffix == ".enc":
             if not password:
@@ -218,7 +224,7 @@ class MappingSecurityManager:
             json.dump(mapping_dict, fp, ensure_ascii=False, indent=2)
 
         logger.info("Mapping written to %s", path)
-        return path.resolve()
+        return Path(path).resolve()
 
 
 # ----------------------------------------------------------------------

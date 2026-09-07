@@ -14,7 +14,7 @@ import os
 import time
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from datamasking.unmasking.helpers import (
     validate_file_size, auto_find_latest_pair, check_mapping_version,
@@ -119,8 +119,9 @@ Examples:
 
     if REMASK_AVAILABLE:
         remask_group = parser.add_argument_group('re-mask options')
-        remask_group.add_argument('--to-version', metavar='VERSION',
-                                  help='Convert mapping to specified version')
+        remask_group.add_argument('--to-version', metavar='N', type=int,
+                                  help='Chain mapping only: unmask back to the state after pass N '
+                                       '(0 = original; default = full restore)')
         remask_group.add_argument('--chain-info', action='store_true',
                                   help='Show chain mapping information and exit')
 
@@ -166,7 +167,7 @@ Examples:
     # ЗАВАНТАЖЕННЯ КОНФІГУРАЦІЇ
     # ========================================================================
 
-    config = {}
+    config: Any = {}
     if CONFIG_AVAILABLE and getattr(args, 'config', None):
         try:
             config = load_config(args.config)
@@ -249,19 +250,16 @@ Examples:
             show_chain_info(masking_map)
             return EXIT_OK
 
-        if REMASK_AVAILABLE and getattr(args, 'to_version', None):
-            try:
-                chain_unmasker = ChainUnmasker(masking_map)
-                converted = chain_unmasker.convert_to_version(args.to_version)
-                output_converted = map_path.with_suffix(f'.v{args.to_version}.json')
-                with open(output_converted, 'w', encoding='utf-8') as f:
-                    json.dump(converted, f, ensure_ascii=False, indent=2)
-                print(f"✅ Конвертовано до версії {args.to_version}: {output_converted}")
-                log_info(f"Конвертовано до версії {args.to_version}")
-                return EXIT_OK
-            except (KeyError, ValueError, TypeError, OSError) as e:
-                print(f"❌ Помилка конвертації: {e}")
-                log_error(f"Помилка конвертації: {e}")
+        to_version = getattr(args, 'to_version', None)
+        if to_version is not None:
+            # v2.5–3.0.6: викликало неіснуючий ChainUnmasker.convert_to_version
+            # і падало TypeError — прапорець був мертвий
+            if not is_chain_mapping(masking_map):
+                print("❌ --to-version працює лише з chain mapping (--re-mask)")
+                log_error("--to-version on a non-chain mapping")
+                return EXIT_ERROR
+            if to_version < 0 or to_version > len(masking_map.get("passes", [])):
+                print(f"❌ --to-version має бути в межах 0..{len(masking_map.get('passes', []))}")
                 return EXIT_ERROR
 
         validate_file_size(masked_path)
@@ -296,7 +294,8 @@ Examples:
             restored_data = unmask_json_chain(masked_data, masking_map)
             stats = {"restored_count": 0, "skipped_count": 0}
         else:
-            restored_data, stats = unmask_chain(masked_data, masking_map)
+            restored_data, stats = unmask_chain(masked_data, masking_map,
+                                                to_version=getattr(args, 'to_version', None) or 0)
     else:
         map_version = check_mapping_version(masking_map)
         print(f"🔄 Розмаскування {masked_path.name} (логіка {map_version})...")

@@ -75,7 +75,7 @@ def find_latest_maps(n_files: int = 2) -> List[Path]:
     Returns:
         List[Path]: Список шляхів, відсортований за часом зміни (найновіші перші).
     """
-    candidates = []
+    candidates: List[Path] = []
     for d in SEARCH_DIRS:
         if d.exists():
             candidates.extend(d.glob("masking_map_*.json"))
@@ -90,7 +90,8 @@ def load_json(path: Path) -> Optional[Dict]:
     """
     try:
         with open(path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
     except (FileNotFoundError, PermissionError, OSError, json.JSONDecodeError, UnicodeDecodeError) as e:
         print(f"❌ Помилка читання JSON {path}: {e}")
         return None
@@ -264,7 +265,7 @@ def find_original_and_recovery() -> Tuple[Optional[Path], Optional[Path]]:
     if not original.exists():
         original = Path("output/input.txt")
 
-    recovery_candidates = []
+    recovery_candidates: List[Path] = []
     for d in SEARCH_DIRS:
         if d.exists():
             recovery_candidates.extend(d.glob("input_recovery_*.txt"))
@@ -439,8 +440,8 @@ def main() -> None:
     files_input = args.files
     latest_maps = find_latest_maps(HISTORY_SEARCH_LIMIT)
 
-    target_file_a = None
-    target_file_b = None
+    target_file_a: Optional[Path] = None
+    target_file_b: Optional[Path] = None
     mode = "single"
 
     if len(files_input) == 0:
@@ -477,7 +478,7 @@ def main() -> None:
         target_file_a = Path(files_input[0])
         target_file_b = Path(files_input[1])
 
-    if mode == "diff":
+    if mode == "diff" and target_file_a is not None and target_file_b is not None:
         print(f"🔍 Порівнюємо маппінги:\n A: {target_file_a}\n B: {target_file_b}")
         if not target_file_a.exists() or not target_file_b.exists():
             print("❌ Один з файлів маппінгу не існує.")

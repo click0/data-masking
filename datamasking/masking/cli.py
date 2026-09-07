@@ -229,7 +229,7 @@ def _load_config(args) -> Tuple[Optional[Any], Optional[str]]:
     if source:
         print(f"Loaded config from {source}")
     try:
-        config._source = source  # для звіту; dataclass дозволяє атрибут
+        setattr(config, "_source", source)  # для звіту; dataclass дозволяє атрибут
     except AttributeError:
         pass
     return config, None
@@ -515,7 +515,7 @@ def _run_multi_pass_masking(input_data, is_json: bool, masking_dict: Dict,
             logger.info(f"Re-masking pass {pass_num}/{re_mask_passes}")
 
         pass_dict = make_empty_masking_dict(_cfg.__version__)
-        pass_counters = {}
+        pass_counters: Dict[str, int] = {}
 
         if is_json:
             masked_data = mask_json_recursive(masked_data, pass_dict, pass_counters)
@@ -843,7 +843,7 @@ def main(argv=None) -> int:
         ]},
         "instance_tracking": {}
     }
-    instance_counters = {}
+    instance_counters: Dict[str, int] = {}
 
     # ================================================================
     # Read input

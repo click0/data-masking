@@ -161,7 +161,7 @@ def build_instance_map(masking_map: Dict) -> Dict[str, Dict[int, str]]:
 
     Структура: {masked_value: {instance_num: original_value}}
     """
-    instance_map = {}
+    instance_map: Dict[str, Dict[int, str]] = {}
     mappings_data = masking_map.get("mappings", {})
 
     for category, mappings in mappings_data.items():
@@ -197,7 +197,7 @@ def _apply_original_case(original: str, masked: str) -> str:
     return masked
 
 
-def is_real_mask(value: str, masking_map: Dict, all_masked_values: set = None) -> bool:
+def is_real_mask(value: str, masking_map: Dict, all_masked_values: Optional[set] = None) -> bool:
     """
     Перевіряє, чи є слово реальною маскою (а не випадковим збігом з оригіналом).
     """

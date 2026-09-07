@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.7] - 2026-09
+
+### Changed — static typing: mypy is clean and blocking
+- All 58 mypy errors fixed (`mypy datamasking/` → 0). Mostly honest
+  annotations: `Optional[...]` where `None` really flows
+  (`gender_hint`, `patronymic_hint`, `exclude`, `max_size`, `password`),
+  typed empty containers, a `TypedDict` for rank matches in the unmask
+  engine, `isinstance` guards after `json.load`. The CI mypy job is now
+  **blocking** (was advisory).
+
+### Fixed — found by the type checker
+- **`unmask_data.py --to-version` was dead code**: it called
+  `ChainUnmasker.convert_to_version`, which does not exist, and passed a
+  dict where a `MappingChain` is expected — every invocation crashed with
+  `TypeError`. Reimplemented as partial chain restore: `--to-version N`
+  unmasks a `--re-mask` output back to the state after pass N
+  (0 = original); non-chain mappings and out-of-range N are rejected.
+  `unmask_chain(..., to_version=N)` added to the engine.
+- `ChainUnmasker._apply_reverse_pass` (extras API) treated mapping values
+  (`{"masked_as": …}` dicts) as strings and ignored instance tracking, so
+  it could never restore text — it now delegates to the real unmask
+  engine. `get_chain_info` accepts a chain dict as well as a
+  `MappingChain` (the CLI always passed a dict).
+- Tests: `tests/test_to_version.py` (engine, CLI, `ChainUnmasker`,
+  `get_chain_info`).
+
 ## [3.0.6] - 2026-09
 
 ### Fixed — rank restore with overlapping forms (`--re-mask` chain bug)
