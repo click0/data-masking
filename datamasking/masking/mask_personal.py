@@ -20,6 +20,7 @@ from datamasking.masking.language import (
     detect_gender_by_patronymic, detect_name_case_and_gender,
     generate_easy_name, apply_case_to_name,
 )
+from datamasking.masking.surname import synthesize_surname, known_surname_forms
 
 
 def mask_ipn(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
@@ -84,11 +85,12 @@ def mask_military_id(original: str, masking_dict: Dict, instance_counters: Dict)
 
 def mask_surname(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
     """
-    Маскує прізвище.
+    Маскує прізвище синтетичною формою без витоку оригіналу (v3.0.2).
 
-    ЛОГІКА МАСКУВАННЯ:
-    - Для коротких прізвищ (<5 символів): генерує нове через faker
-    - Для довгих прізвищ (>=5 символів): зберігає початок (3) та кінець (5), змінює середину
+    Відмінкове/родове закінчення оригіналу зберігається, основа —
+    синтетична (див. masking/surname.py). До 3.0.2 маска була
+    original[:3] + середина + original[-5:], і для прізвищ 5–8 літер
+    оригінал читався в масці цілком.
 
     ВИКЛЮЧЕННЯ:
     - Абревіатури з ABBREVIATION_WHITELIST НЕ маскуються (ЗСУ, МОУ, СБУ тощо)
@@ -99,22 +101,8 @@ def mask_surname(original: str, masking_dict: Dict, instance_counters: Dict) -> 
     else:
         is_upper = original.isupper()
         is_capitalize = original[0].isupper() and original[1:].islower()
-        seed = get_deterministic_seed(original)
-        random.seed(seed)
-        _cfg.fake_uk.seed_instance(seed)
-        fake_surname = _cfg.fake_uk.last_name()
 
-        # Для коротких прізвищ генеруємо нове повністю
-        if len(original) < 5:
-            target_length = random.randint(max(3, len(original) - 1), min(6, len(original) + 2))
-            masked = fake_surname[:target_length] if len(fake_surname) > target_length else fake_surname
-        else:
-            # Для довгих зберігаємо початок та кінець
-            # NOTE: для прізвищ 5-7 символів prefix(3)+suffix(5) перекриваються,
-            # результат довший за оригінал — це відоме обмеження алгоритму
-            middle_len = min(random.randint(2, 7), len(fake_surname)-2)
-            middle = fake_surname[1:1+middle_len] if len(fake_surname) > 4 else fake_surname[1:-1]
-            masked = original[:3] + middle + original[-5:]
+        masked = synthesize_surname(original, forbidden=known_surname_forms(masking_dict))
 
         # Застосовуємо регістр
         if is_upper: masked = masked.upper()

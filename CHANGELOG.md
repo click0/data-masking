@@ -4,6 +4,44 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.2] - 2026-09
+
+### Fixed — surname masks no longer reveal the original (audit item 3)
+- Up to 3.0.1 a surname mask was `original[:3] + random middle +
+  original[-5:]`; for 5–8-letter surnames prefix and suffix overlapped and
+  the **whole original was readable inside the mask** (`Ґудзь →
+  Ґудузіґудзь`, `Коваль → Ковавриліоваль`, `Сидоренко → Сидкоробренко`,
+  `ПЕТРО → ПЕТАЛЕНПЕТРО`). Masks are now fully synthetic
+  (`datamasking/masking/surname.py`): the surface form is split into
+  stem + inflectional ending by a table of Ukrainian surname suffixes
+  (-енко/-енку, -ов/-ова/-ової, -ський/-ського, -ук/-ука, -єць, …), the
+  stem is replaced by a faker-derived stem of the same family and similar
+  length, and the original ending is re-attached — so grammatical case and
+  gender are preserved (`капітану Петренку → капітану Гайденку`,
+  `Іванова Марія → Юхимова Марія`). Bare surnames (Ґудзь, Коваль, Шамрай)
+  get a whole synthetic surname.
+- Collision protection: the engine registers the document's vocabulary
+  before masking, and a mask is rejected if it equals any word of the
+  document or contains any 5+-letter document word — a mask can no longer
+  coincide with another person's real surname (which would make unmask
+  replace their occurrences too), regardless of the order in which the
+  surnames appear. Checks also reject masks equal to already issued
+  masks/originals and masks containing the original or its stem.
+- Still deterministic (seeded by the original); the vocabulary is cleared
+  after each document so identical inputs give identical mappings.
+
+### Compatibility
+- Surname masks differ from those produced by ≤ 3.0.1 (same input → new
+  but stable masks). Unmasking of files produced by any earlier version is
+  unaffected — it uses the mapping file, not the algorithm (legacy-fixture
+  tests for v2.3.0/v2.5.1/v2.6.5 pass unchanged).
+
+### Tests
+- `tests/test_surname_mask.py` (≈120 tests): no-leak for the previously
+  leaky cases, stem invisibility, endings preserved across cases/genders,
+  determinism, no collision with any document word, vocabulary cleared
+  between documents, case preservation, whitelist, roundtrips.
+
 ## [3.0.1] - 2026-09
 
 Security/CLI hardening after the 3.0.0 audit. All items below were
