@@ -25,26 +25,29 @@ if sys.platform == "win32":
 # ============================================================================
 
 @pytest.fixture(autouse=True)
-def cleanup_config_yaml(tmp_path):
-    """Автоматично видаляє config.yaml з поточної директорії після тесту."""
-    yield
-    # Видаляємо config.yaml якщо він був створений у робочій директорії
+def guard_repo_root_config_yaml():
+    """Тести НЕ мають лишати config.yaml у корені репозиторію.
+
+    Раніше фікстура мовчки ВИДАЛЯЛА config.yaml розробника після кожного
+    тесту. Тепер: файл, що існував до тесту, не чіпаємо; файл, який
+    створив тест, — це помилка тесту (він має працювати у tmp_path).
+    """
     config_path = PROJECT_ROOT / "config.yaml"
-    if config_path.exists():
-        try:
-            config_path.unlink()
-        except OSError:
-            pass
+    existed_before = config_path.exists()
+    yield
+    if not existed_before and config_path.exists():
+        config_path.unlink()
+        pytest.fail("test left config.yaml in the repository root — use tmp_path/monkeypatch.chdir")
 
 
 @pytest.fixture(autouse=True)
-def cleanup_dm_env():
-    """Автоматично очищає змінні оточення DM_* після тесту."""
+def restore_environment():
+    """Відновлює os.environ після тесту (замість видалення всіх DM_*/DATA_MASKING_*,
+    включно з тими, що встановив розробник до запуску pytest)."""
+    saved = dict(os.environ)
     yield
-    # Очищаємо змінні оточення, що могли бути встановлені тестами
-    keys_to_remove = [k for k in os.environ if k.startswith("DM_")]
-    for key in keys_to_remove:
-        os.environ.pop(key, None)
+    os.environ.clear()
+    os.environ.update(saved)
 
 
 # ============================================================================

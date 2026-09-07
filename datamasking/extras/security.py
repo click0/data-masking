@@ -96,6 +96,8 @@ class MappingSecurityManager:
                 "Install it with: pip install cryptography"
             )
 
+        if not password:
+            raise ValueError("A non-empty password is required to encrypt a mapping file.")
         output_path = Path(output_path)
 
         json_bytes = json.dumps(

@@ -335,6 +335,9 @@ def estimate_crack_time(entropy_bits: float, guesses_per_second: float = 1e12) -
     Returns:
         str: Людино-читабельний час
     """
+    if entropy_bits > 1000:
+        # 2**entropy_bits переповнює float; далі за «вічність» рахувати нема сенсу
+        return "практично нескінченно"
     total_combinations = 2 ** entropy_bits
     seconds = total_combinations / guesses_per_second / 2  # В середньому половина
 

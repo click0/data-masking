@@ -266,7 +266,7 @@ Examples:
 
         validate_file_size(masked_path)
         with open(masked_path, 'r', encoding='utf-8', newline='') as f:
-            if masked_path.suffix == '.json':
+            if masked_path.suffix.lower() == '.json':
                 masked_data = json.load(f)
             else:
                 masked_data = f.read()
@@ -292,7 +292,7 @@ Examples:
         print(f"🔄 Розмаскування {masked_path.name} (ланцюг з {total_passes} проходів)...")
         log_info(f"Розмаскування ланцюга з {total_passes} проходів")
 
-        if masked_path.suffix == '.json':
+        if masked_path.suffix.lower() == '.json':
             restored_data = unmask_json_chain(masked_data, masking_map)
             stats = {"restored_count": 0, "skipped_count": 0}
         else:
@@ -302,7 +302,7 @@ Examples:
         print(f"🔄 Розмаскування {masked_path.name} (логіка {map_version})...")
         log_info(f"Розмаскування {masked_path.name} (логіка {map_version})")
 
-        if masked_path.suffix == '.json':
+        if masked_path.suffix.lower() == '.json':
             restored_data = unmask_json_recursive(masked_data, masking_map, map_version)
             stats = {"restored_count": 0, "skipped_count": 0}
         else:
@@ -317,7 +317,7 @@ Examples:
 
     try:
         with open(output_path, 'w', encoding='utf-8', newline='') as f:
-            if masked_path.suffix == '.json':
+            if masked_path.suffix.lower() == '.json':
                 json.dump(restored_data, f, ensure_ascii=False, indent=2)
             else:
                 f.write(restored_data)

@@ -274,3 +274,72 @@ class TestOutputSafety:
         assert (tmp_path / "config.yaml").read_text(encoding="utf-8") == "mine: true\n"
         assert mask_cli.main(["--init-config", "--force"]) == 0
         assert "masking_rules" in (tmp_path / "config.yaml").read_text(encoding="utf-8")
+
+
+# ============================================================================
+# Конфіг / ENV (аудит: пріоритет CLI > ENV > YAML був зламаний)
+# ============================================================================
+
+class TestConfigAndEnv:
+    def test_env_applies_without_config_yaml(self, tmp_path, monkeypatch):
+        # Раніше без config.yaml loader не запускався → усі DATA_MASKING_* ігнорувались
+        inp = write_input(tmp_path)
+        monkeypatch.setenv("DATA_MASKING_DEBUG", "1")
+        try:
+            assert mask("-i", str(inp), "-o", "m.txt") == 0
+            assert _cfg.DEBUG_MODE is True
+        finally:
+            _cfg.DEBUG_MODE = False
+
+    def test_malformed_yaml_is_fatal(self, tmp_path):
+        inp = write_input(tmp_path)
+        (tmp_path / "config.yaml").write_text("system: [unclosed\n  bad: : :\n", encoding="utf-8")
+        assert mask("-i", str(inp), "-o", "m.txt") == 1
+        assert not (tmp_path / "m.txt").exists()
+
+    def test_missing_explicit_config_is_fatal(self, tmp_path):
+        inp = write_input(tmp_path)
+        assert mask("-i", str(inp), "-o", "m.txt", "--config", "nope.yaml") == 1
+
+    def test_encrypt_output_from_yaml(self, tmp_path, monkeypatch):
+        # security.encrypt_output: true == --encrypt (раніше мертвий ключ)
+        inp = write_input(tmp_path)
+        (tmp_path / "config.yaml").write_text("security:\n  encrypt_output: true\n", encoding="utf-8")
+        monkeypatch.setenv("DATA_MASKING_PASSWORD", "yamlpw")
+        assert mask("-i", str(inp), "-o", "m.txt") == 0
+        enc = one(tmp_path, "masking_map_*.enc")
+        assert not list(tmp_path.glob("masking_map_*.json"))
+        assert unmask("m.txt", "--map", str(enc), "-o", "rec.txt") == 0
+        assert (tmp_path / "rec.txt").read_text(encoding="utf-8") == SAMPLE
+
+    def test_password_env_value_not_stored_in_config(self, monkeypatch):
+        from datamasking.extras.config import ConfigLoader
+        monkeypatch.setenv("DATA_MASKING_PASSWORD", "EnvPw1!")
+        cfg = ConfigLoader().load()
+        assert cfg.security.password_env_var == "DATA_MASKING_PASSWORD"  # назва змінної, не пароль
+
+    def test_max_input_size_from_yaml(self, tmp_path):
+        inp = write_input(tmp_path)
+        (tmp_path / "config.yaml").write_text("validation:\n  max_input_size_mb: 1\n", encoding="utf-8")
+        saved = _cfg.MAX_INPUT_FILE_SIZE
+        try:
+            assert mask("-i", str(inp), "-o", "m.txt") == 0
+            assert _cfg.MAX_INPUT_FILE_SIZE == 1024 * 1024
+        finally:
+            _cfg.MAX_INPUT_FILE_SIZE = saved
+
+    def test_generated_template_matches_loader_schema(self, tmp_path):
+        from datamasking.extras.config import ConfigLoader, PasswordGenerationConfig
+        assert mask_cli.main(["--init-config"]) == 0
+        cfg = ConfigLoader("config.yaml").load()
+        # password_generation — секція (dataclass), а не bool
+        assert isinstance(cfg.security.password_generation, PasswordGenerationConfig)
+        assert "Fernet" not in (tmp_path / "config.yaml").read_text(encoding="utf-8")
+
+    def test_local_config_py_only_from_cwd(self, tmp_path):
+        # ./config.py читається; довільний модуль «config» із sys.path — ні
+        from datamasking.extras.config import ConfigLoader
+        (tmp_path / "config.py").write_text("CONFIG = {'system': {'hash_algorithm': 'sha256'}}\n", encoding="utf-8")
+        assert ConfigLoader().load().system.hash_algorithm == "sha256"
+        (tmp_path / "config.py").unlink()
+        assert ConfigLoader().load().system.hash_algorithm == "blake2b"

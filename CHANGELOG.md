@@ -4,6 +4,49 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.4] - 2026-09
+
+### Fixed — configuration & environment (audit item 9)
+- `DATA_MASKING_*` environment overrides were ignored unless a
+  `config.yaml` existed (the loader was never run); the loader now always
+  runs, so the documented priority CLI > ENV > YAML > defaults holds.
+- `DATA_MASKING_PASSWORD` was mapped onto `security.password_env_var`,
+  i.e. the *password value* was stored where a *variable name* belongs and
+  the documented variable was never used for encryption. The mapping is
+  removed (the CLI reads the variable directly); a new
+  `DATA_MASKING_PASSWORD_ENV_VAR` sets the variable name.
+- Malformed YAML or a non-mapping document used to be swallowed (defaults
+  applied, "Loaded config" printed, exit 0) — now a fatal error; an
+  explicitly given `--config` that does not exist is fatal too.
+- `security.encrypt_output: true` and `validation.max_input_size_mb`
+  were documented but dead — now wired (`encrypt_output` ≡ `--encrypt`).
+- The CLI's own config template disagreed with the loader schema
+  (`security.password_generation: true` replaced the dataclass with a
+  bool; "AES-128-CBC via Fernet" text) — the CLI now delegates to the
+  single loader template, and a bare bool is accepted as
+  `password_generation.enabled`.
+- Python config is loaded only from `./config.py` (never an arbitrary
+  `config` module found on `sys.path`, which `python -m datamasking` made
+  trivially possible).
+
+### Fixed — CLI details
+- `data_masking.py` gained the same Windows UTF-8 stdout fix as unmask
+  (the `✅` summary raised `UnicodeEncodeError` on cp1252 consoles after
+  files were already written).
+- Output/mapping/report name suffix is re-rolled when a clash exists
+  (two runs within one second could silently overwrite each other).
+- `encrypt_mapping` rejects an empty password; `estimate_crack_time` no
+  longer overflows on very long passwords; unmask treats `.JSON` like
+  `.json`.
+
+### Fixed — test suite hygiene (audit items 11–12)
+- `conftest.py` no longer deletes the developer's `config.yaml` from the
+  repository root after every test (it now fails a test that leaves one
+  behind) and restores `os.environ` instead of popping every `DM_*`.
+- ~12 tests that could not fail (`except Exception: assert True`,
+  `assert X in [True, False]`, `… or True`, silent `pytest.skip` on CLI
+  failure) rewritten as real in-process assertions; 8 new config/ENV tests.
+
 ## [3.0.3] - 2026-09
 
 ### Fixed — recognition leaks (audit item 4)
