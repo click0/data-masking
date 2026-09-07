@@ -16,6 +16,12 @@ License: BSD 3-Clause "New" or "Revised" License
 Year: 2025-2026
 """
 import pytest
+
+try:
+    from datamasking.extras.security import is_encryption_available as _enc_ok
+    _needs_crypto = pytest.mark.skipif(not _enc_ok(), reason="cryptography not installed (core install)")
+except ImportError:
+    _needs_crypto = pytest.mark.skip(reason="security module not available")
 import tempfile
 import os
 import subprocess
@@ -246,6 +252,7 @@ class TestSecurity:
         manager = MappingSecurityManager()
         assert manager is not None
 
+    @_needs_crypto
     def test_encrypt_decrypt_roundtrip(self, temp_dir):
         """Тест: шифрування та розшифрування."""
         from datamasking.extras.security import MappingSecurityManager
@@ -642,6 +649,7 @@ class TestCliMasking:
 
             assert masked is not None
 
+    @_needs_crypto
     def test_masking_with_encrypt(self, sample_input_file, temp_dir, run_masking):
         """Тест: --encrypt шифрує mapping файл."""
         from data_masking import SECURITY_AVAILABLE
@@ -826,6 +834,7 @@ class TestCliErrorHandling:
         chain = json.loads(next(temp_dir.glob("masking_chain_*.json")).read_text(encoding="utf-8"))
         assert chain["total_passes"] == 10
 
+    @_needs_crypto
     def test_encrypt_empty_password_rejected(self):
         """Тест: порожній пароль не приймається шифруванням."""
         from data_masking import SECURITY_AVAILABLE

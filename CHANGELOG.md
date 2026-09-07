@@ -4,6 +4,59 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.6] - 2026-09
+
+### Fixed — rank restore with overlapping forms (`--re-mask` chain bug)
+- `unmask_ranks_gender_aware` collected every rank form found in the
+  text, including a shorter form nested inside a longer one
+  (`майстер-сержант` inside `головний майстер-сержант`). Both consumed an
+  instance number, so a genuine standalone occurrence of the short form
+  got a non-existent instance and was skipped or restored to the wrong
+  rank. This surfaced with `--re-mask`, where masks of different passes
+  overlap as substrings (pass 2: `лейтенант → головний майстер-сержант`
+  and `головний майстер-сержант → майстер-сержант`) — reproduced on
+  `input_example.txt`. Matches are now taken longest-first without
+  overlap; the 2-pass chain restore of `input_example.txt` is identical to
+  the single-pass restore. Tests: `tests/test_chain_unmask.py`.
+
+## [3.0.5] - 2026-09
+
+### Changed — CI, packaging, release pipeline, docs (audit items 13–14, 16, 20–21)
+- **CI** (`ci.yml`): runs on every branch push and PR; test matrix
+  ubuntu 3.9/3.11/3.13 + **windows 3.12** (the exe is a release target,
+  so tests must pass there too); the package is `pip install -e '.[full]'`-ed
+  and console scripts/`python -m datamasking` are exercised; new
+  **core-only job** (faker only) proves encryption/YAML tests skip
+  rather than fail and that `--encrypt` degrades with a clean error;
+  **package job** builds wheel+sdist, runs `twine check`, extracts the
+  sdist and runs the test suite inside it, and asserts the wheel contains
+  only `datamasking`; advisory (non-blocking) mypy job; coverage now
+  targets `datamasking`.
+- **Release** (`release.yml`): restructured into `build-python` +
+  `build-windows` (parallel) → `publish` (tag only, needs both). The
+  GitHub release is created only after the Windows exe exists — a
+  PyInstaller failure no longer leaves a release without the zip
+  INSTALL.md points to. Version/tag check and pre-release detection are
+  done once and shared; source archives now include
+  `pyinstaller_utf8_hook.py`, `CHANGELOG.md`, `MANIFEST.in`, `mypy.ini`;
+  the Windows roundtrip test also covers `--encrypt` (only `.enc` written,
+  restored via `DATA_MASKING_PASSWORD`).
+- **Packaging**: `MANIFEST.in` makes the sdist self-contained and
+  testable (root wrappers, shims, tests with `conftest.py`, `pytest.ini`);
+  `license = "BSD-3-Clause"` + `license-files` (PEP 639, setuptools ≥ 77)
+  replaces the deprecated table form and classifier; `requirements.txt`
+  documents core vs optional deps and no longer pulls pytest.
+- `--encrypt` without the `cryptography` package is refused up front with
+  a clear message (exit 1) instead of failing after the output was written.
+- Tests that need cryptography/pyyaml carry `skipif` markers (core
+  install: 690 passed, 24 skipped; full: 713 passed).
+- **Docs**: README EN/UK describe the real output names
+  (`output_*`, `masking_map_*`, `masking_report_*`, `input_recovery_*`,
+  next to `-o`), use the `-i` flag in every example; `__main__.py`
+  docstring no longer advertises the invalid `python -m data-masking`.
+- `.pre-commit-config.yaml`: mypy hook was always failing with "Missing
+  target module" (now targets `datamasking`); out-of-sync isort hook removed.
+
 ## [3.0.4] - 2026-09
 
 ### Fixed — configuration & environment (audit item 9)

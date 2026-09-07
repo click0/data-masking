@@ -5,7 +5,7 @@
 
 tests/fixtures/legacy_mappings/<version>/ згенеровано справжнім кодом
 відповідного git-тега (data_masking.py → unmask_data.py на input_example.txt):
-    input.txt        — вхід
+    source.txt       — вхід (input.txt ігнорується .gitignore)
     output.txt       — замаскований вихід тієї версії
     masking_map.json — mapping тієї версії
     recovered.txt    — що відновив unmask ТІЄЇ Ж версії
@@ -34,7 +34,7 @@ VERSIONS = sorted(p.name for p in FIXTURES.iterdir() if p.is_dir()) if FIXTURES.
 def _load(version: str):
     d = FIXTURES / version
     return (
-        d / "input.txt",
+        d / "source.txt",
         (d / "output.txt").read_bytes().decode("utf-8"),
         json.loads((d / "masking_map.json").read_text(encoding="utf-8")),
         (d / "recovered.txt").read_bytes().decode("utf-8"),
@@ -93,7 +93,7 @@ class TestLegacyMappings:
                               "-o", str(tmp_path / "rec.txt")])
         assert rc == 0
         got = (tmp_path / "rec.txt").read_bytes().decode("utf-8")
-        assert got.casefold() == (d / "input.txt").read_bytes().decode("utf-8").casefold()
+        assert got.casefold() == (d / "source.txt").read_bytes().decode("utf-8").casefold()
 
     def test_engine_restores_input_byte_exact(self, version):
         """Байт-в-байт: з 3.0.3 регістр префікса «БР» теж відновлюється

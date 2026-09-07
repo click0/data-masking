@@ -45,10 +45,20 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
             all_masked_ranks.add(mask_info["masked_as"].lower())
 
     # КРОК 1: ПОШУК ВСІХ ЗВАНЬ У ТЕКСТІ
+    # ALL_RANK_FORMS відсортовано за довжиною спадно, тож довша форма
+    # («головний майстер-сержант») зустрічається першою; коротша, що є її
+    # підрядком («майстер-сержант»), НЕ має додаватись повторно: інакше
+    # лічильник instances для коротшої форми зсувався і справжнє окреме
+    # входження діставало неіснуючий instance → пропуск або чуже звання
+    # (проявлялось у --re-mask, де маски проходів перекриваються як підрядки)
     all_found_ranks = []
+    covered = bytearray(len(restored_text) + 1)
     for rank_form in ALL_RANK_FORMS:
         pattern = r'\b' + re.escape(rank_form) + r'\b'
         for match in re.finditer(pattern, restored_text, re.IGNORECASE):
+            if 1 in covered[match.start():match.end()]:
+                continue
+            covered[match.start():match.end()] = b'\x01' * (match.end() - match.start())
             all_found_ranks.append({
                 "start": match.start(),
                 "end": match.end(),

@@ -5,9 +5,10 @@
 Entry point for running data-masking as a module.
 
 Usage:
-    python -m data-masking mask [args]     # or just: python . mask [args]
-    python -m data-masking unmask [args]
-    python -m data-masking --version
+    python . mask [args]          # з кореня репозиторію
+    python . unmask [args]
+    python . --version
+    python -m datamasking mask    # після pip install (або з кореня репо)
 
 If no subcommand is given, defaults to 'mask' mode.
 """
