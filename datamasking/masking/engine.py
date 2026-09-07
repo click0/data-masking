@@ -7,11 +7,13 @@ Main masking engine: context-aware text masking and JSON processing.
 Extracted from data_masking.py during the package refactoring (v2.5.0).
 """
 
+import json
 import random
 import re
 from typing import Any, Dict
 
 from datamasking.masking import constants as _cfg
+from datamasking.masking import surname as _surname
 from datamasking.masking.context import (
     analyze_number_sign_context, analyze_br_keyword,
     looks_like_pib_line, parse_hybrid_line,
@@ -258,6 +260,16 @@ def mask_text_context_aware(text: str, masking_dict: Dict, instance_counters: Di
     Це центральна функція всього процесу маскування. Вона координує роботу
     всіх інших функцій та забезпечує правильний порядок обробки даних.
     """
+    # Словник документа для синтетичних масок прізвищ (див. surname.py):
+    # маска не має збігатися з жодним словом тексту
+    _surname.enter_document(text)
+    try:
+        return _mask_text_context_aware_impl(text, masking_dict, instance_counters)
+    finally:
+        _surname.exit_document()
+
+
+def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counters: Dict) -> str:
     # === ШАГ 0: Нормалізація розірваних звань
     text = normalize_broken_ranks(text)
 
@@ -445,8 +457,18 @@ def mask_text_context_aware(text: str, masking_dict: Dict, instance_counters: Di
     return text
 
 def mask_json_recursive(data: Any, masking_dict: Dict, instance_counters: Dict) -> Any:
-    if isinstance(data, dict): return {key: mask_json_recursive(value, masking_dict, instance_counters) for key, value in data.items()}
-    elif isinstance(data, list): return [mask_json_recursive(item, masking_dict, instance_counters) for item in data]
+    # Словник усього JSON-документа (не окремого рядка) — щоб маска прізвища
+    # не збіглась зі словом з іншого поля
+    _surname.enter_document(json.dumps(data, ensure_ascii=False) if isinstance(data, (dict, list)) else str(data))
+    try:
+        return _mask_json_recursive_impl(data, masking_dict, instance_counters)
+    finally:
+        _surname.exit_document()
+
+
+def _mask_json_recursive_impl(data: Any, masking_dict: Dict, instance_counters: Dict) -> Any:
+    if isinstance(data, dict): return {key: _mask_json_recursive_impl(value, masking_dict, instance_counters) for key, value in data.items()}
+    elif isinstance(data, list): return [_mask_json_recursive_impl(item, masking_dict, instance_counters) for item in data]
     elif isinstance(data, str): return mask_text_wrapper(data, masking_dict, instance_counters)
     else: return data
 
