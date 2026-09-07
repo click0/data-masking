@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.6] - 2026-09
+
+### Fixed — rank restore with overlapping forms (`--re-mask` chain bug)
+- `unmask_ranks_gender_aware` collected every rank form found in the
+  text, including a shorter form nested inside a longer one
+  (`майстер-сержант` inside `головний майстер-сержант`). Both consumed an
+  instance number, so a genuine standalone occurrence of the short form
+  got a non-existent instance and was skipped or restored to the wrong
+  rank. This surfaced with `--re-mask`, where masks of different passes
+  overlap as substrings (pass 2: `лейтенант → головний майстер-сержант`
+  and `головний майстер-сержант → майстер-сержант`) — reproduced on
+  `input_example.txt`. Matches are now taken longest-first without
+  overlap; the 2-pass chain restore of `input_example.txt` is identical to
+  the single-pass restore. Tests: `tests/test_chain_unmask.py`.
+
 ## [3.0.5] - 2026-09
 
 ### Changed — CI, packaging, release pipeline, docs (audit items 13–14, 16, 20–21)

@@ -60,7 +60,7 @@ def _isolate(monkeypatch, tmp_path):
 
 def write_input(tmp_path: Path, text: str = SAMPLE, name: str = "in.txt") -> Path:
     p = tmp_path / name
-    p.write_text(text, encoding="utf-8", newline="")
+    p.write_bytes(text.encode("utf-8"))  # newline= у write_text — лише 3.10+
     return p
 
 
