@@ -10,7 +10,7 @@ Extracted from data_masking.py during the package refactoring (v2.5.0).
 import json
 import random
 import re
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Pattern, Tuple
 
 from datamasking.masking import constants as _cfg
 from datamasking.masking import surname as _surname
@@ -150,7 +150,7 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
 
     # Довші патерни мають пріоритет; знімаємо перекриття
     candidates.sort(key=lambda x: (x[1] - x[0]), reverse=True)
-    kept = []
+    kept: List[Tuple[int, int, str, List[str], bool, bool]] = []
     for c in candidates:
         if not any(c[0] < k[1] and c[1] > k[0] for k in kept):
             kept.append(c)
@@ -182,9 +182,9 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
     return text
 
 
-_BROKEN_RANKS_RE = None
+_BROKEN_RANKS_RE: Optional[Pattern[str]] = None
 
-def _get_broken_ranks_re():
+def _get_broken_ranks_re() -> Optional[Pattern[str]]:
     global _BROKEN_RANKS_RE
     if _BROKEN_RANKS_RE is None:
         multi_word_ranks = [r for r in _cfg.ALL_RANK_FORMS if ' ' in r]

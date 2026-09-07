@@ -156,7 +156,8 @@ def _draw_candidates(seed: int, bare: bool) -> Iterable[Tuple[str, str]]:
 def _pick_stem(seed: int, target_len: int, family: str, ending: str, forbidden: Set[str]) -> str:
     """Обирає синтетичну основу: тієї ж родини, придатну до закінчення
     і схожої довжини, якщо є."""
-    same_family, others = [], []
+    same_family: list = []
+    others: list = []
     for stem, fam in _draw_candidates(seed, bare=(ending == "")):
         if stem in forbidden or not _stem_fits(stem, family):
             continue

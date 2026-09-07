@@ -11,7 +11,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict, Optional, Union
 
 from datamasking.unmasking.helpers import validate_file_size
 from datamasking.unmasking.engine import is_chain_mapping
@@ -32,7 +32,7 @@ except ImportError:
     pass
 
 
-def load_mapping_file(map_path: Path, password: str = None) -> Dict:
+def load_mapping_file(map_path: Path, password: Optional[str] = None) -> Dict:
     """
     Завантажує mapping файл з підтримкою шифрування.
 
@@ -70,7 +70,10 @@ def load_mapping_file(map_path: Path, password: str = None) -> Dict:
     else:
         validate_file_size(map_path)
         with open(map_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError("Mapping file must be a JSON object")
+        return data
 
 
 def validate_mapping_schema(mapping: Dict) -> None:

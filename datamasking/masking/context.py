@@ -260,7 +260,9 @@ def _rank_word_as_surname(word: str, next_word: Optional[str]) -> bool:
         return False
     if not (clean[0].isupper() and clean[1:].islower()):
         return False
-    return bool(next_word) and looks_like_name(next_word)
+    if not next_word:
+        return False
+    return looks_like_name(next_word)
 
 
 def _extract_pib_words(parts, start: int, after_rank: bool):

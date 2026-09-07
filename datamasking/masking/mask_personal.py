@@ -9,7 +9,7 @@ Extracted from data_masking.py during the package refactoring (v2.5.0).
 
 import random
 import re
-from typing import Dict
+from typing import Dict, List, Optional
 
 from datamasking.masking import constants as _cfg
 from datamasking.masking.helpers import (
@@ -104,7 +104,7 @@ def mask_surname(original: str, masking_dict: Dict, instance_counters: Dict) -> 
         if len(hyphen_parts) == 2 and all(len(p) >= 3 for p in hyphen_parts):
             # Подвійне прізвище: кожна частина — власна синтетична маска,
             # структура «Х-Y» зберігається (Петренко-Іванова → Сірченко-Юхимова)
-            masked_parts = []
+            masked_parts: List[str] = []
             for part in hyphen_parts:
                 mp = synthesize_surname(part, forbidden=forbidden | set(masked_parts))
                 masked_parts.append(_apply_original_case(part, mp))
@@ -143,7 +143,8 @@ def mask_patronymic(patronymic: str, gender: str, masking_dict: Dict, instance_c
 
     return add_to_mapping(masking_dict, instance_counters, "patronymic", patronymic_lower, fake_patronymic)
 
-def mask_name(original: str, masking_dict: Dict, instance_counters: Dict, gender_hint: str = None, patronymic_hint: str = None) -> str:
+def mask_name(original: str, masking_dict: Dict, instance_counters: Dict,
+              gender_hint: Optional[str] = None, patronymic_hint: Optional[str] = None) -> str:
     """
     Маскує ім'я з автоматичним визначенням роду та відмінка.
     """

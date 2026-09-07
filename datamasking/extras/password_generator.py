@@ -200,7 +200,7 @@ def generate_password(
 
     # Гарантуємо наявність символів кожного типу (якщо довжина дозволяє)
     if ensure_variety:
-        positions_used = set()
+        positions_used: set = set()
         for req_charset in required_charsets:
             if len(positions_used) >= length:
                 break

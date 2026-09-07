@@ -9,9 +9,22 @@ Extracted from unmask_data.py during the package refactoring (v2.5.0).
 
 import logging
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+try:
+    from typing import TypedDict
+except ImportError:  # pragma: no cover — py3.7
+    from typing_extensions import TypedDict  # type: ignore[assignment]
 
 _logger = logging.getLogger(__name__)
+
+
+class FoundRank(TypedDict, total=False):
+    """Знайдене в тексті звання (span + текст; simple — маска-без-словника)."""
+    start: int
+    end: int
+    text: str
+    simple: bool
 
 from datamasking.rank_data import (
     RANK_DECLENSIONS,
@@ -51,7 +64,7 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
     # лічильник instances для коротшої форми зсувався і справжнє окреме
     # входження діставало неіснуючий instance → пропуск або чуже звання
     # (проявлялось у --re-mask, де маски проходів перекриваються як підрядки)
-    all_found_ranks = []
+    all_found_ranks: List[FoundRank] = []
     covered = bytearray(len(restored_text) + 1)
     for rank_form in ALL_RANK_FORMS:
         pattern = r'\b' + re.escape(rank_form) + r'\b'
@@ -84,8 +97,8 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
     all_found_ranks.sort(key=lambda x: x['start'])
 
     # КРОК 2: ОБРОБКА КОЖНОГО ЗНАЙДЕНОГО ЗВАННЯ
-    replacements_to_do = []
-    instance_counters = {}
+    replacements_to_do: List[Tuple[int, int, str]] = []
+    instance_counters: Dict[str, int] = {}
 
     for found in all_found_ranks:
         # ЛОГІКА A: ПРОСТА ЗАМІНА
@@ -140,11 +153,11 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
                 if original_base_form in RANK_FEMININE_MAP:
                     base_female = RANK_FEMININE_MAP[original_base_form]
                     if base_female in RANK_DECLENSIONS_FEMALE:
-                        reconstructed_form = RANK_DECLENSIONS_FEMALE[base_female].get(case, base_female)
+                        reconstructed_form = RANK_DECLENSIONS_FEMALE[base_female].get(case or 'nominative', base_female)
 
             else:
                 if original_base_form in RANK_DECLENSIONS:
-                    reconstructed_form = RANK_DECLENSIONS[original_base_form].get(case, original_base_form)
+                    reconstructed_form = RANK_DECLENSIONS[original_base_form].get(case or 'nominative', original_base_form)
 
             reconstructed_form = _apply_original_case(base_rank_text, reconstructed_form)
             restored_full_rank = f"{reconstructed_form} {additional_words}" if additional_words else reconstructed_form
@@ -212,9 +225,9 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
         return restored_text, stats
 
     # Case-insensitive lookup: lower(маска) -> {instance_num: original}
-    by_lower = {}
-    for masked_value, inst in instance_map.items():
-        by_lower.setdefault(masked_value.lower(), {}).update(inst)
+    by_lower: Dict[str, Dict[int, str]] = {}
+    for masked_value, inst_map in instance_map.items():
+        by_lower.setdefault(masked_value.lower(), {}).update(inst_map)
 
     # Текстові дати зберігаються в mapping без лапок («31 грудня 2025»), а в
     # тексті день часто в лапках: «28» вересня 2025. Для них — толерантний
@@ -249,13 +262,13 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
         )
         return _unmask_other_data_slow(restored_text, instance_map)
 
-    seen = {}            # lower(маска) -> скільки входжень уже зустріли
-    segments = []
+    seen: Dict[str, int] = {}   # lower(маска) -> скільки входжень уже зустріли
+    segments: List[str] = []
     prev_end = 0
     for m in big_re.finditer(restored_text):
         matched = m.group(0)
         key = matched.lower()
-        inst = by_lower.get(key)
+        inst: Optional[Dict[int, str]] = by_lower.get(key)
         quoted_date = False
         if not inst and date_text_masks:
             # «28» вересня 2025 → ключ «28 вересня 2025»
@@ -392,18 +405,23 @@ def unmask_json_recursive(masked_data: Any, masking_map: Dict, map_version: str)
 # CHAIN UNMASK
 # ============================================================================
 
-def unmask_chain(masked_text: str, chain_data: Dict) -> Tuple[str, Dict]:
+def unmask_chain(masked_text: str, chain_data: Dict, to_version: int = 0) -> Tuple[str, Dict]:
     """
     Unmask a multi-pass (re-mask chain) masked text by reversing passes.
+
+    to_version: до якого проходу відкотити (0 = оригінал, N = стан після
+    N-го проходу). Використовується CLI-прапорцем --to-version.
     """
     passes = chain_data.get("passes", [])
     if not passes:
         return masked_text, {"restored_count": 0, "skipped_count": 0}
+    if to_version < 0 or to_version > len(passes):
+        raise ValueError(f"to_version must be in 0..{len(passes)}, got {to_version}")
 
     total_stats = {"restored_count": 0, "skipped_count": 0}
     text = masked_text
 
-    for pass_data in reversed(passes):
+    for pass_data in reversed(passes[to_version:]):
         pass_version = check_mapping_version(pass_data)
         text, stats = unmask_text_v2(text, pass_data, pass_version)
         total_stats["restored_count"] += stats.get("restored_count", 0)
