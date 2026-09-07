@@ -4,6 +4,58 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.3] - 2026-09
+
+### Fixed — recognition leaks (audit item 4)
+- **Hyphenated surnames** (`Петренко-Іванова`, `Нечуй-Левицький`) were not
+  recognised at all (capital letter after the hyphen failed the name
+  check) — the whole PIB stayed in clear text. Both parts must now look
+  like names; the mask keeps the `X-Y` structure with a synthetic mask per
+  part; mixed-case restore no longer lower-cases such surnames.
+- **Full PIB after the same person's initials** (`Іванов П.А. … Іванов
+  Петро Андрійович`) stayed in clear text: the parser only tried the first
+  capitalised anchor and, when it yielded fewer than two words (e.g. the
+  already-masked initials form), abandoned the whole line. It now tries
+  every anchor in the line. A PIB is accepted only if it appears verbatim
+  in the line (no more phantom mapping entries and idle iterations), and a
+  punctuation mark after a word ends the PIB (`Сергійович, ІПН …`).
+- **Rank + bare surname** (`рядовий Іванов прибув`, `капітан Петренко`,
+  `підполковнику Сидоренку`) is now masked — a rank is strong enough
+  context for a single following surname. Without a rank a lone
+  capitalised word is still left alone.
+- **Surname that is also a rank word** (`капітан Майор Іван Іванович`)
+  is masked as a surname when it is Title-case, directly follows a real
+  rank and precedes a name.
+- **Text dates with a quoted day** (`«31» грудня 2025 року`, the most
+  common form in orders) masked fine but never unmasked: the mapping key
+  has no quotes while the text does. The unmask alternation now tolerates
+  quotes/spaces around the day and restores the date keeping the quotes.
+- **Patronymic gender**: `-евич`, `-ич`, `-іч` (Їжакевич, Ілліч, Кузьмич,
+  Лукич) are male — previously "unknown", which produced a feminine mask.
+- **Given names mapped to themselves**: Марія, Юлія, Катерина, Тетяна,
+  Ірина (and any name that is the only whitelist entry for its first
+  letter) were returned unchanged as their own "mask". The original is now
+  excluded from candidates; if no other name starts with the same letter,
+  any other name is used.
+- **All-caps PIB** (`ІВАНОВ ПЕТРО МИКОЛАЙОВИЧ`) had surname and name
+  swapped; the "emphasised surname" heuristic now applies only when the
+  first word is not itself upper-case.
+- `ІПН`, `РНОКПП`, `паспорт` added to the exclude list (were accepted as
+  name-like words).
+- Bonus: mixed-case-safe case restoration also fixed the long-standing
+  `БР 123/… → бр 123/…` loss on unmask — legacy fixtures now restore
+  byte-exact (former xfail tests are now regular tests).
+
+### Performance
+- Overlap checks in the item collector were O(items²) (`any(...)` over
+  all collected spans per candidate) and took ~60% of masking time on
+  large files; replaced by position-coverage bytearrays. 5000-line
+  benchmark: masking is faster than 3.0.2 despite the broader parser.
+
+### Tests
+- `tests/test_recognition.py` (≈55 tests) covering every case above plus
+  official-text non-regression.
+
 ## [3.0.2] - 2026-09
 
 ### Fixed — surname masks no longer reveal the original (audit item 3)

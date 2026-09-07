@@ -89,7 +89,9 @@ def _apply_original_case(original: str, masked: str) -> str:
     if not original or not masked: return masked
     if original.isupper(): return masked.upper()
     elif len(original) > 1 and original[0].isupper() and original[1:].islower(): return masked.capitalize()
-    else: return masked.lower()
+    elif original.islower(): return masked.lower()
+    # Змішаний регістр (подвійні прізвища) — маска вже має потрібний регістр
+    return masked
 
 def normalize_string(s: str) -> str:
     if not s: return ""
