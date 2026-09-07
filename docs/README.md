@@ -224,8 +224,9 @@ Mapping files can be encrypted with AES-256-GCM:
 
 ```bash
 # Маскування з шифруванням
-python data_masking.py input.txt --encrypt --password mypassword
-# Результат: mapping_*.json.enc
+python data_masking.py -i input.txt --encrypt --password-env DATA_MASKING_PASSWORD
+# Результат: masking_map_*.enc — plaintext .json НЕ створюється (v3.0.1+)
+# Той самий DATA_MASKING_PASSWORD читає і unmask_data.py
 
 # Розмаскування з шифрованим mapping
 python unmask_data.py masked.txt --map mapping.enc --password mypassword
@@ -246,10 +247,10 @@ python data_masking.py input.txt -c config.yaml
 
 ```bash
 # Маскувати тільки ІПН та паспорти
-python data_masking.py input.txt --only ipn,passport
+python data_masking.py -i input.txt --only ipn,passport   # кома або пробіл; невідомий тип — помилка (v3.0.1+)
 
 # Маскувати все крім дат
-python data_masking.py input.txt --exclude dates
+python data_masking.py -i input.txt --exclude dates
 ```
 
 ### Chain Re-masking (`datamasking/extras/re_mask.py`)

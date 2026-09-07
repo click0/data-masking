@@ -14,7 +14,7 @@ import os
 import time
 from pathlib import Path
 from datetime import datetime
-from typing import Dict
+from typing import Dict, Optional
 
 from datamasking.unmasking.helpers import (
     validate_file_size, auto_find_latest_pair, check_mapping_version,
@@ -61,9 +61,24 @@ except ImportError:
 from datamasking._version import __version__  # єдине джерело версії
 
 
-def main():
+EXIT_OK = 0
+EXIT_ERROR = 1
+
+
+def _config_password(config) -> Optional[str]:
+    """Пароль з конфігу — config може бути dict АБО Config-dataclass
+    (раніше `config.get(...)` падав AttributeError на dataclass)."""
+    if not config:
+        return None
+    if isinstance(config, dict):
+        return config.get('password') or None
+    security = getattr(config, 'security', None)
+    return getattr(security, 'password', None) or getattr(config, 'password', None) or None
+
+
+def main(argv=None) -> int:
     """
-    Головна функція CLI для unmask.
+    Головна функція CLI для unmask. Повертає код виходу (0 — успіх, 1 — помилка).
     """
     # Fix Unicode output on Windows (PyInstaller cp1252 issue)
     if sys.platform == 'win32' and getattr(sys.stdout, 'encoding', 'utf-8').lower().replace('-', '') != 'utf8':
@@ -122,7 +137,7 @@ Examples:
         log_group.add_argument('--log-file', metavar='FILE',
                                help='Log file path')
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # ========================================================================
     # ІНІЦІАЛІЗАЦІЯ ЛОГЕРА
@@ -159,7 +174,7 @@ Examples:
         except (FileNotFoundError, PermissionError, ValueError, OSError) as e:
             print(f"❌ Помилка завантаження конфігурації: {e}")
             log_error(f"Помилка завантаження конфігурації: {e}")
-            return
+            return EXIT_ERROR
 
     # ========================================================================
     # ВИЗНАЧЕННЯ ПАРОЛЯ
@@ -171,8 +186,12 @@ Examples:
             password = args.password
         elif getattr(args, 'password_env', None):
             password = os.environ.get(args.password_env, '')
-        elif config.get('password'):
-            password = config['password']
+            if not password:
+                print(f"❌ Змінна оточення '{args.password_env}' не встановлена або порожня")
+                log_error(f"Environment variable '{args.password_env}' is not set or empty")
+                return EXIT_ERROR
+        else:
+            password = _config_password(config)
 
     # ========================================================================
     # ЛОГІКА ПОШУКУ ТА ВИБОРУ ФАЙЛІВ
@@ -181,7 +200,7 @@ Examples:
     if not args.masked_file:
         result = auto_find_latest_pair()
         if result is None:
-            return
+            return EXIT_ERROR
         masked_path, map_path, output_path = result
         log_info(f"Автоматичний режим: {masked_path.name}")
     else:
@@ -189,7 +208,7 @@ Examples:
         if not masked_path.exists():
             print(f"❌ Файл не знайдено: {masked_path}")
             log_error(f"Файл не знайдено: {masked_path}")
-            return
+            return EXIT_ERROR
 
         if args.map_file:
             map_path = Path(args.map_file)
@@ -204,12 +223,12 @@ Examples:
             else:
                 print("❌ Будь ласка, вкажіть файл маппінгу через --map")
                 log_error("Файл маппінгу не вказано")
-                return
+                return EXIT_ERROR
 
         if not map_path.exists():
             print(f"❌ Файл маппінгу не знайдено: {map_path}")
             log_error(f"Файл маппінгу не знайдено: {map_path}")
-            return
+            return EXIT_ERROR
 
         if args.output:
             output_path = Path(args.output)
@@ -228,7 +247,7 @@ Examples:
 
         if REMASK_AVAILABLE and getattr(args, 'chain_info', False):
             show_chain_info(masking_map)
-            return
+            return EXIT_OK
 
         if REMASK_AVAILABLE and getattr(args, 'to_version', None):
             try:
@@ -239,11 +258,11 @@ Examples:
                     json.dump(converted, f, ensure_ascii=False, indent=2)
                 print(f"✅ Конвертовано до версії {args.to_version}: {output_converted}")
                 log_info(f"Конвертовано до версії {args.to_version}")
-                return
+                return EXIT_OK
             except (KeyError, ValueError, TypeError, OSError) as e:
                 print(f"❌ Помилка конвертації: {e}")
                 log_error(f"Помилка конвертації: {e}")
-                return
+                return EXIT_ERROR
 
         validate_file_size(masked_path)
         with open(masked_path, 'r', encoding='utf-8', newline='') as f:
@@ -254,10 +273,13 @@ Examples:
 
         log_debug(f"Замасковані дані завантажено: {masked_path.name}")
 
-    except (FileNotFoundError, PermissionError, OSError, json.JSONDecodeError, UnicodeDecodeError) as e:
+    except (FileNotFoundError, PermissionError, OSError, json.JSONDecodeError,
+            UnicodeDecodeError, ValueError, RuntimeError) as e:
+        # ValueError: невалідна схема, неправильний пароль .enc, завеликий файл;
+        # RuntimeError: немає cryptography для .enc
         print(f"❌ Помилка читання: {e}")
         log_error(f"Помилка читання: {e}")
-        return
+        return EXIT_ERROR
 
     # ========================================================================
     # ПРОЦЕС UNMASK
@@ -306,7 +328,9 @@ Examples:
         log_info(f"Збережено у: {output_path} ({elapsed:.2f} сек)")
         log_info(f"Статистика: відновлено={stats.get('restored_count', 0)}, "
                  f"пропущено={stats.get('skipped_count', 0)}")
+        return EXIT_OK
 
     except (OSError, PermissionError, UnicodeEncodeError) as e:
         print(f"❌ Помилка збереження: {e}")
         log_error(f"Помилка збереження: {e}")
+        return EXIT_ERROR
