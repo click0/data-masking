@@ -31,7 +31,7 @@ Year: 2025-2026
 # Re-exports from masking package for backward compatibility
 # ============================================================================
 
-__version__ = "3.0.0"
+__version__ = "3.0.1"
 
 from datamasking.masking.constants import (
     __version__, __author__, __contact__, __phone__, __license__, __year__,
@@ -96,7 +96,8 @@ from datamasking.masking.cli import (
     _apply_selective_filters, _apply_config_settings,
     _prepare_output_paths, _read_input,
     _run_masking, _run_multi_pass_masking, _run_single_pass_masking,
-    _handle_encryption, _write_report, _print_summary, _save_results,
+    _write_mapping, _resolve_password, _validate_output_paths,
+    _write_report, _print_summary, _save_results,
     SELECTIVE_AVAILABLE, REMASK_AVAILABLE, SECURITY_AVAILABLE,
     CONFIG_AVAILABLE, LOGGING_AVAILABLE, PASSWORD_GENERATOR_AVAILABLE,
     main,
@@ -140,4 +141,4 @@ class _LiveFlagsModule(_ModuleType):
 _sys.modules[__name__].__class__ = _LiveFlagsModule
 
 if __name__ == "__main__":
-    main()
+    _sys.exit(main())

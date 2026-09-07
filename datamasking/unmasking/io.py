@@ -50,18 +50,23 @@ def load_mapping_file(map_path: Path, password: str = None) -> Dict:
                 "Встановіть: pip install cryptography"
             )
 
+        # Єдина змінна з боком маскування — DATA_MASKING_PASSWORD;
+        # старі назви лишаються як fallback для сумісності
         if not password:
-            password = os.environ.get('MASKING_PASSWORD', '')
-        if not password:
-            password = os.environ.get('UNMASK_PASSWORD', '')
+            for env_name in ('DATA_MASKING_PASSWORD', 'MASKING_PASSWORD', 'UNMASK_PASSWORD'):
+                password = os.environ.get(env_name, '')
+                if password:
+                    break
         if not password:
             raise ValueError(
                 "Для дешифрування .enc файлу потрібен пароль. "
-                "Вкажіть --password або встановіть MASKING_PASSWORD / UNMASK_PASSWORD"
+                "Вкажіть --password / --password-env або встановіть DATA_MASKING_PASSWORD"
             )
 
-        security_mgr = MappingSecurityManager(password)
-        return security_mgr.decrypt_mapping(map_path)
+        validate_file_size(map_path)
+        # v2.5–3.0.0: викликалось MappingSecurityManager(password) — клас без
+        # __init__ → TypeError на кожному .enc; шифровані mapping не читались
+        return MappingSecurityManager().decrypt_mapping(map_path, password)
     else:
         validate_file_size(map_path)
         with open(map_path, 'r', encoding='utf-8') as f:

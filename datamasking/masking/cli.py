@@ -9,14 +9,24 @@ Extracted from data_masking.py during the package refactoring (v2.5.0).
 
 import json
 import os
+import sys
 import random
 import argparse
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
+from datamasking._fsutil import atomic_write_private
 from datamasking.masking import constants as _cfg
 from datamasking.masking.helpers import validate_file_size
+
+# Коди виходу: 0 — успіх, 1 — помилка виконання, 2 — помилка використання CLI
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_USAGE = 2
+
+# Єдина env-змінна для пароля (та сама на боці unmask)
+PASSWORD_ENV_DEFAULT = "DATA_MASKING_PASSWORD"
 from datamasking.masking.engine import (
     mask_text_context_aware, mask_json_recursive,
 )
@@ -28,7 +38,9 @@ import logging as _logging
 _opt_logger = _logging.getLogger(__name__)
 
 try:
-    from datamasking.extras.selective import get_available_types
+    from datamasking.extras.selective import (
+        get_available_types, get_types_help, create_filter, apply_filter_to_globals,
+    )
     SELECTIVE_AVAILABLE = True
 except ImportError:
     SELECTIVE_AVAILABLE = False
@@ -136,7 +148,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-V", "--version", action="version",
                         version=f"%(prog)s {_cfg.__version__}")
     parser.add_argument("-i", "--input", default="input.txt", help="Input file")
-    parser.add_argument("-o", "--output", help="Output file")
+    parser.add_argument("-o", "--output", help="Output file (mapping and report are written next to it)")
+    parser.add_argument("--force", action="store_true",
+                        help="Overwrite an existing output file")
     parser.add_argument("--no-report", action="store_true", help="No report")
     parser.add_argument("--debug", action="store_true", help="Debug mode")
     parser.add_argument("--init-config", action="store_true",
@@ -151,19 +165,22 @@ def _build_parser() -> argparse.ArgumentParser:
 
     if SELECTIVE_AVAILABLE:
         parser.add_argument("--only", nargs="+", metavar="TYPE",
-                            help="Mask only these types")
+                            help="Mask only these types (space- or comma-separated; "
+                                 "groups and aliases accepted, see --list-types)")
         parser.add_argument("--exclude", nargs="+", metavar="TYPE",
                             help="Mask everything except these types")
         parser.add_argument("--list-types", action="store_true",
-                            help="List available masking types and exit")
+                            help="List available masking types, groups and aliases, then exit")
 
     if SECURITY_AVAILABLE:
         parser.add_argument("--encrypt", action="store_true",
                             help="Encrypt the mapping file")
         parser.add_argument("--password", type=str, default=None,
-                            help="Password for encryption")
-        parser.add_argument("--password-env", type=str, default=None,
-                            help="Environment variable name containing the password")
+                            help="Password for encryption (visible in process list; "
+                                 "prefer --password-env)")
+        parser.add_argument("--password-env", type=str, default=None, metavar="VAR",
+                            help=f"Environment variable holding the password "
+                                 f"(default lookup: {PASSWORD_ENV_DEFAULT})")
 
     if REMASK_AVAILABLE:
         parser.add_argument("--re-mask", type=int, default=None, metavar="N",
@@ -219,65 +236,50 @@ def _setup_logger(args, config) -> Optional[Any]:
         return None
 
 
-def _apply_selective_filters(args, logger) -> None:
-    """Apply --only / --exclude selective masking filters."""
+def _apply_selective_filters(args, logger) -> Optional[str]:
+    """Apply --only / --exclude selective masking filters.
+
+    Розбір імен типів делеговано extras.selective (канонічні імена,
+    множина, українські форми, групи, кома/пробіл як роздільник) — раніше
+    CLI мав власну несумісну таблицю, і невідомий тип тихо давав
+    «замасковано нічого» з exit 0.
+
+    Returns:
+        None — ок; рядок з помилкою — невідомий тип (виклик має завершити
+        роботу з EXIT_USAGE, НЕ записавши жодного файлу).
+    """
     if not SELECTIVE_AVAILABLE:
-        return
+        return None
 
     only_types = getattr(args, 'only', None)
     exclude_types = getattr(args, 'exclude', None)
 
     if not only_types and not exclude_types:
-        return
+        return None
 
-    type_flag_map = {
-        "names": "MASK_NAMES",
-        "ipn": "MASK_IPN",
-        "passport": "MASK_PASSPORT",
-        "military_id": "MASK_MILITARY_ID",
-        "ranks": "MASK_RANKS",
-        "brigades": "MASK_BRIGADES",
-        "units": "MASK_UNITS",
-        "orders": "MASK_ORDERS",
-        "br_numbers": "MASK_BR_NUMBERS",
-        "dates": "MASK_DATES",
-    }
+    if only_types and exclude_types:
+        return "--only and --exclude cannot be combined"
 
-    if only_types:
-        _cfg.MASK_NAMES = False
-        _cfg.MASK_IPN = False
-        _cfg.MASK_PASSPORT = False
-        _cfg.MASK_MILITARY_ID = False
-        _cfg.MASK_RANKS = False
-        _cfg.MASK_BRIGADES = False
-        _cfg.MASK_UNITS = False
-        _cfg.MASK_ORDERS = False
-        _cfg.MASK_BR_NUMBERS = False
-        _cfg.MASK_DATES = False
-        for t in only_types:
-            t_lower = t.lower()
-            if t_lower in type_flag_map:
-                setattr(_cfg, type_flag_map[t_lower], True)
-            else:
-                print(f"Warning: unknown type '{t}', ignoring")
-                if logger:
-                    logger.warning(f"Unknown selective type: {t}")
-        print(f"Selective masking: --only {' '.join(only_types)}")
+    only_str = " ".join(only_types) if only_types else None
+    exclude_str = " ".join(exclude_types) if exclude_types else None
+    try:
+        selective_filter = create_filter(only=only_str, exclude=exclude_str)
+    except ValueError as e:
         if logger:
-            logger.info(f"Selective masking: --only {' '.join(only_types)}")
+            logger.error(f"Selective masking: {e}")
+        return str(e)
 
-    elif exclude_types:
-        for t in exclude_types:
-            t_lower = t.lower()
-            if t_lower in type_flag_map:
-                setattr(_cfg, type_flag_map[t_lower], False)
-            else:
-                print(f"Warning: unknown type '{t}', ignoring")
-                if logger:
-                    logger.warning(f"Unknown selective type: {t}")
-        print(f"Selective masking: --exclude {' '.join(exclude_types)}")
-        if logger:
-            logger.info(f"Selective masking: --exclude {' '.join(exclude_types)}")
+    if not selective_filter.enabled_types:
+        return "Selective masking would disable every type — nothing to do"
+
+    apply_filter_to_globals(selective_filter, vars(_cfg))
+
+    mode = "--only" if only_types else "--exclude"
+    enabled = ", ".join(selective_filter.get_enabled_list())
+    print(f"Selective masking: {mode} {only_str or exclude_str} → enabled: {enabled}")
+    if logger:
+        logger.info(f"Selective masking: {mode} {only_str or exclude_str} → enabled: {enabled}")
+    return None
 
 
 def _apply_config_settings(args, config, logger) -> None:
@@ -328,7 +330,11 @@ def _apply_config_settings(args, config, logger) -> None:
 
 
 def _prepare_output_paths(args, input_path: Path) -> Tuple[Path, Path, Path, str, int]:
-    """Determine output, mapping, and report file paths."""
+    """Determine output, mapping, and report file paths.
+
+    Mapping і звіт лягають ПОРУЧ із вихідним файлом (раніше — завжди у cwd,
+    тож при `-o dir/x.txt` unmask не знаходив пару).
+    """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     random_suffix = random.randint(100, 999)
     is_json = input_path.suffix.lower() == '.json'
@@ -338,10 +344,60 @@ def _prepare_output_paths(args, input_path: Path) -> Tuple[Path, Path, Path, str
     else:
         output_path = Path(f"output_{timestamp}_{random_suffix}{'.json' if is_json else '.txt'}")
 
-    map_path = Path(f"masking_map_{timestamp}_{random_suffix}.json")
-    report_path = Path(f"masking_report_{timestamp}_{random_suffix}.txt")
+    out_dir = output_path.parent
+    map_path = out_dir / f"masking_map_{timestamp}_{random_suffix}.json"
+    report_path = out_dir / f"masking_report_{timestamp}_{random_suffix}.txt"
 
     return output_path, map_path, report_path, timestamp, random_suffix
+
+
+def _validate_output_paths(args, input_path: Path, output_path: Path) -> Optional[str]:
+    """Захист від втрати даних: -o не може вказувати на вхід і не
+    перезаписує існуючий файл без --force. Повертає текст помилки або None."""
+    try:
+        same = output_path.resolve() == input_path.resolve()
+    except OSError:
+        same = False
+    if same:
+        return f"Output file must differ from input file: {output_path}"
+    if output_path.exists() and not getattr(args, 'force', False):
+        return f"Output file already exists: {output_path} (use --force to overwrite)"
+    return None
+
+
+def _resolve_password(args, config, logger) -> Tuple[Optional[str], Optional[str]]:
+    """Визначає пароль для --encrypt ДО запису будь-яких файлів.
+
+    Пріоритет: --password → --password-env VAR → $DATA_MASKING_PASSWORD →
+    згенерований (показується один раз у stderr).
+    Явно вказана, але порожня/відсутня змінна — помилка, а не мовчазна
+    підміна випадковим паролем.
+
+    Returns:
+        (password, None) або (None, error_message)
+    """
+    password = getattr(args, 'password', None)
+    if password is not None:
+        if not password:
+            return None, "--password must not be empty"
+        return password, None
+
+    password_env = getattr(args, 'password_env', None)
+    if password_env:
+        password = os.environ.get(password_env)
+        if not password:
+            return None, f"Environment variable '{password_env}' is not set or empty"
+        return password, None
+
+    password = os.environ.get(PASSWORD_ENV_DEFAULT)
+    if password:
+        if logger:
+            logger.info(f"Password taken from ${PASSWORD_ENV_DEFAULT}")
+        return password, None
+
+    password = generate_password_from_config(config)
+    _print_generated_password(password)
+    return password, None
 
 
 def _read_input(input_path: Path, is_json: bool, logger):
@@ -363,8 +419,13 @@ def _read_input(input_path: Path, is_json: bool, logger):
 
 def _run_masking(input_data, is_json: bool, masking_dict: Dict,
                  instance_counters: Dict, args, logger,
-                 timestamp: str, random_suffix: int) -> Tuple[Any, int]:
-    """Execute single-pass or multi-pass masking."""
+                 timestamp: str, random_suffix: int) -> Tuple[Any, int, Optional[Any]]:
+    """Execute single-pass or multi-pass masking.
+
+    Returns:
+        (masked_data, total_unique, chain) — chain є лише у multi-pass
+        режимі; його збереження (і шифрування) робить _save_results.
+    """
     re_mask_passes = getattr(args, 're_mask', None)
 
     if re_mask_passes is not None:
@@ -385,15 +446,20 @@ def _run_masking(input_data, is_json: bool, masking_dict: Dict,
             re_mask_passes, timestamp, random_suffix
         )
     else:
-        return _run_single_pass_masking(
+        masked_data, total_unique = _run_single_pass_masking(
             input_data, is_json, masking_dict, instance_counters, logger
         )
+        return masked_data, total_unique, None
 
 
 def _run_multi_pass_masking(input_data, is_json: bool, masking_dict: Dict,
                             args, logger, re_mask_passes: int,
-                            timestamp: str, random_suffix: int) -> Tuple[Any, int]:
-    """Execute multi-pass re-masking with chain tracking."""
+                            timestamp: str, random_suffix: int) -> Tuple[Any, int, Any]:
+    """Execute multi-pass re-masking with chain tracking.
+
+    Chain НЕ зберігається тут — _save_results запише його (plaintext або
+    .enc при --encrypt) поруч із вихідним файлом.
+    """
     if logger:
         logger.info(f"Starting multi-pass re-masking ({re_mask_passes} passes)")
 
@@ -418,12 +484,6 @@ def _run_multi_pass_masking(input_data, is_json: bool, masking_dict: Dict,
             pass_dict["statistics"][category] = len(mappings)
         chain.add_pass(pass_dict)
 
-    chain_path = Path(f"masking_chain_{timestamp}_{random_suffix}.json")
-    chain.save(chain_path)
-    print(f"  Chain mapping ({re_mask_passes} passes): {chain_path}")
-    if logger:
-        logger.info(f"Chain mapping saved to {chain_path}")
-
     masking_dict["instance_tracking"] = {}
     total_unique = 0
     for p in chain.passes:
@@ -433,7 +493,7 @@ def _run_multi_pass_masking(input_data, is_json: bool, masking_dict: Dict,
                 total_unique += count
     masking_dict["statistics"]["total_masked"] = total_unique
 
-    return masked_data, total_unique
+    return masked_data, total_unique, chain
 
 
 def _run_single_pass_masking(input_data, is_json: bool, masking_dict: Dict,
@@ -468,34 +528,24 @@ def _print_generated_password(password: str) -> None:
     print(f"  {password}", file=sys.stderr)
 
 
-def _handle_encryption(args, config, masking_dict: Dict, map_path: Path,
-                       logger) -> None:
-    """Encrypt the mapping file if --encrypt is requested."""
-    if not SECURITY_AVAILABLE or not getattr(args, 'encrypt', False):
-        return
+def _write_mapping(mapping: Dict, json_path: Path, password: Optional[str],
+                   logger) -> Path:
+    """Записує mapping (звичайний або chain) — ОДИН файл.
 
-    enc_path = map_path.with_suffix('.enc')
-    password = getattr(args, 'password', None)
+    Без пароля: plaintext JSON (атомарно, 0600).
+    З паролем: лише .enc — plaintext на диск не потрапляє взагалі
+    (раніше --encrypt писав .json І .enc поруч).
+    """
+    if password:
+        enc_path = json_path.with_suffix('.enc')
+        MappingSecurityManager().encrypt_mapping(mapping, password, enc_path)
+        if logger:
+            logger.info(f"Mapping encrypted to {enc_path}")
+        return enc_path
 
-    if not password:
-        password_env = getattr(args, 'password_env', None)
-        if password_env:
-            password = os.environ.get(password_env)
-            if not password:
-                print(f"Warning: environment variable '{password_env}' is not set or empty")
-                if logger:
-                    logger.warning(f"Environment variable '{password_env}' is not set or empty")
-                password = generate_password_from_config(config)
-                _print_generated_password(password)
-        else:
-            password = generate_password_from_config(config)
-            _print_generated_password(password)
-
-    manager = MappingSecurityManager()
-    manager.encrypt_mapping(masking_dict, password, enc_path)
-    print(f"  Encrypted mapping: {enc_path}")
-    if logger:
-        logger.info(f"Mapping encrypted to {enc_path}")
+    payload = json.dumps(mapping, ensure_ascii=False, indent=2).encode("utf-8")
+    atomic_write_private(json_path, payload)
+    return json_path
 
 
 def _write_report(report_path: Path, masking_dict: Dict, input_path: Path,
@@ -598,8 +648,9 @@ def _print_summary(masking_dict: Dict, total_unique: int,
 
 def _save_results(masked_data, is_json: bool, masking_dict: Dict,
                   output_path: Path, map_path: Path, report_path: Path,
-                  total_unique: int, args, config, logger) -> None:
-    """Save masked output, mapping, optional encryption, and report."""
+                  total_unique: int, args, config, logger,
+                  chain=None, password: Optional[str] = None) -> int:
+    """Save masked output, mapping (or chain), and report. Returns exit code."""
     re_mask_passes = getattr(args, 're_mask', None)
 
     try:
@@ -609,12 +660,14 @@ def _save_results(masked_data, is_json: bool, masking_dict: Dict,
             else:
                 f.write(masked_data)
 
-        # Save mapping (single-pass only; chain saves its own file)
-        if not (REMASK_AVAILABLE and re_mask_passes and re_mask_passes > 1):
-            with open(map_path, 'w', encoding='utf-8') as f:
-                json.dump(masking_dict, f, ensure_ascii=False, indent=2)
-
-            _handle_encryption(args, config, masking_dict, map_path, logger)
+        if chain is not None:
+            chain_json = map_path.with_name(map_path.name.replace("masking_map_", "masking_chain_", 1))
+            written_map = _write_mapping(chain.to_dict(), chain_json, password, logger)
+            print(f"  Chain mapping ({len(chain.passes)} passes): {written_map}")
+        else:
+            written_map = _write_mapping(masking_dict, map_path, password, logger)
+        if password:
+            print(f"  Encrypted mapping: {written_map}")
 
         # Generate report
         if not args.no_report:
@@ -623,37 +676,41 @@ def _save_results(masked_data, is_json: bool, masking_dict: Dict,
                           re_mask_passes, args, config)
 
         _print_summary(
-            masking_dict, total_unique, output_path, map_path,
+            masking_dict, total_unique, output_path, written_map,
             report_path if not args.no_report else None, logger
         )
+        return EXIT_OK
 
-    except (OSError, PermissionError, json.JSONDecodeError, UnicodeEncodeError) as e:
+    except (OSError, PermissionError, json.JSONDecodeError, UnicodeEncodeError, RuntimeError) as e:
         print(f"❌ Помилка збереження файлів: {e}")
         if logger:
             logger.error(f"Error saving files: {e}")
+        return EXIT_ERROR
 
 
-def main():
+def main(argv=None) -> int:
+    """CLI entry point. Повертає код виходу (0/1/2); обгортки роблять
+    sys.exit(main()), тому помилки більше не завершуються exit 0."""
     parser = _build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # ================================================================
     # Handle --init-config (early exit)
     # ================================================================
     if args.init_config:
+        if Path("config.yaml").exists() and not args.force:
+            print("Error: config.yaml already exists (use --force to overwrite)")
+            return EXIT_ERROR
         generate_default_config("config.yaml")
         print("Generated config.yaml")
-        return
+        return EXIT_OK
 
     # ================================================================
     # Handle --list-types (early exit)
     # ================================================================
     if SELECTIVE_AVAILABLE and getattr(args, 'list_types', False):
-        types = sorted(get_available_types())
-        print("Available masking types:")
-        for t in types:
-            print(f"  - {t}")
-        return
+        print(get_types_help())
+        return EXIT_OK
 
     # ================================================================
     # Setup: config, logging, filters, system settings
@@ -664,7 +721,10 @@ def main():
     if args.debug:
         _cfg.DEBUG_MODE = True
 
-    _apply_selective_filters(args, logger)
+    filter_error = _apply_selective_filters(args, logger)
+    if filter_error:
+        print(f"Error: {filter_error}")
+        return EXIT_USAGE
     _apply_config_settings(args, config, logger)
 
     if logger:
@@ -682,10 +742,31 @@ def main():
         print(f"Error: {args.input} not found")
         if logger:
             logger.error(f"Input file not found: {args.input}")
-        return
+        return EXIT_ERROR
 
     output_path, map_path, report_path, timestamp, random_suffix = \
         _prepare_output_paths(args, input_path)
+
+    path_error = _validate_output_paths(args, input_path, output_path)
+    if path_error:
+        print(f"Error: {path_error}")
+        if logger:
+            logger.error(path_error)
+        return EXIT_USAGE
+
+    # Пароль визначаємо ДО будь-якого запису: помилка тут не лишає
+    # напівготових файлів на диску
+    password = None
+    if SECURITY_AVAILABLE and getattr(args, 'encrypt', False):
+        password, pw_error = _resolve_password(args, config, logger)
+        if pw_error:
+            print(f"Error: {pw_error}")
+            if logger:
+                logger.error(pw_error)
+            return EXIT_USAGE
+    elif getattr(args, 'encrypt', False):
+        print("Error: --encrypt requires the 'cryptography' package (pip install 'data-masking[security]')")
+        return EXIT_ERROR
 
     is_json = input_path.suffix.lower() == '.json'
 
@@ -716,12 +797,12 @@ def main():
 
     input_data = _read_input(input_path, is_json, logger)
     if input_data is None:
-        return
+        return EXIT_ERROR
 
     # ================================================================
     # Run masking pipeline
     # ================================================================
-    masked_data, total_unique = _run_masking(
+    masked_data, total_unique, chain = _run_masking(
         input_data, is_json, masking_dict, instance_counters,
         args, logger, timestamp, random_suffix
     )
@@ -729,8 +810,9 @@ def main():
     # ================================================================
     # Save results
     # ================================================================
-    _save_results(
+    return _save_results(
         masked_data, is_json, masking_dict,
         output_path, map_path, report_path,
-        total_unique, args, config, logger
+        total_unique, args, config, logger,
+        chain=chain, password=password,
     )

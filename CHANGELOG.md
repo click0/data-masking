@@ -4,6 +4,75 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.1] - 2026-09
+
+Security/CLI hardening after the 3.0.0 audit. All items below were
+confirmed reproducible on 3.0.0 and are now covered by in-process CLI tests.
+
+### Fixed — CRITICAL
+- **`--encrypt` left the plaintext mapping on disk.** `masking_map_*.json`
+  with every original value was written first and never removed; `.enc`
+  was written next to it. Now only the `.enc` file is written — plaintext
+  never touches the disk. Mapping files (json and enc) are written
+  atomically with mode 0600.
+- **Encrypted mappings could not be restored via CLI at all**:
+  `unmask_data.py … --map x.enc` crashed with `TypeError` on every run
+  (`MappingSecurityManager(password)` / missing password argument in
+  `unmasking/io.py`, broken since 2.5.0).
+- **`--only` silently masked nothing.** The CLI had its own type table
+  (`ranks`, `names`, …) that disagreed with `--list-types`/`selective.py`
+  (`rank`, `name`, …) and with the README comma form; an unknown name
+  only warned while every `MASK_*` flag was already cleared → output
+  byte-identical to input, exit 0. `--only/--exclude` now go through
+  `extras.selective` (canonical names, plurals, Ukrainian aliases, groups,
+  comma or space separated); an unknown type is a usage error (exit 2)
+  and nothing is written. `--list-types` prints groups and aliases.
+- **`--re-mask N --encrypt` ignored `--encrypt`** and wrote the chain in
+  plaintext; the summary also printed a `masking_map_*.json` path that
+  was never written. The chain is now written as `masking_chain_*.enc`
+  when encrypting and the summary shows the real file.
+
+### Fixed — data safety
+- `-o` refuses to point at the input file and refuses to overwrite an
+  existing file without `--force` (previously `-i in.txt -o in.txt`
+  destroyed the original silently). `--init-config` likewise no longer
+  clobbers an existing `config.yaml` without `--force`.
+- Mapping and report are written next to the `-o` output (previously
+  always in cwd, so unmask auto-pairing could not find them).
+- Password handling: `--password-env VAR` with an unset/empty variable is
+  a fatal error before any file is written (previously a random password
+  was silently generated); empty `--password` rejected; both CLIs read
+  `DATA_MASKING_PASSWORD` by default (legacy `MASKING_PASSWORD` /
+  `UNMASK_PASSWORD` still accepted on the unmask side).
+- Exit codes: `main()` returns 0/1/2 and all entry points
+  (`data_masking.py`, `unmask_data.py`, `python -m datamasking`, console
+  scripts) propagate it — errors no longer exit 0. Unmask catches
+  `ValueError`/`RuntimeError` (bad schema, wrong password, missing
+  cryptography) as clean messages instead of tracebacks; `-c FILE`
+  without `--password` no longer crashes on the Config dataclass.
+
+### Added — tests
+- `tests/test_cli_inprocess.py` (27 tests): mask→unmask through
+  `main(argv)` in `tmp_path` for txt/json, `--encrypt` (+ wrong password,
+  env var on both sides, generated password to stderr), `--only`
+  (canonical/plural/Ukrainian/comma, unknown type), `--exclude`,
+  `--re-mask` (plain and encrypted chain), `-o` safety, exit codes.
+- `tests/fixtures/legacy_mappings/{v2.3.0,v2.5.1,v2.6.5}/` — REAL
+  output/mapping/recovered files produced by the code at those git tags,
+  with `tests/test_legacy_mappings.py` asserting current unmask restores
+  the original input (case-insensitive) and does not regress vs the old
+  version's own restore. Note: v2.3.0's own unmask left 24 lines
+  unrestored; current code restores them.
+
+### Known (documented as xfail / next)
+- `БР 123/…` restores as `бр 123/…` — case of the BR prefix is lost on
+  restore (long-standing, all versions).
+- Multi-pass (`--re-mask`) unmask can restore a wrong rank when rank
+  masks of different passes overlap as substrings (e.g. pass 2 maps both
+  `лейтенант → головний майстер-сержант` and
+  `головний майстер-сержант → майстер-сержант`); reproduced on
+  `input_example.txt`, single-line cases are fine.
+
 ## [3.0.0] - 2026-07
 
 **Major release: пакетна структура.** Повна зворотна сумісність:

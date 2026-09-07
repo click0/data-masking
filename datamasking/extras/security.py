@@ -109,14 +109,12 @@ class MappingSecurityManager:
         aesgcm = AESGCM(key)
         ciphertext = aesgcm.encrypt(nonce, json_bytes, None)
 
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, "wb") as fp:
-            fp.write(salt)
-            fp.write(nonce)
-            fp.write(ciphertext)
+        # Атомарно і з правами 0600 — це ключ до оригіналів
+        from datamasking._fsutil import atomic_write_private
+        resolved = atomic_write_private(output_path, salt + nonce + ciphertext)
 
-        logger.info("Encrypted mapping written to %s", output_path)
-        return output_path.resolve()
+        logger.info("Encrypted mapping written to %s", resolved)
+        return resolved
 
     def decrypt_mapping(
         self,
