@@ -404,14 +404,11 @@ class TestCliArguments:
         except Exception:
             pass
 
-        # Fallback: перевіряємо через імпорт
-        from data_masking import (
-            SELECTIVE_AVAILABLE, REMASK_AVAILABLE,
-            SECURITY_AVAILABLE, CONFIG_AVAILABLE
-        )
-
-        # Якщо модулі доступні, CLI аргументи теж будуть
-        assert True, "CLI arguments available through module import"
+        # In-process: парсер має описувати базові аргументи
+        from datamasking.masking.cli import _build_parser
+        help_text = _build_parser().format_help()
+        assert "--input" in help_text and "--output" in help_text
+        assert "--encrypt" in help_text and "--only" in help_text
 
     def test_version_in_help(self):
         """Тест: версія доступна."""
@@ -440,8 +437,8 @@ class TestCliArguments:
         except Exception:
             pass
 
-        # Fallback passed - version is correct
-        assert True
+        from datamasking.masking.cli import _build_parser
+        assert pkg_version in _build_parser().description
 class TestCliBasicCommands:
     """Тести базових CLI команд через subprocess."""
 
@@ -467,27 +464,17 @@ class TestCliBasicCommands:
                 cwd=str(PROJECT_ROOT.resolve()),
                 input=input_text
             )
-            if expect_success and result.returncode != 0:
-                # Пропускаємо якщо є проблеми з середовищем
-                stdout = result.stdout or ""
-                stderr = result.stderr or ""
-                if not stdout.strip() and not stderr.strip():
-                    pytest.skip("CLI execution failed silently")
+            if expect_success:
+                assert result.returncode == 0, (result.stdout or "") + (result.stderr or "")
             return result
         return _run
 
     def test_version_flag(self, run_cli):
         """Тест: -V/--version показує версію."""
         from datamasking.masking.constants import __version__ as pkg_version
-        result = run_cli("-V", expect_success=False)
-        # --version може повернути 0 або інший код
+        result = run_cli("-V")
         output = (result.stdout or "") + (result.stderr or "")
-        if pkg_version in output:
-            assert True
-        else:
-            # Fallback
-            from data_masking import __version__
-            assert __version__ == pkg_version
+        assert pkg_version in output
 
     def test_list_types(self, run_cli):
         """Тест: --list-types показує доступні типи."""
@@ -495,37 +482,26 @@ class TestCliBasicCommands:
         if not SELECTIVE_AVAILABLE:
             pytest.skip("Selective module not available")
 
-        result = run_cli("--list-types", expect_success=False)
-        output = (result.stdout or "") + (result.stderr or "")
+        result = run_cli("--list-types")
+        output = (result.stdout or "").lower()
+        for t in ("ipn", "name", "rank", "date", "personal", "ranks"):
+            assert t in output, f"{t} missing from --list-types"
 
-        # Якщо працює, перевіряємо вивід
-        if result.returncode == 0 and output.strip():
-            # Має містити типи даних
-            assert any(t in output.lower() for t in ["ipn", "name", "rank", "date"])
-        else:
-            # Fallback через імпорт
-            from datamasking.extras.selective import get_available_types
-            types = get_available_types()
-            assert "ipn" in types or "names" in types
-
-    def test_init_config_flag(self, run_cli, temp_dir):
-        """Тест: --init-config створює конфігураційний файл."""
+    def test_init_config_flag(self, temp_dir, monkeypatch):
+        """Тест: --init-config створює config.yaml у поточній директорії (in-process)."""
         from data_masking import CONFIG_AVAILABLE
         if not CONFIG_AVAILABLE:
             pytest.skip("Config module not available")
+        from datamasking.masking import cli as mask_cli
 
-        # Перевіряємо через прямий імпорт (надійніше)
-        from data_masking import generate_default_config
-
+        monkeypatch.chdir(temp_dir)
+        assert mask_cli.main(["--init-config"]) == 0
         config_file = temp_dir / "config.yaml"
-        generate_default_config(str(config_file))
-
-        # Файл має існувати
         assert config_file.exists(), f"Config file not created at {config_file}"
-
-        # Перевіряємо вміст
         content = config_file.read_text(encoding="utf-8")
-        assert "version" in content or "masking" in content
+        assert "masking_rules" in content and "security" in content
+        # Повторно без --force — не перезаписує
+        assert mask_cli.main(["--init-config"]) == 1
 class TestCliMasking:
     """Тести CLI команд маскування."""
 
@@ -758,34 +734,29 @@ class TestCliDateMasking:
 class TestCliOutputFormats:
     """Тести форматів виводу CLI."""
 
-    def test_no_report_flag(self, temp_dir):
-        """Тест: --no-report не створює звіт."""
-        from data_masking import mask_text_context_aware
+    def test_no_report_flag(self, temp_dir, monkeypatch):
+        """Тест: --no-report не створює звіт, без нього — створює (in-process CLI)."""
+        from datamasking.masking import cli as mask_cli
+        monkeypatch.chdir(temp_dir)
+        (temp_dir / "in.txt").write_text("капітан Петренко Іван Сергійович\n", encoding="utf-8")
 
-        # Симулюємо --no-report
-        text = "Тестовий текст"
-        masking_dict = {
-            "version": "2.6.0",
-            "mappings": {"surname": {}, "name": {}},
-            "statistics": {},
-            "instance_tracking": {}
-        }
-        instance_counters = {}
+        assert mask_cli.main(["-i", "in.txt", "-o", "a.txt", "--no-report"]) == 0
+        assert not list(temp_dir.glob("masking_report_*.txt"))
+        assert mask_cli.main(["-i", "in.txt", "-o", "b.txt"]) == 0
+        assert len(list(temp_dir.glob("masking_report_*.txt"))) == 1
 
-        masked = mask_text_context_aware(text, masking_dict, instance_counters)
-
-        # Перевіряємо що звіт не створюється (логіка в main)
-        report_files = list(temp_dir.glob("masking_report_*.txt"))
-        # Оскільки ми не викликаємо main(), звітів не буде
-        assert len(report_files) == 0
-
-    def test_debug_mode(self):
-        """Тест: --debug активує режим налагодження."""
-        from data_masking import DEBUG_MODE
-
-        # DEBUG_MODE має бути False за замовчуванням
-        # Це змінюється через CLI аргументи
-        assert DEBUG_MODE in [True, False]
+    def test_debug_mode(self, temp_dir, monkeypatch):
+        """Тест: --debug вмикає DEBUG_MODE у рушії."""
+        from datamasking.masking import cli as mask_cli
+        from datamasking.masking import constants as cfg
+        monkeypatch.chdir(temp_dir)
+        (temp_dir / "in.txt").write_text("капітан Петренко Іван Сергійович\n", encoding="utf-8")
+        assert cfg.DEBUG_MODE is False
+        try:
+            assert mask_cli.main(["-i", "in.txt", "-o", "a.txt", "--no-report", "--debug"]) == 0
+            assert cfg.DEBUG_MODE is True
+        finally:
+            cfg.DEBUG_MODE = False
 
     def test_json_output(self, temp_dir):
         """Тест: JSON файли обробляються коректно."""
@@ -811,8 +782,10 @@ class TestCliOutputFormats:
 
         masked = mask_json_recursive(data, masking_dict, instance_counters)
 
-        assert masked is not None
         assert isinstance(masked, dict)
+        assert masked["ipn"] != "1234567890"
+        assert "Петренко" not in masked["name"]
+        assert masked["nested"]["rank"] == "капітан"  # звання без ПІБ не маскується
 class TestCliErrorHandling:
     """Тести обробки помилок CLI."""
 
@@ -834,37 +807,33 @@ class TestCliErrorHandling:
         stdout = (result.stdout or "").lower()
         stderr = (result.stderr or "").lower()
 
-        # Має бути помилка або повідомлення
-        if result.returncode != 0 or "не знайдено" in stdout or "error" in stderr:
-            assert True
-        else:
-            # Може бути що скрипт не запустився через інші причини
-            pytest.skip("CLI execution environment issue")
+        # Відсутній вхід — ненульовий код і повідомлення
+        assert result.returncode == 1, stdout + stderr
+        assert "not found" in stdout or "не знайдено" in stdout
 
-    def test_invalid_remask_value(self):
-        """Тест: невалідне значення --re-mask."""
+    def test_invalid_remask_value(self, temp_dir, monkeypatch):
+        """Тест: --re-mask 1 → одинарний прохід; --re-mask 99 → обмежено 10."""
         from data_masking import REMASK_AVAILABLE
+        if not REMASK_AVAILABLE:
+            pytest.skip("ReMask module not available")
+        from datamasking.masking import cli as mask_cli
+        monkeypatch.chdir(temp_dir)
+        (temp_dir / "in.txt").write_text("капітан Петренко Іван Сергійович\n", encoding="utf-8")
+        assert mask_cli.main(["-i", "in.txt", "-o", "a.txt", "--no-report", "--re-mask", "1"]) == 0
+        assert list(temp_dir.glob("masking_map_*.json")) and not list(temp_dir.glob("masking_chain_*"))
+        assert mask_cli.main(["-i", "in.txt", "-o", "b.txt", "--no-report", "--re-mask", "99"]) == 0
+        import json
+        chain = json.loads(next(temp_dir.glob("masking_chain_*.json")).read_text(encoding="utf-8"))
+        assert chain["total_passes"] == 10
 
-        # Просто перевіряємо що модуль доступний
-        assert REMASK_AVAILABLE in [True, False]
-
-    def test_encrypt_without_password(self):
-        """Тест: --encrypt без пароля."""
+    def test_encrypt_empty_password_rejected(self):
+        """Тест: порожній пароль не приймається шифруванням."""
         from data_masking import SECURITY_AVAILABLE
-
-        if SECURITY_AVAILABLE:
-            # При шифруванні без пароля має бути запит або помилка
-            # або автоматична генерація пароля
-            from datamasking.extras.security import MappingSecurityManager
-
-            # Без пароля не можна створити manager
-            try:
-                manager = MappingSecurityManager("")
-                # Якщо створився - OK (може використовувати дефолт)
-                assert True
-            except (ValueError, Exception):
-                # Очікувана помилка
-                assert True
+        if not SECURITY_AVAILABLE:
+            pytest.skip("Security module not available")
+        from datamasking.extras.security import MappingSecurityManager
+        with pytest.raises(ValueError):
+            MappingSecurityManager().encrypt_mapping({"version": "3.0"}, "", "/nonexistent/x.enc")
 # ============================================================================
 # ТЕСТИ CHAIN ROUNDTRIP (multi-pass mask → unmask restoration)
 # ============================================================================

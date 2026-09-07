@@ -84,7 +84,7 @@ class TestInitialsMasking:
     def test_initials_format_preserved(self):
         # Без пробілу між ініціалами -> без пробілу в масці
         masked_ns, _ = mask("Петренко К.П.")
-        assert ". " not in masked_ns.split(" ", 1)[1] or True  # формат К.П.
+        assert ". " not in masked_ns.split(" ", 1)[1]  # формат К.П. без пробілу
         # З пробілом -> з пробілом
         masked_ws, d = mask("Петренко К. П.")
         masked_ini = list(d["mappings"]["initials"].values())[0]["masked_as"]

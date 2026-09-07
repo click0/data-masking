@@ -161,6 +161,10 @@ class Config:
                     for pk, pv in v.items():
                         if hasattr(cfg.security.password_generation, pk):
                             setattr(cfg.security.password_generation, pk, pv)
+                elif k == "password_generation" and isinstance(v, bool):
+                    # Шаблон 2.x писав `password_generation: true` — bool
+                    # замість секції; не підміняємо dataclass булевим
+                    cfg.security.password_generation.enabled = v
                 elif hasattr(cfg.security, k):
                     setattr(cfg.security, k, v)
 
@@ -211,7 +215,9 @@ class ConfigLoader:
         "DATA_MASKING_PRESERVE_CASE": ("system", "preserve_case", bool),
         "DATA_MASKING_DEBUG": ("system", "debug_mode", bool),
         "DATA_MASKING_ENCRYPT_OUTPUT": ("security", "encrypt_output", bool),
-        "DATA_MASKING_PASSWORD": ("security", "password_env_var", str),
+        # DATA_MASKING_PASSWORD навмисно ВІДСУТНІЙ: це сам пароль, його читає CLI
+        # (до 3.0.4 значення пароля записувалось у security.password_env_var)
+        "DATA_MASKING_PASSWORD_ENV_VAR": ("security", "password_env_var", str),
         "DATA_MASKING_PASSWORD_LENGTH": ("security", "password_length", int),
         "DATA_MASKING_LOG_LEVEL": ("logging", "level", str),
         "DATA_MASKING_LOG_FILE": ("logging", "file", str),
@@ -228,6 +234,7 @@ class ConfigLoader:
         self._config = Config()
         self._config_path = config_path
         self._cli_args = cli_args or {}
+        self.loaded_from: Optional[str] = None  # шлях YAML, якщо реально прочитано
 
     @property
     def config(self) -> Config:
@@ -254,15 +261,20 @@ class ConfigLoader:
         try:
             with open(filepath, "r", encoding="utf-8") as fh:
                 data = yaml.safe_load(fh)  # type: ignore[union-attr]
-            if not isinstance(data, dict):
-                logger.warning("YAML config is not a mapping — ignored")
-                return None
-            logger.info("Loaded YAML config from %s", filepath)
-            return data
-        except (FileNotFoundError, PermissionError, OSError, ValueError,
-                yaml.YAMLError) as exc:  # type: ignore[union-attr]
-            logger.error("Failed to load YAML config: %s", exc)
-            return None
+        except (FileNotFoundError, PermissionError, OSError) as exc:
+            logger.error("Failed to read YAML config: %s", exc)
+            raise ValueError(f"Cannot read config {filepath}: {exc}") from exc
+        except yaml.YAMLError as exc:  # type: ignore[union-attr]
+            # Битий YAML — помилка, а не тихі дефолти з написом «Loaded config»
+            logger.error("Malformed YAML config %s: %s", filepath, exc)
+            raise ValueError(f"Malformed YAML in {filepath}: {exc}") from exc
+        if data is None:
+            return None  # порожній файл — дефолти
+        if not isinstance(data, dict):
+            raise ValueError(f"YAML config {filepath} must be a mapping, got {type(data).__name__}")
+        logger.info("Loaded YAML config from %s", filepath)
+        self.loaded_from = str(filepath)
+        return data
 
     # ----- Python config module loading -----
 
@@ -273,11 +285,20 @@ class ConfigLoader:
         instance named ``cfg`` or ``config``, or to provide a dictionary
         named ``CONFIG``.
         """
+        # Лише ./config.py з поточної директорії — НЕ довільний модуль «config»
+        # із sys.path (site-packages, чужі проєкти); при `python -m datamasking`
+        # cwd і так у sys.path, тож import_module тягнув будь-що з такою назвою
+        cfg_file = Path("config.py")
+        if not cfg_file.is_file():
+            logger.debug("No ./config.py found")
+            return None
         try:
-            import importlib
-            mod = importlib.import_module("config")
-        except ImportError:
-            logger.debug("No config Python module found")
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("_datamasking_local_config", cfg_file)
+            mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        except Exception as exc:  # noqa: BLE001 — будь-яка помилка чужого коду
+            logger.warning("Failed to load ./config.py: %s", exc)
             return None
 
         # Try known attribute names
@@ -463,7 +484,9 @@ password_generation:
 # Security settings
 # --------------------------------------------------------------------------
 security:
-  # Encrypt the mapping file (AES-128-CBC via Fernet)
+  # Encrypt the mapping file (AES-256-GCM, PBKDF2-HMAC-SHA256) — same as --encrypt.
+  # The password is taken from --password / --password-env / $DATA_MASKING_PASSWORD
+  # or generated (printed once to stderr).
   encrypt_output: false
 
   # Environment variable for password (alternative to --password)
