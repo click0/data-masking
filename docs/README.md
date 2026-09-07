@@ -78,13 +78,13 @@ Running from source without installation also works — see below.
 
 ### Masking
 ```bash
-python data_masking.py input.txt
+python data_masking.py -i input.txt
 ```
 
-**Result:**
-- `output/masked_input_YYYYMMDD_HHMMSS.txt` — masked text
-- `output/mapping_input_YYYYMMDD_HHMMSS.json` — mapping for unmask
-- `output/report_input_YYYYMMDD_HHMMSS.txt` — report
+**Result** (in the current directory, or next to `-o` when given):
+- `output_YYYYMMDD_HHMMSS_NNN.txt` — masked text
+- `masking_map_YYYYMMDD_HHMMSS_NNN.json` — mapping for unmask (`.enc` with `--encrypt`; mode 0600)
+- `masking_report_YYYYMMDD_HHMMSS_NNN.txt` — report (skip with `--no-report`)
 
 ### Unmasking
 
@@ -109,7 +109,7 @@ python unmask_data.py -c config.yaml
 ```
 
 **Result:**
-- `result/unmasked_file_YYYYMMDD_HHMMSS.txt` — recovered text
+- `input_recovery_YYYYMMDD_HHMMSS.txt` next to the masked file (or the `-o` path) — recovered text
 
 ### Diagnostics
 ```bash
@@ -238,7 +238,7 @@ Priority: CLI > ENV > config.yaml > Default
 
 ```bash
 # Використання YAML конфігурації
-python data_masking.py input.txt -c config.yaml
+python data_masking.py -i input.txt -c config.yaml
 
 # Генерація прикладу конфігурації — див. config_example.py
 ```
@@ -538,7 +538,7 @@ git submodule update --remote data-masking
 
 # Use in project
 cd data-masking
-python data_masking.py ../documents/input.txt
+python data_masking.py -i ../documents/input.txt
 ```
 
 ### Standalone
@@ -547,7 +547,7 @@ python data_masking.py ../documents/input.txt
 # Clone separately
 git clone https://github.com/click0/data-masking.git
 cd data-masking
-python data_masking.py input.txt
+python data_masking.py -i input.txt
 ```
 
 ---

@@ -29,6 +29,21 @@ SAMPLE = (
 )
 _FLAGS = [n for n in dir(_cfg) if n.startswith("MASK_")]
 
+# Ядро встановлюється без cryptography/pyyaml — відповідні тести мають
+# SKIP-атись, а не падати (CI має job «core install»)
+try:
+    from datamasking.extras.security import is_encryption_available
+    _HAS_CRYPTO = is_encryption_available()
+except ImportError:
+    _HAS_CRYPTO = False
+try:
+    import yaml  # noqa: F401
+    _HAS_YAML = True
+except ImportError:
+    _HAS_YAML = False
+needs_crypto = pytest.mark.skipif(not _HAS_CRYPTO, reason="cryptography not installed (core install)")
+needs_yaml = pytest.mark.skipif(not _HAS_YAML, reason="pyyaml not installed (core install)")
+
 
 @pytest.fixture(autouse=True)
 def _isolate(monkeypatch, tmp_path):
@@ -104,6 +119,7 @@ class TestRoundtrip:
 # Шифрування
 # ============================================================================
 
+@needs_crypto
 class TestEncrypt:
     def test_encrypt_writes_only_enc_and_roundtrips(self, tmp_path):
         inp = write_input(tmp_path)
@@ -227,6 +243,7 @@ class TestReMask:
         assert unmask("m.txt", "--map", str(chain), "-o", "rec.txt") == 0
         assert (tmp_path / "rec.txt").read_text(encoding="utf-8") == SAMPLE
 
+    @needs_crypto
     def test_chain_encrypted(self, tmp_path):
         inp = write_input(tmp_path)
         assert mask("-i", str(inp), "-o", "m.txt", "--re-mask", "2",
@@ -291,6 +308,7 @@ class TestConfigAndEnv:
         finally:
             _cfg.DEBUG_MODE = False
 
+    @needs_yaml
     def test_malformed_yaml_is_fatal(self, tmp_path):
         inp = write_input(tmp_path)
         (tmp_path / "config.yaml").write_text("system: [unclosed\n  bad: : :\n", encoding="utf-8")
@@ -301,6 +319,8 @@ class TestConfigAndEnv:
         inp = write_input(tmp_path)
         assert mask("-i", str(inp), "-o", "m.txt", "--config", "nope.yaml") == 1
 
+    @needs_yaml
+    @needs_crypto
     def test_encrypt_output_from_yaml(self, tmp_path, monkeypatch):
         # security.encrypt_output: true == --encrypt (раніше мертвий ключ)
         inp = write_input(tmp_path)
@@ -318,6 +338,7 @@ class TestConfigAndEnv:
         cfg = ConfigLoader().load()
         assert cfg.security.password_env_var == "DATA_MASKING_PASSWORD"  # назва змінної, не пароль
 
+    @needs_yaml
     def test_max_input_size_from_yaml(self, tmp_path):
         inp = write_input(tmp_path)
         (tmp_path / "config.yaml").write_text("validation:\n  max_input_size_mb: 1\n", encoding="utf-8")
@@ -328,6 +349,7 @@ class TestConfigAndEnv:
         finally:
             _cfg.MAX_INPUT_FILE_SIZE = saved
 
+    @needs_yaml
     def test_generated_template_matches_loader_schema(self, tmp_path):
         from datamasking.extras.config import ConfigLoader, PasswordGenerationConfig
         assert mask_cli.main(["--init-config"]) == 0

@@ -16,10 +16,19 @@ on:
 permissions:
   contents: write
 
+env:
+  PYTHONUTF8: '1'
+
 jobs:
-  release:
-    name: Build & Release
+  # ---------------------------------------------------------------------
+  # 1. Python-артефакти: тести, wheel+sdist, source-архіви
+  # ---------------------------------------------------------------------
+  build-python:
+    name: Build Python artifacts
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,71 +43,49 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
-          pip install build
+          pip install build twine
 
       - name: Run tests (release gate)
         run: pytest --timeout=300
 
-      - name: Extract version
+      - name: Extract and verify version
+        id: version
         run: |
+          PKG_VER=$(python -c "exec(open('datamasking/_version.py').read()); print(__version__)")
+          WRAPPER_VER=$(python -c "import re; print(re.search(r'__version__\s*=\s*\"(.+?)\"', open('data_masking.py').read()).group(1))")
+          test "$PKG_VER" = "$WRAPPER_VER" || { echo "datamasking._version $PKG_VER != data_masking.py $WRAPPER_VER"; exit 1; }
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            VERSION=${GITHUB_REF_NAME#v}
-          else
-            VERSION=$(python -c "exec(open('datamasking/_version.py').read()); print(__version__)")
+            TAG_VER=${GITHUB_REF_NAME#v}
+            test "$TAG_VER" = "$PKG_VER" || { echo "Tag v$TAG_VER != source v$PKG_VER"; exit 1; }
           fi
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-
-      - name: Verify version consistency
-        run: |
-          python -c "
-          import re
-          tag_ver = '${{ env.VERSION }}'
-          exec(open('datamasking/_version.py').read())
-          pkg_ver = __version__
-          with open('data_masking.py') as f:
-              content = f.read()
-          match = re.search(r'__version__\s*=\s*\"(.+?)\"', content)
-          wrapper_ver = match.group(1)
-          assert pkg_ver == wrapper_ver, f'datamasking._version {pkg_ver} != data_masking.py {wrapper_ver}'
-          if '${{ github.ref_type }}' == 'tag':
-              assert tag_ver == pkg_ver, f'Tag v{tag_ver} != source v{pkg_ver}'
-          print(f'Version verified: v{pkg_ver}')
-          "
+          case "$PKG_VER" in
+            *rc*|*beta*|*alpha*|*dev*) PRE=true ;;
+            *) PRE=false ;;
+          esac
+          echo "version=$PKG_VER" >> $GITHUB_OUTPUT
+          echo "prerelease=$PRE" >> $GITHUB_OUTPUT
+          echo "Version verified: v$PKG_VER (prerelease=$PRE)"
 
       - name: Build wheel and sdist
-        run: python -m build
+        run: |
+          python -m build
+          twine check dist/*
 
       - name: Build source archives
         run: |
-          mkdir -p dist
-          ARCHIVE="data-masking-${{ env.VERSION }}"
-
+          ARCHIVE="data-masking-${{ steps.version.outputs.version }}"
+          FILES="data_masking.py unmask_data.py diagnose_mapping.py rank_data.py \
+            __main__.py pyproject.toml MANIFEST.in pyinstaller_utf8_hook.py \
+            config_example.py config_example.yaml \
+            datamasking masking unmasking modules docs tests \
+            requirements.txt requirements-dev.txt \
+            LICENSE CHANGELOG.md pytest.ini mypy.ini .gitignore \
+            input_example.txt input_example.2.txt"
           tar czf "dist/${ARCHIVE}.tar.gz" \
-            --exclude='__pycache__' \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='.pytest_cache' \
-            --exclude='dist' \
-            --exclude='*.pyc' \
-            --transform="s,^,${ARCHIVE}/," \
-            data_masking.py unmask_data.py diagnose_mapping.py rank_data.py \
-            __main__.py pyproject.toml \
-            config_example.py config_example.yaml \
-            datamasking/ masking/ unmasking/ modules/ docs/ tests/ \
-            requirements.txt requirements-dev.txt \
-            LICENSE pytest.ini .gitignore \
-            input_example.txt input_example.2.txt
-
-          cd "$(git rev-parse --show-toplevel)"
-          zip -r "dist/${ARCHIVE}.zip" \
-            data_masking.py unmask_data.py diagnose_mapping.py rank_data.py \
-            __main__.py pyproject.toml \
-            config_example.py config_example.yaml \
-            datamasking/ masking/ unmasking/ modules/ docs/ tests/ \
-            requirements.txt requirements-dev.txt \
-            LICENSE pytest.ini .gitignore \
-            input_example.txt input_example.2.txt \
-            -x '*__pycache__*' '*.pyc'
+            --exclude='__pycache__' --exclude='*.pyc' --exclude='.pytest_cache' \
+            --transform="s,^,${ARCHIVE}/," $FILES
+          zip -qr "dist/${ARCHIVE}.zip" $FILES -x '*__pycache__*' '*.pyc'
+          ls -la dist/
 
       - name: Smoke test wheel install
         run: |
@@ -111,96 +98,24 @@ jobs:
           /tmp/wheeltest/bin/data-unmask --version
           /tmp/wheeltest/bin/data-masking-diagnose --help > /dev/null
           /tmp/wheeltest/bin/python -m datamasking --version
-          # Shim-и НЕ повинні потрапляти у site-packages
           /tmp/wheeltest/bin/python -c "
-          import importlib.util, sys
-          for name in ('modules', 'rank_data'):
+          import importlib.util
+          for name in ('modules', 'rank_data', 'masking', 'unmasking'):
               assert importlib.util.find_spec(name) is None, f'{name} leaked into the wheel!'
           print('Wheel contents OK: only datamasking is installed')
           "
 
-      - name: Upload build artifacts (dry-run)
-        if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-python
           path: dist/
 
-      - name: Generate changelog
-        if: github.ref_type == 'tag'
-        run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          if [ -n "$PREV_TAG" ]; then
-            CHANGELOG=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
-          else
-            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges -20)
-          fi
-          {
-            echo "CHANGELOG<<EOF"
-            echo "$CHANGELOG"
-            echo "EOF"
-          } >> $GITHUB_ENV
-
-      - name: Determine release flags
-        if: github.ref_type == 'tag'
-        id: release_flags
-        run: |
-          FLAGS=""
-          case "${{ env.VERSION }}" in
-            *rc*|*beta*|*alpha*|*dev*) FLAGS="--prerelease" ;;
-          esac
-          echo "flags=$FLAGS" >> $GITHUB_OUTPUT
-
-      - name: Create or update GitHub Release
-        if: github.ref_type == 'tag'
-        run: |
-          cat > /tmp/release-body.md <<BODY_EOF
-          ## Data Masking System v${{ env.VERSION }}
-
-          ### Changes
-          ${{ env.CHANGELOG }}
-
-          ---
-          See [Installation guide](https://github.com/click0/data-masking/blob/main/docs/INSTALL.md) for setup instructions.
-          BODY_EOF
-
-          # Remove leading whitespace from heredoc
-          sed -i 's/^          //' /tmp/release-body.md
-
-          # Create release if it doesn't exist, or upload to existing one
-          if gh release view "${{ github.ref_name }}" &>/dev/null; then
-            echo "Release exists, uploading assets..."
-            gh release upload "${{ github.ref_name }}" \
-              dist/data-masking-${{ env.VERSION }}.tar.gz \
-              dist/data-masking-${{ env.VERSION }}.zip \
-              dist/*.whl \
-              dist/data_masking-*.tar.gz \
-              --clobber
-            gh release edit "${{ github.ref_name }}" \
-              --title "Data Masking System v${{ env.VERSION }}" \
-              --notes-file /tmp/release-body.md \
-              ${{ steps.release_flags.outputs.flags }}
-          else
-            echo "Creating new release..."
-            gh release create "${{ github.ref_name }}" \
-              --target "${{ github.sha }}" \
-              --title "Data Masking System v${{ env.VERSION }}" \
-              --notes-file /tmp/release-body.md \
-              ${{ steps.release_flags.outputs.flags }} \
-              dist/data-masking-${{ env.VERSION }}.tar.gz \
-              dist/data-masking-${{ env.VERSION }}.zip \
-              dist/*.whl \
-              dist/data_masking-*.tar.gz
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+  # ---------------------------------------------------------------------
+  # 2. Windows exe — паралельно з python-артефактами
+  # ---------------------------------------------------------------------
   build-windows:
-    name: Windows Binaries
-    needs: release
+    name: Build Windows binaries
     runs-on: windows-latest
-    env:
-      PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@v4
 
@@ -217,11 +132,7 @@ jobs:
       - name: Extract version
         shell: bash
         run: |
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            VERSION=${GITHUB_REF_NAME#v}
-          else
-            VERSION=$(python -c "exec(open('datamasking/_version.py').read()); print(__version__)")
-          fi
+          VERSION=$(python -c "exec(open('datamasking/_version.py').read()); print(__version__)")
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Build data_masking.exe
@@ -234,12 +145,14 @@ jobs:
             --collect-all=cryptography \
             --hidden-import=datamasking \
             --hidden-import=datamasking._version \
+            --hidden-import=datamasking._fsutil \
             --hidden-import=datamasking.rank_data \
             --hidden-import=datamasking.masking \
             --hidden-import=datamasking.masking.constants \
             --hidden-import=datamasking.masking.helpers \
             --hidden-import=datamasking.masking.language \
             --hidden-import=datamasking.masking.context \
+            --hidden-import=datamasking.masking.surname \
             --hidden-import=datamasking.masking.mask_personal \
             --hidden-import=datamasking.masking.mask_military \
             --hidden-import=datamasking.masking.engine \
@@ -265,6 +178,7 @@ jobs:
             --collect-all=cryptography \
             --hidden-import=datamasking \
             --hidden-import=datamasking._version \
+            --hidden-import=datamasking._fsutil \
             --hidden-import=datamasking.rank_data \
             --hidden-import=datamasking.unmasking \
             --hidden-import=datamasking.unmasking.helpers \
@@ -292,13 +206,6 @@ jobs:
             --name diagnose_mapping \
             diagnose_mapping.py
 
-      - name: Verify executables
-        shell: bash
-        run: |
-          ls -la dist/data_masking.exe
-          ls -la dist/unmask_data.exe
-          ls -la dist/diagnose_mapping.exe
-
       - name: Smoke test
         shell: pwsh
         run: |
@@ -306,40 +213,105 @@ jobs:
           ./dist/unmask_data.exe --help
           ./dist/diagnose_mapping.exe --help
 
-      - name: Roundtrip test (mask -> unmask)
+      - name: Roundtrip test (mask -> unmask, plain and encrypted)
         shell: pwsh
         run: |
-          ./dist/data_masking.exe -i input_example.txt
-          # Найновіші файли за часом створення (сортування за іменем ненадійне)
+          ./dist/data_masking.exe -i input_example.txt -o masked.txt --no-report
           $map = Get-ChildItem masking_map_*.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-          $out = Get-ChildItem output_*.txt | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-          # ІПН з input_example.txt має бути замаскований у виході...
-          if (Select-String -Path $out.FullName -Pattern '1234567890' -Quiet) { throw "IPN not masked in output" }
-          ./dist/unmask_data.exe $out.FullName --map $map.FullName -o recovered.txt
-          if (!(Test-Path recovered.txt)) { throw "unmask produced no output" }
-          # ...і відновлений після unmask
+          if (Select-String -Path masked.txt -Pattern '1234567890' -Quiet) { throw "IPN not masked in output" }
+          ./dist/unmask_data.exe masked.txt --map $map.FullName -o recovered.txt
           if (!(Select-String -Path recovered.txt -Pattern '1234567890' -Quiet)) { throw "IPN not restored after unmask" }
+          # Шифрований mapping: лише .enc, і він читається назад
+          $env:DATA_MASKING_PASSWORD = "ci-pass-1"
+          ./dist/data_masking.exe -i input_example.txt -o masked2.txt --no-report --encrypt
+          if (Get-ChildItem masking_map_*.json | Where-Object { $_.LastWriteTime -gt $map.LastWriteTime }) { throw "plaintext mapping written with --encrypt" }
+          $enc = Get-ChildItem masking_map_*.enc | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          ./dist/unmask_data.exe masked2.txt --map $enc.FullName -o recovered2.txt
+          if (!(Select-String -Path recovered2.txt -Pattern '1234567890' -Quiet)) { throw "encrypted roundtrip failed" }
 
       - name: Package Windows binaries
         shell: bash
         run: |
           cd dist
-          7z a "data-masking-${{ env.VERSION }}-windows-x64.zip" \
+          7z a "data-masking-${VERSION}-windows-x64.zip" \
             data_masking.exe unmask_data.exe diagnose_mapping.exe
 
-      - name: Upload build artifacts (dry-run)
-        if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-windows
-          path: dist/data-masking-${{ env.VERSION }}-windows-x64.zip
+          path: dist/data-masking-*-windows-x64.zip
 
-      - name: Upload to release
-        if: github.ref_type == 'tag'
-        shell: bash
+  # ---------------------------------------------------------------------
+  # 3. Публікація — лише за тегом і лише коли ОБИДВІ збірки успішні
+  #    (раніше реліз створювався ДО Windows-збірки, і її падіння лишало
+  #    реліз без exe, на який вказує INSTALL.md)
+  # ---------------------------------------------------------------------
+  publish:
+    name: Publish GitHub Release
+    if: github.ref_type == 'tag'
+    needs: [build-python, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-python
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-windows
+          path: dist
+
+      - name: Generate changelog
         run: |
-          gh release upload "${{ github.ref_name }}" \
-            "dist/data-masking-${{ env.VERSION }}-windows-x64.zip" \
-            --clobber
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            CHANGELOG=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
+          else
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges -20)
+          fi
+          {
+            echo "CHANGELOG<<EOF"
+            echo "$CHANGELOG"
+            echo "EOF"
+          } >> $GITHUB_ENV
+
+      - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build-python.outputs.version }}
+          PRERELEASE: ${{ needs.build-python.outputs.prerelease }}
+        run: |
+          cat > /tmp/release-body.md <<BODY_EOF
+          ## Data Masking System v${VERSION}
+
+          ### Changes
+          ${{ env.CHANGELOG }}
+
+          ---
+          See [Installation guide](https://github.com/click0/data-masking/blob/main/docs/INSTALL.md) for setup instructions.
+          BODY_EOF
+          sed -i 's/^          //' /tmp/release-body.md
+
+          FLAGS=""
+          [ "$PRERELEASE" = "true" ] && FLAGS="--prerelease"
+          ASSETS="dist/data-masking-${VERSION}.tar.gz dist/data-masking-${VERSION}.zip dist/*.whl dist/data_masking-*.tar.gz dist/data-masking-${VERSION}-windows-x64.zip"
+          ls -la dist/
+
+          if gh release view "${{ github.ref_name }}" &>/dev/null; then
+            echo "Release exists, uploading assets..."
+            gh release upload "${{ github.ref_name }}" $ASSETS --clobber
+            gh release edit "${{ github.ref_name }}" \
+              --title "Data Masking System v${VERSION}" \
+              --notes-file /tmp/release-body.md $FLAGS
+          else
+            echo "Creating new release..."
+            gh release create "${{ github.ref_name }}" \
+              --target "${{ github.sha }}" \
+              --title "Data Masking System v${VERSION}" \
+              --notes-file /tmp/release-body.md $FLAGS $ASSETS
+          fi

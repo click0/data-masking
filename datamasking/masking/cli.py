@@ -54,10 +54,13 @@ except ImportError:
     _opt_logger.debug("datamasking.extras.re_mask not available — re-masking disabled")
 
 try:
-    from datamasking.extras.security import MappingSecurityManager
+    from datamasking.extras.security import MappingSecurityManager, is_encryption_available
     SECURITY_AVAILABLE = True
 except ImportError:
     SECURITY_AVAILABLE = False
+
+    def is_encryption_available() -> bool:  # type: ignore[misc]
+        return False
     _opt_logger.debug("datamasking.extras.security not available — encryption disabled")
 
 try:
@@ -808,6 +811,11 @@ def main(argv=None) -> int:
     # Пароль визначаємо ДО будь-якого запису: помилка тут не лишає
     # напівготових файлів на диску
     password = None
+    if getattr(args, 'encrypt', False) and not is_encryption_available():
+        # Ядро без extras: чиста помилка ДО запису файлів, а не traceback
+        print("Error: --encrypt requires the 'cryptography' package "
+              "(pip install 'data-masking[security]')")
+        return EXIT_ERROR
     if SECURITY_AVAILABLE and getattr(args, 'encrypt', False):
         password, pw_error = _resolve_password(args, config, logger)
         if pw_error:

@@ -1,14 +1,13 @@
-# Data Masking System v2.6.0
-# Python 3.9+
-
-# Генерація реалістичних українських імен
+# Data Masking System 3.x — залежності для запуску з сирців
+# (еквівалент `pip install '.[full]'`). Python 3.9+
+#
+# Ядро:
 faker>=20.0.0
 
-# Шифрування mapping файлів (AES-256-GCM)
+# Опційні (код деградує коректно без них):
+# — шифрування mapping (AES-256-GCM):
 cryptography>=41.0.0
-
-# YAML конфігурація
+# — YAML-конфігурація:
 pyyaml>=6.0
 
-# Тестування
-pytest>=7.0.0
+# Тестові залежності — у requirements-dev.txt

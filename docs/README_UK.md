@@ -78,13 +78,13 @@ data-unmask masked_file.txt
 
 ### Маскування
 ```bash
-python data_masking.py input.txt
+python data_masking.py -i input.txt
 ```
 
-**Результат:**
-- `output/masked_input_YYYYMMDD_HHMMSS.txt` — замаскований текст
-- `output/mapping_input_YYYYMMDD_HHMMSS.json` — mapping для unmask
-- `output/report_input_YYYYMMDD_HHMMSS.txt` — звіт
+**Результат** (у поточній директорії або поруч із `-o`):
+- `output_YYYYMMDD_HHMMSS_NNN.txt` — замаскований текст
+- `masking_map_YYYYMMDD_HHMMSS_NNN.json` — mapping для unmask (`.enc` з `--encrypt`; права 0600)
+- `masking_report_YYYYMMDD_HHMMSS_NNN.txt` — звіт (`--no-report` вимикає)
 
 ### Розмаскування
 
@@ -109,7 +109,7 @@ python unmask_data.py -c config.yaml
 ```
 
 **Результат:**
-- `result/unmasked_file_YYYYMMDD_HHMMSS.txt` — відновлений текст
+- `input_recovery_YYYYMMDD_HHMMSS.txt` поруч із замаскованим файлом (або шлях з `-o`) — відновлений текст
 
 ### Діагностика
 ```bash
@@ -238,7 +238,7 @@ python unmask_data.py masked.txt --map mapping.enc --password mypassword
 
 ```bash
 # Використання YAML конфігурації
-python data_masking.py input.txt -c config.yaml
+python data_masking.py -i input.txt -c config.yaml
 
 # Генерація прикладу конфігурації — див. config_example.py
 ```
@@ -538,7 +538,7 @@ git submodule update --remote data-masking
 
 # Використання в проекті
 cd data-masking
-python data_masking.py ../documents/input.txt
+python data_masking.py -i ../documents/input.txt
 ```
 
 ### Standalone
@@ -547,7 +547,7 @@ python data_masking.py ../documents/input.txt
 # Клонувати окремо
 git clone https://github.com/click0/data-masking.git
 cd data-masking
-python data_masking.py input.txt
+python data_masking.py -i input.txt
 ```
 
 ---

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,8 @@ dynamic = ["version"]
 description = "Deterministic masking/unmasking of confidential data in Ukrainian military documents (PIB, ranks, IPN, document numbers, dates)"
 readme = "docs/README.md"
 requires-python = ">=3.9"
-license = { text = "BSD-3-Clause" }
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
 authors = [
     { name = "Vladyslav V. Prodan" },
 ]
@@ -21,7 +22,6 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: Information Technology",
     "Intended Audience :: Legal Industry",
-    "License :: OSI Approved :: BSD License",
     "Natural Language :: Ukrainian",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
