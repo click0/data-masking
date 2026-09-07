@@ -163,6 +163,23 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
     return restored_text, stats
 
 
+_DT_QUOTE_OPEN = r'[«"„“\']?\s*'
+_DT_QUOTE_CLOSE = r'\s*[»"“”\']?'
+_DT_STRIP_RE = re.compile(r'[«»"„“”\']')
+
+
+def _restore_quoted_date(matched: str, masked_key: str, original_key: str) -> str:
+    """Відновлює текстову дату, зберігаючи лапки/пробіли як у тексті:
+    «28» вересня 2025 + (28 вересня 2025 → 31 грудня 2025) = «31» грудня 2025."""
+    m_day, m_month, m_year = masked_key.split()
+    o_day, o_month, o_year = original_key.split()
+    out = matched
+    out = re.sub(re.escape(m_day), o_day, out, count=1)
+    out = re.sub(re.escape(m_month), lambda mm: _apply_original_case(mm.group(0), o_month), out, count=1, flags=re.IGNORECASE)
+    out = re.sub(re.escape(m_year), o_year, out, count=1)
+    return out
+
+
 def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
     """
     Відновлення інших типів даних (окрім звань).
@@ -189,11 +206,27 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
     for masked_value, inst in instance_map.items():
         by_lower.setdefault(masked_value.lower(), {}).update(inst)
 
+    # Текстові дати зберігаються в mapping без лапок («31 грудня 2025»), а в
+    # тексті день часто в лапках: «28» вересня 2025. Для них — толерантний
+    # до лапок патерн, а збіг нормалізується до ключа mapping
+    date_text_masks = {
+        info["masked_as"] for info in mappings_copy.get("date_text", {}).values()
+        if isinstance(info, dict) and "masked_as" in info
+    }
+
+    def _alternative(mask: str) -> str:
+        if mask in date_text_masks:
+            parts = mask.split()
+            if len(parts) == 3 and parts[0].isdigit():
+                return (_DT_QUOTE_OPEN + re.escape(parts[0]) + _DT_QUOTE_CLOSE + r'\s+'
+                        + re.escape(parts[1]) + r'\s+' + re.escape(parts[2]))
+        return re.escape(mask)
+
     # Єдиний regex; довші маски першими в alternation
     masks_sorted = sorted(instance_map.keys(), key=len, reverse=True)
     try:
         big_re = re.compile(
-            r'(?<!\w)(' + '|'.join(re.escape(m) for m in masks_sorted) + r')(?!\w)',
+            r'(?<!\w)(' + '|'.join(_alternative(m) for m in masks_sorted) + r')(?!\w)',
             re.IGNORECASE,
         )
     except re.error as e:
@@ -210,8 +243,16 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
     segments = []
     prev_end = 0
     for m in big_re.finditer(restored_text):
-        key = m.group(0).lower()
+        matched = m.group(0)
+        key = matched.lower()
         inst = by_lower.get(key)
+        quoted_date = False
+        if not inst and date_text_masks:
+            # «28» вересня 2025 → ключ «28 вересня 2025»
+            key = _DT_STRIP_RE.sub('', matched).lower()
+            key = ' '.join(key.split())
+            inst = by_lower.get(key)
+            quoted_date = inst is not None
         if not inst:
             continue
         n = seen.get(key, 0) + 1
@@ -220,7 +261,10 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
         if original_value is None:
             stats["skipped_count"] += 1
             continue
-        original_value = _apply_original_case(m.group(0), original_value)
+        if quoted_date:
+            original_value = _restore_quoted_date(matched, key, original_value)
+        else:
+            original_value = _apply_original_case(matched, original_value)
         segments.append(restored_text[prev_end:m.start()])
         segments.append(original_value)
         prev_end = m.end()

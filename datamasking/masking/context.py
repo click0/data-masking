@@ -206,37 +206,77 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
                       line.split()[rank_position:rank_position + rank_word_count]]
         found_rank_original_case = ' '.join(rank_words) if rank_words else found_rank
 
-    if pib_start_index == -1:
-        for i, part in enumerate(parts):
-            if is_pib_anchor(part):
-                pib_start_index = i
-                break
-
-    if pib_start_index == -1: return None, None, identifier
+    # Кандидати на початок ПІБ: після звання (пріоритет), далі — кожен
+    # якір у рядку. Раніше брався лише ПЕРШИЙ якір; якщо за ним не було
+    # ≥2 слів імені (наприклад, «Сірченко Е.Г.» — уже замаскована фаза
+    # ініціалів), увесь рядок кидався і справжній ПІБ далі лишався відкритим.
+    starts = []
+    if pib_start_index != -1:
+        starts.append((pib_start_index, True))
+    for i, part in enumerate(parts):
+        if i > pib_start_index and is_pib_anchor(part):
+            starts.append((i, False))
+    if not starts: return None, None, identifier
 
     if found_rank:
         rank = found_rank_original_case if found_rank_original_case else found_rank
     else:
-        rank = " ".join(parts[rank_position:pib_start_index]) if 0 <= rank_position < pib_start_index else ""
-
-    pib_words = []
-    for word in parts[pib_start_index:pib_start_index + 3]:
-        if looks_like_name(word):
-            pib_words.append(word.strip(_cfg.QUOTE_CHARS).rstrip(',.!?;:'))
-        else:
-            break
-    pib = " ".join(pib_words) if pib_words else None
+        rank = ""
 
     if rank and len(rank) > 60: return None, None, identifier
     if rank:
         rank_without_number = re.sub(r'^\d+\.\s*', '', rank)
         if re.search(r'\d{2,}', rank_without_number): return None, None, identifier
-    if pib and len(pib.split()) < 2: return None, None, identifier
-    if pib:
-        pib_lower = pib.lower()
-        bad_words = ['статут', 'наказ', 'вимог', 'порушення', 'служби', 'закон', 'указ', 'кодекс', 'положення']
-        for bad_word in bad_words:
-            if bad_word in pib_lower: return None, None, identifier
+
+    bad_words = ['статут', 'наказ', 'вимог', 'порушення', 'служби', 'закон', 'указ', 'кодекс', 'положення']
+    pib = None
+    for start, after_rank in starts:
+        pib_words = _extract_pib_words(parts, start, after_rank)
+        if not pib_words:
+            continue
+        candidate = " ".join(pib_words)
+        candidate_lower = candidate.lower()
+        if any(bad_word in candidate_lower for bad_word in bad_words):
+            # Канцелярський зворот («Наказ Міністерства…») — далі не шукаємо,
+            # інакше зростає ризик хибних спрацювань на офіційному тексті
+            return None, None, identifier
+        # Одне слово приймаємо ЛИШЕ одразу після звання («рядовий Іванов прибув»):
+        # звання — сильний контекст, що далі стоїть прізвище
+        if len(pib_words) >= 2 or (after_rank and len(pib_words[0]) >= 4):
+            pib = candidate
+            break
+
     if rank and not pib and not identifier: return None, None, None
 
     return rank, pib, identifier
+
+
+def _rank_word_as_surname(word: str, next_word: Optional[str]) -> bool:
+    """«капітан Майор Іван Іванович»: слово-звання з великої літери одразу
+    після справжнього звання і перед іменем — це прізвище (Майор, Сотник,
+    Полковник — реальні українські прізвища)."""
+    clean = word.strip(_cfg.QUOTE_CHARS).rstrip(',.!?;:')
+    if len(clean) < 3 or clean.lower() not in _cfg.RANKS_LIST_LOWER:
+        return False
+    if not (clean[0].isupper() and clean[1:].islower()):
+        return False
+    return bool(next_word) and looks_like_name(next_word)
+
+
+def _extract_pib_words(parts, start: int, after_rank: bool):
+    pib_words = []
+    for idx, word in enumerate(parts[start:start + 3]):
+        clean = word.strip(_cfg.QUOTE_CHARS).rstrip(',.!?;:')
+        if looks_like_name(word):
+            pib_words.append(clean)
+        elif idx == 0 and after_rank and _rank_word_as_surname(
+                word, parts[start + 1] if start + 1 < len(parts) else None):
+            pib_words.append(clean)
+        else:
+            break
+        # Розділовий знак після слова завершує ПІБ: «Сергійович, ІПН …» —
+        # інакше наступне слово з великої приклеювалось, і зібраний рядок
+        # не існував у тексті (заміна не спрацьовувала)
+        if word.rstrip(_cfg.QUOTE_CHARS)[-1:] in ',.;:!?':
+            break
+    return pib_words

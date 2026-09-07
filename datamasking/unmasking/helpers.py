@@ -190,8 +190,11 @@ def _apply_original_case(original: str, masked: str) -> str:
         return masked.upper()
     elif len(original) > 1 and original[0].isupper() and original[1:].islower():
         return masked.capitalize()
-    else:
+    elif original.islower():
         return masked.lower()
+    # Змішаний регістр (Петренко-Іванова, McDonald) — лишаємо як у mapping;
+    # раніше все, що не UPPER/Title, силоміць переводилось у нижній
+    return masked
 
 
 def is_real_mask(value: str, masking_map: Dict, all_masked_values: set = None) -> bool:

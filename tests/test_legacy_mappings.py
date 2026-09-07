@@ -74,7 +74,8 @@ class TestLegacyMappings:
         assert restored.casefold() == inp.read_bytes().decode("utf-8").casefold()
 
     def test_no_regression_vs_old_unmask(self, version):
-        """Не гірше, ніж unmask тієї самої версії.
+        """Не гірше, ніж unmask тієї самої версії (без урахування регістру:
+        старі версії втрачали регістр префікса «БР», поточна — ні).
 
         v2.3.0 виключено свідомо: її ВЛАСНИЙ unmask не відновлював 24 рядки
         (passport_id/br_number лишались масками), поточний код відновлює
@@ -83,7 +84,7 @@ class TestLegacyMappings:
         if version == "v2.3.0":
             pytest.skip("v2.3.0's own unmask was defective; current output is strictly better")
         _, output, mapping, recovered = _load(version)
-        assert _restore(output, mapping) == recovered
+        assert _restore(output, mapping).casefold() == recovered.casefold()
 
     def test_cli_restores_legacy_files(self, version, tmp_path, monkeypatch):
         d = FIXTURES / version
@@ -94,8 +95,9 @@ class TestLegacyMappings:
         got = (tmp_path / "rec.txt").read_bytes().decode("utf-8")
         assert got.casefold() == (d / "input.txt").read_bytes().decode("utf-8").casefold()
 
-    @pytest.mark.xfail(strict=True, reason="BR prefix case lost on restore: 'БР 123/…' -> 'бр 123/…' (long-standing)")
     def test_engine_restores_input_byte_exact(self, version):
+        """Байт-в-байт: з 3.0.3 регістр префікса «БР» теж відновлюється
+        (раніше «бр 123/…» — xfail до 3.0.2)."""
         inp, output, mapping, _ = _load(version)
         assert _restore(output, mapping) == inp.read_bytes().decode("utf-8")
 

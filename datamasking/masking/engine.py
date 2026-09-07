@@ -35,7 +35,9 @@ from datamasking.masking.mask_military import (
 
 _UA_UPPER = "АБВГҐДЕЖЗІЙКЛМНОПРСТУФХЦЧШЩЮЯЄІЇҐ"
 
-_SURNAME_RE = r'[А-ЯІЇЄҐ][а-яіїєґ\'ʼ\-]{2,}'
+# Прізвище у Title Case, зокрема подвійне з великої після дефіса
+# (Петренко-Іванова, Нечуй-Левицький)
+_SURNAME_RE = r'[А-ЯІЇЄҐ][а-яіїєґ\'ʼ]{2,}(?:-[А-ЯІЇЄҐ]?[а-яіїєґ\'ʼ]{2,})?'
 _SURNAME_UPPER_RE = r'[А-ЯІЇЄҐ]{3,}'
 _NAME_RE = r'(?:' + _SURNAME_RE + r'|' + _SURNAME_UPPER_RE + r')'
 
@@ -280,9 +282,33 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
     items_to_mask = []
     items_to_skip = []
 
+    # Перевірка перекриттів через покриття позицій (bytearray) замість
+    # any(...) по всіх зібраних елементах — O(довжина спану) замість O(елементів);
+    # на великих файлах old-варіант давав ~60% часу маскування
+    covered_mask = bytearray(len(text) + 1)
+    covered_skip = bytearray(len(text) + 1)
+
+    def _overlaps_mask(s: int, e: int) -> bool:
+        return 1 in covered_mask[s:e]
+
+    def _inside_skip(s: int, e: int) -> bool:
+        # елемент цілком усередині пропущеного спану
+        return e > s and covered_skip[s:e].count(1) == e - s
+
+    def _overlaps_skip(s: int, e: int) -> bool:
+        return 1 in covered_skip[s:e]
+
+    def _add_mask(item) -> None:
+        items_to_mask.append(item)
+        covered_mask[item['start']:item['end']] = b'\x01' * (item['end'] - item['start'])
+
+    def _add_skip(item) -> None:
+        items_to_skip.append(item)
+        covered_skip[item['start']:item['end']] = b'\x01' * (item['end'] - item['start'])
+
     if not _cfg.MASK_DATES:
         for match in re.finditer(_cfg.UKRAINIAN_DATE_PATTERN, text):
-            items_to_skip.append({'start': match.start(), 'end': match.end(), 'text': match.group(0), 'reason': 'full_date', 'type': 'date'})
+            _add_skip({'start': match.start(), 'end': match.end(), 'text': match.group(0), 'reason': 'full_date', 'type': 'date'})
 
     legal_patterns = [
         r'(стате[йї]|стать[іеюя])\s+(\d+(?:\s*,\s*\d+)*)',
@@ -295,20 +321,19 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
             term, numbers_text = match.group(1), match.group(2)
             base_pos = match.start(2)
             for num_match in re.finditer(r'\d+', numbers_text):
-                items_to_skip.append({'start': base_pos + num_match.start(), 'end': base_pos + num_match.end(), 'text': num_match.group(0), 'reason': 'legal', 'type': 'legal_number', 'context': term})
+                _add_skip({'start': base_pos + num_match.start(), 'end': base_pos + num_match.end(), 'text': num_match.group(0), 'reason': 'legal', 'type': 'legal_number', 'context': term})
 
     if _cfg.MASK_ORDERS or _cfg.MASK_BR_NUMBERS:
         for match in re.finditer(r'№', text):
             result = analyze_number_sign_context(text, match)
-            if result: items_to_mask.append(result)
+            if result: _add_mask(result)
 
     if _cfg.MASK_BR_NUMBERS:
         for match in re.finditer(r'\bБР\b', text, re.IGNORECASE):
             result = analyze_br_keyword(text, match)
             if result:
-                skip = any(result['start'] < item['end'] and result['end'] > item['start'] for item in items_to_skip)
-                skip = skip or any(result['start'] < item['end'] and result['end'] > item['start'] for item in items_to_mask)
-                if not skip: items_to_mask.append(result)
+                skip = _overlaps_skip(result['start'], result['end']) or _overlaps_mask(result['start'], result['end'])
+                if not skip: _add_mask(result)
 
     for item_type, flag, pattern in [
         ('ipn', _cfg.MASK_IPN, r'\b\d{10}\b'),
@@ -318,31 +343,27 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
     ]:
         if flag:
             for match in re.finditer(pattern, text, re.IGNORECASE if item_type == 'military_id' else 0):
-                skip = any(match.start() >= item['start'] and match.end() <= item['end'] for item in items_to_skip)
-                skip = skip or any(match.start() < item['end'] and match.end() > item['start'] for item in items_to_mask)
-                if not skip: items_to_mask.append({'type': item_type, 'full_text': match.group(0), 'number_part': match.group(0), 'start': match.start(), 'end': match.end()})
+                skip = _inside_skip(match.start(), match.end()) or _overlaps_mask(match.start(), match.end())
+                if not skip: _add_mask({'type': item_type, 'full_text': match.group(0), 'number_part': match.group(0), 'start': match.start(), 'end': match.end()})
 
     if _cfg.MASK_BRIGADES:
         for match in _cfg.COMPILED_PATTERNS["brigade_number"].finditer(text):
-            skip = any(match.start() >= item['start'] and match.end() <= item['end'] for item in items_to_skip)
-            skip = skip or any(match.start() < item['end'] and match.end() > item['start'] for item in items_to_mask)
-            if not skip: items_to_mask.append({'type': 'brigade_number', 'full_text': match.group(0), 'number_part': match.group(1), 'start': match.start(), 'end': match.end()})
+            skip = _inside_skip(match.start(), match.end()) or _overlaps_mask(match.start(), match.end())
+            if not skip: _add_mask({'type': 'brigade_number', 'full_text': match.group(0), 'number_part': match.group(1), 'start': match.start(), 'end': match.end()})
 
     if _cfg.MASK_DATES:
         for match in _cfg.COMPILED_PATTERNS["date"].finditer(text):
             if is_valid_date(int(match.group(1)), int(match.group(2)), int(match.group(3))):
-                skip = any(match.start() >= item['start'] and match.end() <= item['end'] for item in items_to_skip)
-                skip = skip or any(match.start() < item['end'] and match.end() > item['start'] for item in items_to_mask)
-                if not skip: items_to_mask.append({'type': 'date', 'full_text': match.group(0), 'number_part': match.group(0), 'start': match.start(), 'end': match.end()})
+                skip = _inside_skip(match.start(), match.end()) or _overlaps_mask(match.start(), match.end())
+                if not skip: _add_mask({'type': 'date', 'full_text': match.group(0), 'number_part': match.group(0), 'start': match.start(), 'end': match.end()})
 
         # Text dates: "06" жовтня 2025 року
         if "date_text" not in masking_dict["mappings"]:
             masking_dict["mappings"]["date_text"] = {}
         for match in _cfg.DATE_TEXT_PATTERN.finditer(text):
-            skip = any(match.start() >= item['start'] and match.end() <= item['end'] for item in items_to_skip)
-            skip = skip or any(match.start() < item['end'] and match.end() > item['start'] for item in items_to_mask)
+            skip = _inside_skip(match.start(), match.end()) or _overlaps_mask(match.start(), match.end())
             if not skip:
-                items_to_mask.append({'type': 'date_text', 'full_text': match.group(0), 'number_part': match.group(0), 'start': match.start(), 'end': match.end()})
+                _add_mask({'type': 'date_text', 'full_text': match.group(0), 'number_part': match.group(0), 'start': match.start(), 'end': match.end()})
 
     # Обхід у порядку документа: instance tracking збігається з порядком
     # входжень (потрібно для unmask), а заміни збираються сегментами —
@@ -399,6 +420,10 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
         while iteration < 10:
             rank, pib, identifier = parse_hybrid_line(current_line_for_parsing)
             if not pib: break
+            # ПІБ має бути дослівно в рядку — інакше заміна не спрацює, а
+            # mask_* уже запишуть сміття в mapping і цикл крутитиметься вхолосту
+            if pib not in final_line or pib not in current_line_for_parsing:
+                break
             if rank and not pib:
                 current_line_for_parsing = current_line_for_parsing.replace(rank, "___SKIP_RANK___", 1)
                 iteration += 1
@@ -425,7 +450,10 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
                         current_line_for_parsing = current_line_for_parsing.replace(pib, "___PIB_MASKED___", 1)
                         iteration += 1
                         continue
-                    if is_likely_surname_by_case(parts[1]):
+                    # «Іван ПЕТРЕНКО» (прізвище виділене капсом) → ім'я перше.
+                    # Але якщо ВЕСЬ ПІБ капсом — порядок стандартний
+                    # (прізвище перше), інакше «ІВАНОВ ПЕТРО» плуталось місцями
+                    if is_likely_surname_by_case(parts[1]) and not is_likely_surname_by_case(parts[0]):
                         name, surname = parts[0], parts[1]
                         patronymic = parts[2] if len(parts) >= 3 else ""
                         masked_surname = mask_surname(surname, masking_dict, instance_counters)
@@ -444,6 +472,12 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
                         masked_pib_str += f" {masked_patronymic}"
 
                     final_line = final_line.replace(pib, masked_pib_str, 1)
+                    current_line_for_parsing = current_line_for_parsing.replace(pib, "___PIB_MASKED___", 1)
+                elif len(parts) == 1 and rank:
+                    # Звання + лише прізвище («рядовий Іванов прибув») —
+                    # раніше такий ПІБ узагалі не маскувався
+                    masked_surname = mask_surname(parts[0], masking_dict, instance_counters)
+                    final_line = final_line.replace(pib, masked_surname, 1)
                     current_line_for_parsing = current_line_for_parsing.replace(pib, "___PIB_MASKED___", 1)
             iteration += 1
         masked_lines.append(final_line)

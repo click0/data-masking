@@ -36,6 +36,15 @@ def looks_like_name(word: str) -> bool:
     if clean_word.lower() in _cfg.RANKS_LIST_LOWER: return False
     if clean_word.lower() in ['по', 'про', 'від', 'до', 'за', 'на', 'у', 'в', 'з', 'із']: return False
 
+    # Подвійні прізвища: Петренко-Іванова, Нечуй-Левицький — ОБИДВІ частини
+    # мають виглядати як імена (раніше велика літера після дефіса ламала
+    # перевірку, а «Петренко-наказу» проходило як одне слово з великої)
+    if '-' in clean_word:
+        parts = clean_word.split('-')
+        if len(parts) == 2 and all(len(p) >= 3 for p in parts):
+            return all(looks_like_name(p) for p in parts)
+        return False
+
     if clean_word[0].isupper() and clean_word[1:].islower(): return True
     if clean_word.isupper(): return True
 
@@ -51,10 +60,15 @@ def looks_like_name(word: str) -> bool:
 def detect_gender_by_patronymic(patronymic: str) -> str:
     if not patronymic: return 'unknown'
     patron_lower = patronymic.lower().strip('.,!?;')
-    male_endings = ['ович', 'євич', 'ійович', 'йович', 'овича', 'євича', 'ійовича', 'йовича', 'овичу', 'євичу', 'ійовичу', 'йовичу', 'овичем', 'євичем', 'ійовичем', 'йовичем']
+    # -ович/-євич/-йович + рідші -евич (Їжакевич, Гуревич), -ич (Ілліч, Кузьмич,
+    # Лукич, Хомич) у всіх відмінках — усі чоловічі
+    male_endings = ['ович', 'євич', 'евич', 'ійович', 'йович', 'ич', 'іч',
+                    'овича', 'євича', 'евича', 'ійовича', 'йовича', 'ича', 'іча',
+                    'овичу', 'євичу', 'евичу', 'ійовичу', 'йовичу', 'ичу', 'ічу',
+                    'овичем', 'євичем', 'евичем', 'ійовичем', 'йовичем', 'ичем', 'ічем']
     female_endings = ['івна', 'ївна', 'івни', 'ївни', 'івні', 'ївні', 'івною', 'ївною']
-    if any(patron_lower.endswith(e) for e in male_endings): return 'male'
     if any(patron_lower.endswith(e) for e in female_endings): return 'female'
+    if any(patron_lower.endswith(e) for e in male_endings): return 'male'
     return 'unknown'
 
 def detect_name_case_and_gender(name: str) -> Tuple[str, str]:
@@ -127,10 +141,21 @@ def apply_case_to_name(name: str, case: str, gender: str) -> str:
 
     return name
 
-def generate_easy_name(gender: str, first_letter: str, seed: int, max_attempts: int = 50) -> str:
+def generate_easy_name(gender: str, first_letter: str, seed: int, max_attempts: int = 50,
+                       exclude: str = None) -> str:
+    """Синтетичне ім'я на ту саму літеру, що легко відмінюється.
+
+    *exclude* — оригінал (нижній регістр), який НЕ можна повернути: до 3.0.3
+    імена, для яких у білому списку була єдина кандидатка на цю літеру
+    (Марія, Юлія, Катерина, Тетяна, Ірина), мапились самі на себе.
+    Якщо на цю літеру немає інших кандидатів — беремо будь-яку іншу літеру:
+    маска важливіша за збіг першої літери.
+    """
     random.seed(seed)
+    _cfg.fake_uk.seed_instance(seed)
     whitelist = _cfg.GOOD_UKRAINIAN_NAMES_MALE if gender == 'male' else _cfg.GOOD_UKRAINIAN_NAMES_FEMALE
-    available = [n for n in whitelist if n[0].lower() == first_letter.lower()]
+    exclude = (exclude or "").lower()
+    available = [n for n in whitelist if n[0].lower() == first_letter.lower() and n != exclude]
     if available:
         name = random.choice(available).capitalize()
         return name
@@ -141,7 +166,9 @@ def generate_easy_name(gender: str, first_letter: str, seed: int, max_attempts: 
         else: name = _cfg.fake_uk.first_name_male()
         last_name = name
         if name[0].lower() != first_letter: continue
+        if name.lower() == exclude: continue
         if is_easy_to_decline(name, gender): return name
 
-    if whitelist: return random.choice(whitelist).capitalize()
+    fallback = [n for n in whitelist if n != exclude]
+    if fallback: return random.choice(fallback).capitalize()
     return last_name if last_name else (_cfg.fake_uk.first_name_female() if gender == 'female' else _cfg.fake_uk.first_name_male())

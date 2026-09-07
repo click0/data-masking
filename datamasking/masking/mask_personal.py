@@ -99,14 +99,18 @@ def mask_surname(original: str, masking_dict: Dict, instance_counters: Dict) -> 
     if original in masking_dict["mappings"]["surname"]:
         masked = masking_dict["mappings"]["surname"][original]["masked_as"]
     else:
-        is_upper = original.isupper()
-        is_capitalize = original[0].isupper() and original[1:].islower()
-
-        masked = synthesize_surname(original, forbidden=known_surname_forms(masking_dict))
-
-        # Застосовуємо регістр
-        if is_upper: masked = masked.upper()
-        elif is_capitalize: masked = masked.capitalize()
+        forbidden = known_surname_forms(masking_dict)
+        hyphen_parts = original.split('-')
+        if len(hyphen_parts) == 2 and all(len(p) >= 3 for p in hyphen_parts):
+            # Подвійне прізвище: кожна частина — власна синтетична маска,
+            # структура «Х-Y» зберігається (Петренко-Іванова → Сірченко-Юхимова)
+            masked_parts = []
+            for part in hyphen_parts:
+                mp = synthesize_surname(part, forbidden=forbidden | set(masked_parts))
+                masked_parts.append(_apply_original_case(part, mp))
+            masked = '-'.join(masked_parts)
+        else:
+            masked = _apply_original_case(original, synthesize_surname(original, forbidden=forbidden))
     return add_to_mapping(masking_dict, instance_counters, "surname", original, masked)
 
 def mask_patronymic(patronymic: str, gender: str, masking_dict: Dict, instance_counters: Dict) -> str:
@@ -166,17 +170,22 @@ def mask_name(original: str, masking_dict: Dict, instance_counters: Dict, gender
         else: gender = gender_from_name
         if gender == 'unknown': gender = 'male'
 
-        # Генеруємо нове ім'я з тією ж першою літерою
+        # Генеруємо нове ім'я з тією ж першою літерою; оригінал (у називному)
+        # виключаємо з кандидатів явно — інакше єдина кандидатка на літеру
+        # (Марія, Юлія, Ірина…) поверталась як «маска»
         first_letter = original[0].lower()
         seed = get_deterministic_seed(original)
-        new_name = generate_easy_name(gender, first_letter, seed, max_attempts=50)
+        nominative_guess = original.lower()
+        new_name = generate_easy_name(gender, first_letter, seed, max_attempts=50,
+                                      exclude=nominative_guess)
         masked = apply_case_to_name(new_name, case, gender)
 
-        # Уникаємо випадків коли ім'я мапиться саме на себе
+        # Страховка: маска ніколи не дорівнює оригіналу (у будь-якому відмінку)
         attempts = 0
         while masked.lower() == original.lower() and attempts < 10:
             seed = get_deterministic_seed(original + str(attempts))
-            new_name = generate_easy_name(gender, first_letter, seed, max_attempts=50)
+            new_name = generate_easy_name(gender, first_letter, seed, max_attempts=50,
+                                          exclude=new_name.lower())
             masked = apply_case_to_name(new_name, case, gender)
             attempts += 1
 
