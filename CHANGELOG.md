@@ -4,6 +4,55 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.16] - 2026-09
+
+### Changed — surname prefix rule
+- The "at most half of the surname" limit now counts the preserved ending
+  as well as the prefix. Before, only the prefix was capped, so with a long
+  ending most of the original stayed visible (`Мазуренка → Мазиденка`:
+  7 of 9 letters unchanged, `Іванов → Іва…ов`: 5 of 6). Now prefix +
+  ending ≤ half of the base (nominative) form of the surname, and long
+  endings shorten the prefix: `Коваль → 3`, `Ґудзь → 2`, `Іванов → 1`,
+  `Кравчук → 1`, `Бондаренко → 1`, `Петренко → 0` (`-енко` alone is half
+  of the word, so the stem is fully synthetic). The budget is computed from
+  the base form, so all grammatical cases of one surname keep the same
+  prefix (`Іванов / Іванова / Івановим → 1`).
+- `masking_rules.surname_prefix_length` still sets the upper bound (0 =
+  fully synthetic). Docs, config template and comments updated.
+- Tests in `tests/test_surname_prefix.py` updated to the new table, plus
+  `test_prefix_plus_ending_at_most_half`.
+
+## [3.0.15] - 2026-09
+
+### Fixed — surname masks
+- The synthetic surname stem is now seeded from the lower-cased stem of the
+  original instead of its surface form. Before, `МАЗУРЕНКА`, `Мазуренка`
+  and `Мазуренко` (one person: upper case in the header, title case in the
+  body, different grammatical cases) got three unrelated masks
+  (`МАЗИДЕНКА` / `Мазісниченка` / `МАЗАНЕНКО`). Now all case and
+  grammatical-case forms share one synthetic stem and differ only by the
+  preserved ending and letter case (`МАЗІЖЕНКА` / `Мазіженка` /
+  `Мазіженко`). Unmask is unaffected (it relies on the mapping only);
+  masks of existing mapping files stay valid.
+- Tests: `TestCaseAndFormConsistency` in `tests/test_surname_prefix.py`.
+
+## [3.0.14] - 2026-09
+
+### Fixed — masking engine
+- Several ranks / names on one line no longer corrupt each other. Masks were
+  substituted with `line.replace(original, mask, 1)` on the partially masked
+  line, so when the mask of one rank contained the form of another rank on
+  the same line (`рядовий → старший солдат`, `солдат → рядовий`) the second
+  substitution hit the freshly inserted mask:
+  `рядового МАЗУРЕНКА та солдата КОВАЛЕНКА` became
+  `старшого рядового МАЗИДЕНКА та солдата КОВИЛЕНКА` (a rank that does not
+  exist, the second rank left unmasked, and unmask restoring the wrong rank).
+  Replacements are now collected as numbered placeholders in the working
+  copy of the line and substituted once at the end, so a mask can never be
+  matched by a later replacement. Same fix for full-name (PIB) replacements.
+- Tests: `tests/test_same_line_replacement.py` (cross-masked ranks on one
+  line, several PIBs per line, round-trip through unmask).
+
 ## [3.0.13] - 2026-09
 
 ### Changed — tooling

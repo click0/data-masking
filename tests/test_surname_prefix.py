@@ -5,9 +5,11 @@
 
 Правила:
   - маска зберігає перші N символів оригіналу (N = masking_rules.surname_prefix_length,
-    типово 3; 0 = вимкнено), для коротких прізвищ — не більше половини слова;
-  - префікс не залежить від відмінкового закінчення, але закінчення й далі
-    зберігається; оригінал у масці не з'являється;
+    типово 3; 0 = вимкнено); префікс разом зі збереженим закінченням — не
+    більше половини базової форми прізвища (v3.0.16), тож довгі закінчення
+    скорочують префікс: Коваль → 3, Іванов → 1, Петренко → 0;
+  - префікс однаковий для всіх відмінкових форм; закінчення зберігається;
+    оригінал у масці не з'являється;
   - system.faker_locale перемикає словники faker (морфологія лишається uk).
 """
 import sys
@@ -47,17 +49,28 @@ def sm(word: str) -> str:
 
 class TestPrefixLength:
     @pytest.mark.parametrize("word,expected", [
-        ("Петренко", 3), ("Іванов", 3), ("Іванова", 3), ("Сидоренко", 3),
-        ("Ґудзь", 2), ("Ткач", 2), ("Коваль", 3), ("Рак", 1), ("Шамрай", 3),
-        ("Петренку", 3), ("Ковальського", 3),
+        ("Коваль", 3), ("Шамрай", 3), ("Ґудзь", 2), ("Ткач", 2), ("Рак", 1),
+        ("Іванов", 1), ("Іванова", 1), ("Івановим", 1), ("Кравчук", 1), ("Кравчуком", 1),
+        ("Мельник", 1), ("Коломієць", 1), ("Бондаренко", 1),
+        ("Петренко", 0), ("Петренку", 0), ("Сидоренко", 0), ("Лисенко", 0), ("Ковальського", 0),
     ])
     def test_default_three_capped_at_half(self, word, expected):
         assert prefix_length_for(word) == expected
 
+    @pytest.mark.parametrize("word", [
+        "Коваль", "Шамрай", "Ґудзь", "Ткач", "Рак", "Іванов", "Іванова", "Кравчук",
+        "Мельник", "Коломієць", "Бондаренко", "Петренко", "Ковальського", "Мазуренка",
+    ])
+    def test_prefix_plus_ending_at_most_half(self, word):
+        stem, _ending, family = split_surname(word)
+        p = prefix_length_for(word, 10)
+        assert p + len(family) <= (len(stem) + len(family)) // 2 or p == 0
+
     def test_configured_two(self):
-        assert prefix_length_for("Петренко", 2) == 2
+        assert prefix_length_for("Коваль", 2) == 2
         assert prefix_length_for("Ткач", 2) == 2
         assert prefix_length_for("Рак", 2) == 1
+        assert prefix_length_for("Іванов", 2) == 1
 
     def test_zero_disables(self):
         assert prefix_length_for("Петренко", 0) == 0
@@ -94,13 +107,14 @@ class TestMaskKeepsPrefix:
             assert sm(word).lower().endswith(ending)
 
     def test_hyphenated_each_part_keeps_prefix(self):
-        m = sm("Петренко-Іванова")
+        m = sm("Коваль-Іванова")
         a, b = m.split("-")
-        assert a.lower().startswith("пет") and b.lower().startswith("іва")
+        assert a.lower().startswith("ков") and b.lower().startswith("і")
+        assert "коваль" not in m.lower() and "іванова" not in m.lower()
 
     def test_case_preserved(self):
-        assert sm("ІВАНОВ").startswith("ІВА") and sm("ІВАНОВ").isupper()
-        assert sm("Іванов").startswith("Іва")
+        assert sm("КОВАЛЬ").startswith("КОВ") and sm("КОВАЛЬ").isupper()
+        assert sm("Коваль").startswith("Ков")
 
     def test_pronounceable_joint(self):
         # На стику префікса й хвоста не буває двох голосних чи трьох приголосних
@@ -118,8 +132,8 @@ class TestMaskKeepsPrefix:
 
     def test_prefix_two(self):
         _cfg.SURNAME_PREFIX_LENGTH = 2
-        assert sm("Петренко").lower().startswith("пе")
-        assert not sm("Петренко").lower().startswith("пет") or True  # третя літера може випадково збігтись
+        assert sm("Коваль").lower().startswith("ко")
+        assert sm("Шамрай").lower().startswith("ша")
 
     def test_roundtrip_document(self):
         text = "\n".join(f"капітан {w} Іван Іванович" for w in ["Петренко", "Іванов", "Ґудзь", "Ткач", "Коваль-Сидоренко"])
@@ -130,8 +144,46 @@ class TestMaskKeepsPrefix:
             assert w not in m
 
 
+class TestCaseAndFormConsistency:
+    """Одна людина — одна синтетична основа (v3.0.15): seed від основи в нижньому
+    регістрі, тож регістр (МАЗУРЕНКА / Мазуренка) і відмінок (Мазуренко /
+    Мазуренку) не дають різних «людей» у замаскованому документі."""
+
+    def test_case_variants_share_mask(self):
+        assert sm("МАЗУРЕНКА").lower() == sm("Мазуренка").lower() == sm("мазуренка")
+        assert sm("КОВАЛЬ").lower() == sm("Коваль").lower()
+
+    def test_case_variants_keep_their_case(self):
+        assert sm("МАЗУРЕНКА").isupper()
+        assert sm("Мазуренка").istitle()
+
+    @pytest.mark.parametrize("forms", [
+        ["Мазуренко", "Мазуренка", "Мазуренку", "Мазуренком", "МАЗУРЕНКО"],
+        ["Іванов", "Іванова", "Іванову", "ІВАНОВИМ"],
+        ["Ковальський", "Ковальського", "Ковальському"],
+        ["Кравчук", "Кравчука", "Кравчуком"],
+    ])
+    def test_case_forms_share_synthetic_stem(self, forms):
+        stems = {split_surname(sm(f))[0] for f in forms}
+        assert len(stems) == 1, stems
+        # і закінчення кожної форми збережено
+        for f in forms:
+            assert sm(f).lower().endswith(split_surname(f)[1])
+
+    def test_within_one_document(self):
+        text = "довідках №273 рядового МАЗУРЕНКА\nкапітан Мазуренко Іван Іванович\nрапорт Мазуренку Івану"
+        masked, md = mask(text)
+        masks = {k: v["masked_as"] for k, v in md["mappings"]["surname"].items()}
+        assert set(masks) >= {"МАЗУРЕНКА", "Мазуренко"}
+        stems = {split_surname(m)[0] for m in masks.values()}
+        assert len(stems) == 1, masks
+        assert masks["МАЗУРЕНКА"].isupper() and masks["Мазуренко"].istitle()
+        r, _ = unmask_text_v2(masked, md, check_mapping_version(md))
+        assert r == text
+
+
 class TestConfigWiring:
-    SAMPLE = "капітан Петренко Іван Сергійович\nсержант Бондаренко Марія Іванівна\n"
+    SAMPLE = "капітан Коваль Іван Сергійович\nсержант Бондаренко Марія Іванівна\n"
 
     def _run(self, tmp_path, monkeypatch, extra_args=(), yaml_text=None, env=None):
         monkeypatch.chdir(tmp_path)
@@ -152,7 +204,7 @@ class TestConfigWiring:
     def test_prefix_from_env(self, tmp_path, monkeypatch):
         rc, out = self._run(tmp_path, monkeypatch, env={"DATA_MASKING_SURNAME_PREFIX_LENGTH": "2"})
         assert rc == 0 and _cfg.SURNAME_PREFIX_LENGTH == 2
-        assert "капітан Пе" in out or "Пе" in out.split()[1]
+        assert out.splitlines()[0].split()[1].startswith("Ко")
 
     @needs_yaml
     def test_negative_prefix_rejected(self, tmp_path, monkeypatch):
@@ -162,8 +214,8 @@ class TestConfigWiring:
     def test_default_prefix_visible_in_cli_output(self, tmp_path, monkeypatch):
         rc, out = self._run(tmp_path, monkeypatch)
         assert rc == 0
-        assert out.splitlines()[0].split()[1].startswith("Пет")
-        assert "Петренко" not in out
+        assert out.splitlines()[0].split()[1].startswith("Ков")
+        assert "Коваль" not in out
 
 
 class TestFakerLocale:
@@ -176,14 +228,14 @@ class TestFakerLocale:
         assert _cfg.FAKER_LOCALE == "uk_UA"
 
     def test_switching_locale_changes_masks_deterministically(self):
-        a1 = synthesize_surname("Петренко")
+        a1 = synthesize_surname("Коваль")
         _cfg.set_faker_locale("ru_RU")
-        b1 = synthesize_surname("Петренко")
-        b2 = synthesize_surname("Петренко")
+        b1 = synthesize_surname("Коваль")
+        b2 = synthesize_surname("Коваль")
         assert b1 == b2  # детерміновано в межах локалі
-        assert b1.startswith("пет") and "петренко" not in b1  # префікс і no-leak діють
+        assert b1.startswith("ков") and "коваль" not in b1  # префікс і no-leak діють
         _cfg.set_faker_locale("uk_UA")
-        assert synthesize_surname("Петренко") == a1
+        assert synthesize_surname("Коваль") == a1
 
     def test_locale_without_patronymics_falls_back(self):
         _cfg.set_faker_locale("en_US")

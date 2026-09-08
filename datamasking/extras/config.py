@@ -85,7 +85,8 @@ class MaskingRulesConfig:
     enable_orders: bool = True
     enable_br_numbers: bool = True
     # Скільки перших символів оригінального прізвища зберігати в масці
-    # (0 = не зберігати; для коротких прізвищ — не більше половини слова)
+    # (0 = не зберігати; разом зі збереженим закінченням — не більше половини
+    # прізвища: Коваль → 3, Іванов → 1, Петренко → 0)
     surname_prefix_length: int = 3
     # Tuning parameters
     rank_shift_options: List[int] = field(default_factory=lambda: [-2, -1, 1, 2])
@@ -512,8 +513,9 @@ security:
 # --------------------------------------------------------------------------
 masking_rules:
   # How many leading characters of the ORIGINAL surname to keep in its mask
-  # (0 = none). Short surnames keep at most half of the word:
-  # Петренко -> Пет…енко, Ґудзь -> Ґу…  ENV: DATA_MASKING_SURNAME_PREFIX_LENGTH
+  # (0 = none). Prefix plus the preserved ending never exceed half of the
+  # surname: Коваль -> Ков…, Іванов -> І…ов, Петренко -> …енко (the ending
+  # alone is half the word).  ENV: DATA_MASKING_SURNAME_PREFIX_LENGTH
   surname_prefix_length: 3
 
   # Military ranks (with declension and case preservation)

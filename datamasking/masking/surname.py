@@ -20,7 +20,9 @@
      «Грицова Марія»).
   4. Перевірки: маска ≠ оригінал, не містить оригінал/його основу,
      не збігається з жодною вже виданою маскою чи вже відомим оригіналом
-     (колізія зламала б unmask). Детерміновано від seed(оригінал).
+     (колізія зламала б unmask). Детерміновано від seed(основа в нижньому
+     регістрі): усі відмінкові форми й регістри одного прізвища дістають
+     одну синтетичну основу (МАЗУРЕНКА / Мазуренко / Мазуренку).
 """
 
 import random
@@ -210,18 +212,25 @@ def _random_stem(seed: int, target_len: int, prefix: str = "") -> str:
 def prefix_length_for(original: str, configured: Optional[int] = None) -> int:
     """Скільки перших символів оригіналу лишити в масці.
 
-    Правило (ТЗ): N з конфігу (SURNAME_PREFIX_LENGTH, типово 3), але для
-    коротких прізвищ — не більше половини слова: Петренко → 3, Ґудзь → 2,
-    Ткач → 2. Префікс не залежить від того, де починається закінчення, але
-    не заходить у нього (інакше закінчення не відновити граматично).
+    Правило (ТЗ): N з конфігу (SURNAME_PREFIX_LENGTH, типово 3), але з
+    оригіналу в масці лишається НЕ БІЛЬШЕ ПОЛОВИНИ прізвища — і префікс,
+    і збережене закінчення разом (v3.0.16; раніше закінчення не рахувалось,
+    і в «Мазуренка → Мазиденка» збігались 7 із 9 літер). Половина береться
+    від базової (називної) форми — основа + родинне закінчення, — щоб
+    префікс не залежав від відмінка (Іванов / Іванова / Івановим → 1).
+
+    Коваль → 3, Ґудзь → 2, Ткач → 2, Іванов → 1, Кравчук → 1,
+    Бондаренко → 1, Петренко → 0 (закінчення «енко» уже половина слова).
     """
     n = _cfg.SURNAME_PREFIX_LENGTH if configured is None else configured
     if n <= 0:
         return 0
-    stem, _ending, _family = split_surname(original)
+    stem, _ending, family = split_surname(original)
+    base_len = len(stem) + len(family)
+    budget = base_len // 2 - len(family)
     # Хоча б один символ основи має змінитись (Лис-енко: основа «лис» — префікс
     # 2, не 3), інакше маска містить усю основу і no-leak відкидає всі спроби
-    return max(0, min(n, len(original) // 2, len(stem) - 1))
+    return max(0, min(n, budget, len(stem) - 1))
 
 
 def _leaks(masked: str, original: str, stem: str) -> bool:
@@ -263,12 +272,16 @@ def synthesize_surname(original: str, forbidden: Optional[Set[str]] = None,
     """
     forbidden = {f.lower() for f in (forbidden or set())} | _document_vocab
     stem, ending, family = split_surname(original)
-    base_seed = get_deterministic_seed(original)
+    # Seed — від основи в нижньому регістрі, а не від поверхневої форми:
+    # «рядового МАЗУРЕНКА» у шапці й «Мазуренко І.П.» у тексті — одна людина,
+    # тож МАЗУРЕНКА / Мазуренка / Мазуренко / Мазуренку мають діставати одну
+    # синтетичну основу (закінчення й регістр накладаються окремо)
+    base_seed = get_deterministic_seed(stem)
     prefix = original.lower()[:prefix_length_for(original, prefix_length)]
 
     last = ""
     for attempt in range(_ATTEMPTS):
-        seed = base_seed if attempt == 0 else get_deterministic_seed(f"{original}\x00{attempt}")
+        seed = base_seed if attempt == 0 else get_deterministic_seed(f"{stem}\x00{attempt}")
         new_stem = _pick_stem(seed, len(stem), family, ending, forbidden={stem}, prefix=prefix)
         masked = new_stem + ending
         last = masked

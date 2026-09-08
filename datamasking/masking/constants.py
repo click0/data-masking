@@ -44,7 +44,8 @@ fake_uk = Faker(FAKER_LOCALE)
 fake_uk_fallback = fake_uk
 
 # Скільки перших символів оригінального прізвища зберігати в масці
-# (0 = не зберігати). Для коротких прізвищ — не більше половини слова.
+# (0 = не зберігати). Разом зі збереженим закінченням — не більше половини
+# прізвища (Коваль → 3, Іванов → 1, Петренко → 0; див. surname.prefix_length_for).
 # Конфіг: masking_rules.surname_prefix_length / DATA_MASKING_SURNAME_PREFIX_LENGTH
 SURNAME_PREFIX_LENGTH = 3
 
