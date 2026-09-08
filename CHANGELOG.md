@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.11] - 2026-09
+
+### Changed — tooling
+- `CLAUDE.md`: branch deletion cannot be done from the Claude Code
+  environment (the git proxy rejects `push --delete`, like tags) — the
+  repository should have GitHub's *Automatically delete head branches*
+  enabled; sessions must not try to delete branches themselves.
+
 ## [3.0.10] - 2026-09
 
 ### Changed — tooling
