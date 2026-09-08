@@ -130,6 +130,44 @@ class TestMaskKeepsPrefix:
             assert w not in m
 
 
+class TestCaseAndFormConsistency:
+    """Одна людина — одна синтетична основа (v3.0.15): seed від основи в нижньому
+    регістрі, тож регістр (МАЗУРЕНКА / Мазуренка) і відмінок (Мазуренко /
+    Мазуренку) не дають різних «людей» у замаскованому документі."""
+
+    def test_case_variants_share_mask(self):
+        assert sm("МАЗУРЕНКА").lower() == sm("Мазуренка").lower() == sm("мазуренка")
+        assert sm("КОВАЛЬ").lower() == sm("Коваль").lower()
+
+    def test_case_variants_keep_their_case(self):
+        assert sm("МАЗУРЕНКА").isupper()
+        assert sm("Мазуренка").istitle()
+
+    @pytest.mark.parametrize("forms", [
+        ["Мазуренко", "Мазуренка", "Мазуренку", "Мазуренком", "МАЗУРЕНКО"],
+        ["Іванов", "Іванова", "Іванову", "ІВАНОВИМ"],
+        ["Ковальський", "Ковальського", "Ковальському"],
+        ["Кравчук", "Кравчука", "Кравчуком"],
+    ])
+    def test_case_forms_share_synthetic_stem(self, forms):
+        stems = {split_surname(sm(f))[0] for f in forms}
+        assert len(stems) == 1, stems
+        # і закінчення кожної форми збережено
+        for f in forms:
+            assert sm(f).lower().endswith(split_surname(f)[1])
+
+    def test_within_one_document(self):
+        text = "довідках №273 рядового МАЗУРЕНКА\nкапітан Мазуренко Іван Іванович\nрапорт Мазуренку Івану"
+        masked, md = mask(text)
+        masks = {k: v["masked_as"] for k, v in md["mappings"]["surname"].items()}
+        assert set(masks) >= {"МАЗУРЕНКА", "Мазуренко"}
+        stems = {split_surname(m)[0] for m in masks.values()}
+        assert len(stems) == 1, masks
+        assert masks["МАЗУРЕНКА"].isupper() and masks["Мазуренко"].istitle()
+        r, _ = unmask_text_v2(masked, md, check_mapping_version(md))
+        assert r == text
+
+
 class TestConfigWiring:
     SAMPLE = "капітан Петренко Іван Сергійович\nсержант Бондаренко Марія Іванівна\n"
 

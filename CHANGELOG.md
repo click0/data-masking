@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.15] - 2026-09
+
+### Fixed — surname masks
+- The synthetic surname stem is now seeded from the lower-cased stem of the
+  original instead of its surface form. Before, `МАЗУРЕНКА`, `Мазуренка`
+  and `Мазуренко` (one person: upper case in the header, title case in the
+  body, different grammatical cases) got three unrelated masks
+  (`МАЗИДЕНКА` / `Мазісниченка` / `МАЗАНЕНКО`). Now all case and
+  grammatical-case forms share one synthetic stem and differ only by the
+  preserved ending and letter case (`МАЗІЖЕНКА` / `Мазіженка` /
+  `Мазіженко`). Unmask is unaffected (it relies on the mapping only);
+  masks of existing mapping files stay valid.
+- Tests: `TestCaseAndFormConsistency` in `tests/test_surname_prefix.py`.
+
 ## [3.0.14] - 2026-09
 
 ### Fixed — masking engine

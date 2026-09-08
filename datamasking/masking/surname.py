@@ -20,7 +20,9 @@
      «Грицова Марія»).
   4. Перевірки: маска ≠ оригінал, не містить оригінал/його основу,
      не збігається з жодною вже виданою маскою чи вже відомим оригіналом
-     (колізія зламала б unmask). Детерміновано від seed(оригінал).
+     (колізія зламала б unmask). Детерміновано від seed(основа в нижньому
+     регістрі): усі відмінкові форми й регістри одного прізвища дістають
+     одну синтетичну основу (МАЗУРЕНКА / Мазуренко / Мазуренку).
 """
 
 import random
@@ -263,12 +265,16 @@ def synthesize_surname(original: str, forbidden: Optional[Set[str]] = None,
     """
     forbidden = {f.lower() for f in (forbidden or set())} | _document_vocab
     stem, ending, family = split_surname(original)
-    base_seed = get_deterministic_seed(original)
+    # Seed — від основи в нижньому регістрі, а не від поверхневої форми:
+    # «рядового МАЗУРЕНКА» у шапці й «Мазуренко І.П.» у тексті — одна людина,
+    # тож МАЗУРЕНКА / Мазуренка / Мазуренко / Мазуренку мають діставати одну
+    # синтетичну основу (закінчення й регістр накладаються окремо)
+    base_seed = get_deterministic_seed(stem)
     prefix = original.lower()[:prefix_length_for(original, prefix_length)]
 
     last = ""
     for attempt in range(_ATTEMPTS):
-        seed = base_seed if attempt == 0 else get_deterministic_seed(f"{original}\x00{attempt}")
+        seed = base_seed if attempt == 0 else get_deterministic_seed(f"{stem}\x00{attempt}")
         new_stem = _pick_stem(seed, len(stem), family, ending, forbidden={stem}, prefix=prefix)
         masked = new_stem + ending
         last = masked
