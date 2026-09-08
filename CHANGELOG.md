@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.10] - 2026-09
+
+### Changed — tooling
+- `CLAUDE.md`: the working branch is now temporary — created from `main`
+  per task and deleted on origin after the squash-merge, so no side
+  branches linger between tasks.
+
 ## [3.0.9] - 2026-09
 
 ### Added — tooling
