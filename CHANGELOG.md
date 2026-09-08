@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.14] - 2026-09
+
+### Fixed — masking engine
+- Several ranks / names on one line no longer corrupt each other. Masks were
+  substituted with `line.replace(original, mask, 1)` on the partially masked
+  line, so when the mask of one rank contained the form of another rank on
+  the same line (`рядовий → старший солдат`, `солдат → рядовий`) the second
+  substitution hit the freshly inserted mask:
+  `рядового МАЗУРЕНКА та солдата КОВАЛЕНКА` became
+  `старшого рядового МАЗИДЕНКА та солдата КОВИЛЕНКА` (a rank that does not
+  exist, the second rank left unmasked, and unmask restoring the wrong rank).
+  Replacements are now collected as numbered placeholders in the working
+  copy of the line and substituted once at the end, so a mask can never be
+  matched by a later replacement. Same fix for full-name (PIB) replacements.
+- Tests: `tests/test_same_line_replacement.py` (cross-masked ranks on one
+  line, several PIBs per line, round-trip through unmask).
+
 ## [3.0.13] - 2026-09
 
 ### Changed — tooling

@@ -414,25 +414,32 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
             continue
 
         iteration = 0
+        # Заміни збираються як нумеровані плейсхолдери в РОБОЧІЙ копії рядка,
+        # а не підставляються одразу в final_line через str.replace(x, mask, 1):
+        # так «перше входження» могло влучити в уже вставлену маску. Приклад:
+        # «рядового МАЗУРЕНКА та солдата КОВАЛЕНКА» → «рядового»→«старшого
+        # солдата», далі «солдата»→«рядового» замінювало «солдата» всередині
+        # щойно вставленого «старшого солдата» → «старшого рядового» (такого
+        # звання немає), а справжнє «солдата» лишалось відкритим.
         current_line_for_parsing = line
-        final_line = line
+        placeholders: List[Tuple[str, str]] = []
+
+        def _hold(kind: str, value: str) -> str:
+            token = f"___{kind}_MASKED_{len(placeholders) + 1}___"
+            placeholders.append((token, value))
+            return token
 
         while iteration < 10:
             rank, pib, identifier = parse_hybrid_line(current_line_for_parsing)
             if not pib: break
             # ПІБ має бути дослівно в рядку — інакше заміна не спрацює, а
             # mask_* уже запишуть сміття в mapping і цикл крутитиметься вхолосту
-            if pib not in final_line or pib not in current_line_for_parsing:
+            if pib not in current_line_for_parsing:
                 break
-            if rank and not pib:
-                current_line_for_parsing = current_line_for_parsing.replace(rank, "___SKIP_RANK___", 1)
-                iteration += 1
-                continue
 
             if rank and _cfg.MASK_RANKS:
                 masked_rank_val = mask_rank_preserve_case(rank, masking_dict, instance_counters)
-                final_line = final_line.replace(rank, masked_rank_val, 1)
-                current_line_for_parsing = current_line_for_parsing.replace(rank, "___RANK_MASKED___", 1)
+                current_line_for_parsing = current_line_for_parsing.replace(rank, _hold("RANK", masked_rank_val), 1)
 
             if pib and _cfg.MASK_NAMES:
                 parts = pib.split()
@@ -447,7 +454,7 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
                         if isinstance(info, dict) and "masked_as" in info
                     }
                     if any(p.lower() in already_masked for p in parts[:2]):
-                        current_line_for_parsing = current_line_for_parsing.replace(pib, "___PIB_MASKED___", 1)
+                        current_line_for_parsing = current_line_for_parsing.replace(pib, _hold("PIB", pib), 1)
                         iteration += 1
                         continue
                     # «Іван ПЕТРЕНКО» (прізвище виділене капсом) → ім'я перше.
@@ -471,15 +478,17 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
                         masked_patronymic = mask_patronymic(patronymic, gender, masking_dict, instance_counters)
                         masked_pib_str += f" {masked_patronymic}"
 
-                    final_line = final_line.replace(pib, masked_pib_str, 1)
-                    current_line_for_parsing = current_line_for_parsing.replace(pib, "___PIB_MASKED___", 1)
+                    current_line_for_parsing = current_line_for_parsing.replace(pib, _hold("PIB", masked_pib_str), 1)
                 elif len(parts) == 1 and rank:
                     # Звання + лише прізвище («рядовий Іванов прибув») —
                     # раніше такий ПІБ узагалі не маскувався
                     masked_surname = mask_surname(parts[0], masking_dict, instance_counters)
-                    final_line = final_line.replace(pib, masked_surname, 1)
-                    current_line_for_parsing = current_line_for_parsing.replace(pib, "___PIB_MASKED___", 1)
+                    current_line_for_parsing = current_line_for_parsing.replace(pib, _hold("PIB", masked_surname), 1)
             iteration += 1
+
+        final_line = current_line_for_parsing
+        for token, value in placeholders:
+            final_line = final_line.replace(token, value, 1)
         masked_lines.append(final_line)
 
     text = '\n'.join(masked_lines)
