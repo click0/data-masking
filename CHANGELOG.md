@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.16] - 2026-09
+
+### Changed — surname prefix rule
+- The "at most half of the surname" limit now counts the preserved ending
+  as well as the prefix. Before, only the prefix was capped, so with a long
+  ending most of the original stayed visible (`Мазуренка → Мазиденка`:
+  7 of 9 letters unchanged, `Іванов → Іва…ов`: 5 of 6). Now prefix +
+  ending ≤ half of the base (nominative) form of the surname, and long
+  endings shorten the prefix: `Коваль → 3`, `Ґудзь → 2`, `Іванов → 1`,
+  `Кравчук → 1`, `Бондаренко → 1`, `Петренко → 0` (`-енко` alone is half
+  of the word, so the stem is fully synthetic). The budget is computed from
+  the base form, so all grammatical cases of one surname keep the same
+  prefix (`Іванов / Іванова / Івановим → 1`).
+- `masking_rules.surname_prefix_length` still sets the upper bound (0 =
+  fully synthetic). Docs, config template and comments updated.
+- Tests in `tests/test_surname_prefix.py` updated to the new table, plus
+  `test_prefix_plus_ending_at_most_half`.
+
 ## [3.0.15] - 2026-09
 
 ### Fixed — surname masks

@@ -31,7 +31,7 @@ Year: 2025-2026
 # Re-exports from masking package for backward compatibility
 # ============================================================================
 
-__version__ = "3.0.15"
+__version__ = "3.0.16"
 
 from datamasking.masking.constants import (
     __version__, __author__, __contact__, __phone__, __license__, __year__,
