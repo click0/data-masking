@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.8] - 2026-09
+
+### Added — surname prefix and faker locale (requirements)
+- **Surname masks keep the first characters of the original again.** The
+  3.0.2 synthetic algorithm dropped the leading letters the old
+  `original[:3]…` formula had preserved implicitly. Now the mask =
+  first N characters of the original + synthetic stem + the original's
+  grammatical ending (`Петренку → Петаченку`, `Іванова → Іварунова`,
+  `Ґудзь → Ґузій`). N defaults to 3; **short surnames keep at most half
+  of the word** (`Ґудзь → 2`, `Ткач → 2`, `Рак → 1`). The prefix is taken
+  from the surface form regardless of where the ending starts, but never
+  reaches into the ending. All no-leak checks stay in force (mask never
+  equals/contains the original, its stem, or any document word); the
+  prefix/stem joint is kept pronounceable (vowel + consonant).
+- **`masking_rules.surname_prefix_length`** (YAML) /
+  **`DATA_MASKING_SURNAME_PREFIX_LENGTH`** (ENV): the N above; `0`
+  restores fully synthetic masks (3.0.2–3.0.7 behaviour); negative or
+  non-integer values are a fatal config error.
+- **`system.faker_locale`** (YAML) / **`DATA_MASKING_FAKER_LOCALE`**
+  (ENV), default `uk_UA`: the faker dictionaries used for synthetic
+  surname stems, given-name fallbacks and patronymics. Ukrainian
+  morphology (surname endings, rank declension, patronymic gender) is
+  unchanged; locales without patronymics (most of them) fall back to
+  `uk_UA` for patronymics; an unknown locale is rejected at start-up.
+  `Faker('uk_UA')` is no longer hard-wired at import — see
+  `constants.set_faker_locale()`.
+- Tests: `tests/test_surname_prefix.py` (prefix lengths incl. short
+  surnames, ending/case preservation, hyphenated parts, pronounceable
+  joint, YAML/ENV wiring, locale switch, unknown locale, patronymic
+  fallback).
+
+### Compatibility
+- Surname masks differ from 3.0.2–3.0.7 (same input → new, stable masks).
+  Unmasking of files from any earlier version is unaffected.
+
 ## [3.0.7] - 2026-09
 
 ### Changed — static typing: mypy is clean and blocking

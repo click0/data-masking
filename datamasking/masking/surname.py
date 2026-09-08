@@ -153,12 +153,24 @@ def _draw_candidates(seed: int, bare: bool) -> Iterable[Tuple[str, str]]:
             yield stem, family
 
 
-def _pick_stem(seed: int, target_len: int, family: str, ending: str, forbidden: Set[str]) -> str:
+def _pick_stem(seed: int, target_len: int, family: str, ending: str, forbidden: Set[str],
+               prefix: str = "") -> str:
     """Обирає синтетичну основу: тієї ж родини, придатну до закінчення
-    і схожої довжини, якщо є."""
+    і схожої довжини, якщо є. Якщо задано *prefix* — основа починається
+    з нього (перші символи оригінального прізвища), а решта синтетична."""
     same_family: list = []
     others: list = []
-    for stem, fam in _draw_candidates(seed, bare=(ending == "")):
+    p = len(prefix)
+    for cand, fam in _draw_candidates(seed, bare=(ending == "")):
+        # хвіст кандидата після префікса має бути хоч 2 символи, щоб маска
+        # не була «префікс + 1 літера»
+        if p and len(cand) < p + 2:
+            continue
+        # Стик префікса й хвоста має бути вимовним: після голосної —
+        # приголосна і навпаки («іва»+«анов» → «іваанов», «тк»+«мак» → «ткмак» — ні)
+        if p and not _joint_ok(prefix, cand[p:]):
+            continue
+        stem = prefix + cand[p:] if p else cand
         if stem in forbidden or not _stem_fits(stem, family):
             continue
         (same_family if fam == family and family else others).append(stem)
@@ -166,16 +178,50 @@ def _pick_stem(seed: int, target_len: int, family: str, ending: str, forbidden: 
     def closest(pool):
         return min(pool, key=lambda s: abs(len(s) - target_len)) if pool else None
 
-    return closest(same_family) or closest(others) or _random_stem(seed, target_len)
+    return closest(same_family) or closest(others) or _random_stem(seed, target_len, prefix)
 
 
-def _random_stem(seed: int, target_len: int) -> str:
-    """Запасний варіант: вимовна псевдооснова з чергуванням приголосна/голосна."""
+_ALL_VOWELS = "аеиіоуюяєї"
+
+
+def _joint_ok(prefix: str, tail: str) -> bool:
+    """Голосна + приголосна (або навпаки) на стику; ь/й/апостроф — як приголосна."""
+    if not prefix or not tail:
+        return True
+    last_vowel = prefix[-1] in _ALL_VOWELS
+    first_vowel = tail[0] in _ALL_VOWELS
+    return last_vowel != first_vowel
+
+
+def _random_stem(seed: int, target_len: int, prefix: str = "") -> str:
+    """Запасний варіант: вимовна псевдооснова з чергуванням приголосна/голосна
+    (після *prefix*, якщо він є)."""
     rnd = random.Random(seed)
     length = max(MIN_STEM, min(target_len, 8))
-    return "".join(
-        rnd.choice(_CONSONANTS if i % 2 == 0 else _VOWELS) for i in range(length)
+    tail_len = max(2, length - len(prefix))
+    start_with_vowel = bool(prefix) and prefix[-1] not in _ALL_VOWELS
+    tail = "".join(
+        rnd.choice(_VOWELS if (i % 2 == 0) == start_with_vowel else _CONSONANTS)
+        for i in range(tail_len)
     )
+    return prefix + tail
+
+
+def prefix_length_for(original: str, configured: Optional[int] = None) -> int:
+    """Скільки перших символів оригіналу лишити в масці.
+
+    Правило (ТЗ): N з конфігу (SURNAME_PREFIX_LENGTH, типово 3), але для
+    коротких прізвищ — не більше половини слова: Петренко → 3, Ґудзь → 2,
+    Ткач → 2. Префікс не залежить від того, де починається закінчення, але
+    не заходить у нього (інакше закінчення не відновити граматично).
+    """
+    n = _cfg.SURNAME_PREFIX_LENGTH if configured is None else configured
+    if n <= 0:
+        return 0
+    stem, _ending, _family = split_surname(original)
+    # Хоча б один символ основи має змінитись (Лис-енко: основа «лис» — префікс
+    # 2, не 3), інакше маска містить усю основу і no-leak відкидає всі спроби
+    return max(0, min(n, len(original) // 2, len(stem) - 1))
 
 
 def _leaks(masked: str, original: str, stem: str) -> bool:
@@ -207,20 +253,23 @@ def known_surname_forms(masking_dict: Dict) -> Set[str]:
     return forms
 
 
-def synthesize_surname(original: str, forbidden: Optional[Set[str]] = None) -> str:
+def synthesize_surname(original: str, forbidden: Optional[Set[str]] = None,
+                       prefix_length: Optional[int] = None) -> str:
     """Детермінована синтетична маска (нижній регістр) для поверхневої форми *original*.
 
-    Зберігає відмінкове/родове закінчення оригіналу, не містить оригінал,
-    не збігається з жодним рядком із *forbidden*.
+    Зберігає перші N символів оригіналу (див. prefix_length_for) і його
+    відмінкове/родове закінчення; не містить оригінал і не збігається з
+    жодним рядком із *forbidden*.
     """
     forbidden = {f.lower() for f in (forbidden or set())} | _document_vocab
     stem, ending, family = split_surname(original)
     base_seed = get_deterministic_seed(original)
+    prefix = original.lower()[:prefix_length_for(original, prefix_length)]
 
     last = ""
     for attempt in range(_ATTEMPTS):
         seed = base_seed if attempt == 0 else get_deterministic_seed(f"{original}\x00{attempt}")
-        new_stem = _pick_stem(seed, len(stem), family, ending, forbidden={stem})
+        new_stem = _pick_stem(seed, len(stem), family, ending, forbidden={stem}, prefix=prefix)
         masked = new_stem + ending
         last = masked
         if not _leaks(masked, original, stem) and masked not in forbidden:

@@ -134,7 +134,11 @@ def mask_patronymic(patronymic: str, gender: str, masking_dict: Dict, instance_c
     seed = get_deterministic_seed(patronymic_lower)
     random.seed(seed)
     _cfg.fake_uk.seed_instance(seed)
-    fake_patronymic = _cfg.fake_uk.middle_name_male() if gender == 'male' else _cfg.fake_uk.middle_name_female()
+    # Більшість локалей faker не мають по батькові — беремо uk_UA-fallback
+    provider = _cfg.fake_uk if hasattr(_cfg.fake_uk, 'middle_name_male') else _cfg.fake_uk_fallback
+    if provider is not _cfg.fake_uk:
+        provider.seed_instance(seed)
+    fake_patronymic = provider.middle_name_male() if gender == 'male' else provider.middle_name_female()
 
     # Застосовуємо регістр
     if is_upper: fake_patronymic = fake_patronymic.upper()
