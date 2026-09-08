@@ -33,16 +33,21 @@ pip install -e '.[full]' && pip install -r requirements-dev.txt
 1. Гілка розробки — тимчасова, одна на задачу, з фіксованим ім'ям
    `claude/refactor-data-masking-lIcWN`: створюється від `origin/main`
    (`git checkout -B claude/refactor-data-masking-lIcWN origin/main`), після
-   squash-мержу PR **видаляється на origin**
-   (`git push origin --delete claude/refactor-data-masking-lIcWN`), щоб у
-   репозиторії не висіли «побічні» гілки. Наступна задача створює її знову
-   від актуального `main`. На сервері між задачами має лишатись лише `main`.
+   squash-мержу PR має зникнути з origin, щоб між задачами лишався лише
+   `main`. **Видалити її з цього середовища неможливо** — проксі відхиляє
+   `git push --delete` (як і теги), а GitHub API-інструменти видалення гілок
+   не мають. Тому видалення робить GitHub: у репозиторії має бути ввімкнено
+   Settings → General → Pull Requests → *Automatically delete head branches*
+   (або власник видаляє гілку вручну на сторінці Branches). Не намагатись
+   видаляти гілку з Claude Code — це марно. Наступна задача створює гілку
+   знову від актуального `main` (force-push поверх старої, якщо GitHub її
+   ще не прибрав, — нормально: вона містить лише вже змержену історію).
 2. Перед комітом: `python -m pytest tests/ -q -p no:cacheprovider`,
    `python -m mypy datamasking/ --config-file mypy.ini` (має бути 0 помилок —
    джоба blocking), `flake8 . --select=E9,F63,F7,F82`.
 3. Push → PR у `main` → дочекатись **зеленого CI на всій матриці**
-   (Linux 3.9/3.11/3.13, Windows 3.12, core-only, package, mypy) → squash-merge →
-   видалити гілку на origin (п. 1).
+   (Linux 3.9/3.11/3.13, Windows 3.12, core-only, package, mypy) → squash-merge
+   (гілку прибирає GitHub, п. 1).
 4. Стежити за CI через GitHub API за **повним SHA** (`?head_sha=<40 hex>`);
    скорочений SHA API ігнорує.
 5. **Теги через проксі не пушаться** — релізи створює користувач вручну
