@@ -184,9 +184,16 @@ Enable them once per clone:
 git config core.hooksPath .githooks
 ```
 
-`prepare-commit-msg` appends `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`
-to commits made from a Claude Code session (detected via the `CLAUDECODE`
-environment variable); it is idempotent and leaves merge/squash commits alone.
+`prepare-commit-msg` appends the attribution block to commits made from a Claude
+Code session (detected via the `CLAUDECODE` environment variable):
+
+```
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_<id>
+Generated-With: Claude Code <version>
+```
+
+It is idempotent and leaves merge/squash commits alone.
 Override the co-author with `git config claude.coauthor "Name <email>"`.
 
 ---

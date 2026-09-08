@@ -20,12 +20,15 @@ pip install -e '.[full]' && pip install -r requirements-dev.txt
 - **Кожен коміт бампає patch-версію** у двох місцях: `datamasking/_version.py`
   та літерал `__version__` у `data_masking.py` (CI звіряє їх). Плюс запис у
   `CHANGELOG.md` під новим `## [X.Y.Z]`.
-- Трейлери в кінці повідомлення (хук додає `Co-Authored-By`, якщо
-  `core.hooksPath` увімкнено; інакше — вручну):
+- Трейлери в кінці повідомлення — повний блок атрибуції (хук додає його
+  сам, якщо `core.hooksPath` увімкнено; інакше — вручну):
   ```
   Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-  Claude-Session: <URL сесії>
+  Claude-Session: https://claude.ai/code/session_<id>
+  Generated-With: Claude Code <version>
   ```
+  (`<id>` — `CLAUDE_CODE_REMOTE_SESSION_ID` без префікса `cse_`;
+  версія — `CLAUDE_CODE_VERSION`.)
 - Ніяких ідентифікаторів моделі в коді, коментарях чи PR-описах — лише в трейлері.
 
 ## Робочий процес

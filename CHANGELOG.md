@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.12] - 2026-09
+
+### Changed — tooling
+- `prepare-commit-msg` hook now writes the full attribution block instead
+  of a single line: `Co-Authored-By`, `Claude-Session` (URL derived from
+  `CLAUDE_CODE_REMOTE_SESSION_ID`) and `Generated-With: Claude Code <version>`
+  (from `CLAUDE_CODE_VERSION`); each trailer is added only if missing.
+  Documented in `.githooks/README.md`, `docs/INSTALL.md`, `CLAUDE.md`.
+
 ## [3.0.11] - 2026-09
 
 ### Changed — tooling
