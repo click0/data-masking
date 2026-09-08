@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.13] - 2026-09
+
+### Changed — tooling
+- `CLAUDE.md`: back to a single persistent working branch; PRs are merged
+  with a merge commit (not squash) so the branch is marked merged and the
+  merges are visible in the `main` graph — no branch deletion needed.
+
 ## [3.0.12] - 2026-09
 
 ### Changed — tooling
