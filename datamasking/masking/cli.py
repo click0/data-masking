@@ -307,10 +307,13 @@ def _apply_selective_filters(args, logger) -> Optional[str]:
     return None
 
 
-def _apply_config_settings(args, config, logger) -> None:
-    """Apply config-based masking rules and system settings."""
+def _apply_config_settings(args, config, logger) -> Optional[str]:
+    """Apply config-based masking rules and system settings.
+
+    Returns an error message (fatal for the CLI) or None.
+    """
     if config is None:
-        return
+        return None
 
     # Masking rules from config (only if --only/--exclude not specified)
     masking_rules = getattr(config, 'masking_rules', None)
@@ -353,6 +356,27 @@ def _apply_config_settings(args, config, logger) -> None:
         if cfg_hash is not None:
             _cfg.HASH_ALGORITHM = str(cfg_hash)
 
+        # system.faker_locale — словники faker для синтетичних прізвищ/імен
+        locale = getattr(system_cfg, 'faker_locale', None)
+        if locale and locale != _cfg.FAKER_LOCALE:
+            try:
+                _cfg.set_faker_locale(str(locale))
+            except ValueError as e:
+                return str(e)
+            if logger:
+                logger.info(f"Faker locale: {locale}")
+
+    # masking_rules.surname_prefix_length — скільки символів оригіналу лишати
+    prefix_len = getattr(masking_rules, 'surname_prefix_length', None)
+    if prefix_len is not None:
+        try:
+            prefix_len = int(prefix_len)
+        except (TypeError, ValueError):
+            return f"masking_rules.surname_prefix_length must be an integer, got {prefix_len!r}"
+        if prefix_len < 0:
+            return "masking_rules.surname_prefix_length must be >= 0"
+        _cfg.SURNAME_PREFIX_LENGTH = prefix_len
+
     # validation.max_input_size_mb — раніше документований, але мертвий ключ
     validation_cfg = getattr(config, 'validation', None)
     max_mb = getattr(validation_cfg, 'max_input_size_mb', None)
@@ -365,6 +389,7 @@ def _apply_config_settings(args, config, logger) -> None:
         args.encrypt = True
         if logger:
             logger.info("Encryption enabled by config (security.encrypt_output)")
+    return None
 
 
 def _prepare_output_paths(args, input_path: Path) -> Tuple[Path, Path, Path, str, int]:
@@ -779,7 +804,10 @@ def main(argv=None) -> int:
     if filter_error:
         print(f"Error: {filter_error}")
         return EXIT_USAGE
-    _apply_config_settings(args, config, logger)
+    settings_error = _apply_config_settings(args, config, logger)
+    if settings_error:
+        print(f"Error: {settings_error}")
+        return EXIT_ERROR
 
     if logger:
         logger.info(f"Masking flags: NAMES={_cfg.MASK_NAMES}, IPN={_cfg.MASK_IPN}, "

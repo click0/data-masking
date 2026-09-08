@@ -33,8 +33,37 @@ __phone__ = "+38(099)6053340"
 __license__ = "BSD 3-Clause"
 __year__ = "2025-2026"
 
-fake_uk = Faker('uk_UA')
+# Локаль faker для синтетичних прізвищ/імен/по батькові. Перевизначається
+# конфігом (system.faker_locale / DATA_MASKING_FAKER_LOCALE) через
+# set_faker_locale(); морфологія (закінчення, відмінки, рід) лишається
+# українською — інша локаль змінює лише словники.
+FAKER_LOCALE = 'uk_UA'
+fake_uk = Faker(FAKER_LOCALE)
+# Запасний uk_UA-генератор для по батькові: більшість локалей faker не мають
+# middle_name_* (є лише в uk/ru)
+fake_uk_fallback = fake_uk
+
+# Скільки перших символів оригінального прізвища зберігати в масці
+# (0 = не зберігати). Для коротких прізвищ — не більше половини слова.
+# Конфіг: masking_rules.surname_prefix_length / DATA_MASKING_SURNAME_PREFIX_LENGTH
+SURNAME_PREFIX_LENGTH = 3
+
 HASH_ALGORITHM = 'blake2b'
+
+
+def set_faker_locale(locale: str) -> None:
+    """Перемикає локаль faker (валідує; невідома локаль → ValueError)."""
+    global fake_uk, FAKER_LOCALE
+    locale = (locale or "").strip()
+    if not locale:
+        raise ValueError("faker locale must be a non-empty string, e.g. 'uk_UA'")
+    try:
+        instance = Faker(locale)
+        instance.last_name()  # локаль без провайдера імен — теж помилка
+    except (AttributeError, ValueError, ImportError) as exc:
+        raise ValueError(f"Unknown or unsupported faker locale: {locale!r}") from exc
+    fake_uk = instance
+    FAKER_LOCALE = locale
 
 # ============================================================================
 # НАЛАШТУВАННЯ МАСКУВАННЯ

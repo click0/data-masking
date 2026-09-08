@@ -185,6 +185,9 @@ Unmask правильно відновить обидва входження
 "Капітану на пенсії"      → "Майору на пенсії"           (давальний зберігається!)
 ```
 
+### Surname masks (v3.0.8)
+A surname mask keeps the **first 3 characters** of the original (at most half of the word for short surnames), the rest is synthetic; the grammatical ending is preserved: `Петренку → Петаченку`, `Ґудзь → Ґузій`. Configure with `masking_rules.surname_prefix_length` (0 = fully synthetic) and the faker dictionaries with `system.faker_locale` (default `uk_UA`; grammar stays Ukrainian).
+
 ### Case Preservation
 ```
 "ІВАНОВ"   → "ПЕТРЕНКО"

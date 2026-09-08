@@ -47,6 +47,8 @@ class SystemConfig:
     hash_algorithm: str = "blake2b"
     preserve_case: bool = True
     debug_mode: bool = False
+    # Локаль faker для синтетичних прізвищ/імен (морфологія лишається uk)
+    faker_locale: str = "uk_UA"
 
 
 @dataclass
@@ -82,6 +84,9 @@ class MaskingRulesConfig:
     enable_units: bool = True
     enable_orders: bool = True
     enable_br_numbers: bool = True
+    # Скільки перших символів оригінального прізвища зберігати в масці
+    # (0 = не зберігати; для коротких прізвищ — не більше половини слова)
+    surname_prefix_length: int = 3
     # Tuning parameters
     rank_shift_options: List[int] = field(default_factory=lambda: [-2, -1, 1, 2])
     date_shift_days: int = 30
@@ -214,6 +219,8 @@ class ConfigLoader:
         "DATA_MASKING_HASH_ALGORITHM": ("system", "hash_algorithm", str),
         "DATA_MASKING_PRESERVE_CASE": ("system", "preserve_case", bool),
         "DATA_MASKING_DEBUG": ("system", "debug_mode", bool),
+        "DATA_MASKING_FAKER_LOCALE": ("system", "faker_locale", str),
+        "DATA_MASKING_SURNAME_PREFIX_LENGTH": ("masking_rules", "surname_prefix_length", int),
         "DATA_MASKING_ENCRYPT_OUTPUT": ("security", "encrypt_output", bool),
         # DATA_MASKING_PASSWORD навмисно ВІДСУТНІЙ: це сам пароль, його читає CLI
         # (до 3.0.4 значення пароля записувалось у security.password_env_var)
@@ -464,6 +471,11 @@ system:
   # Enable debug output (verbose logging)
   debug_mode: false
 
+  # Faker locale for synthetic surnames / names / patronymics (e.g. uk_UA, ru_RU,
+  # pl_PL). Grammar (endings, cases, gender) stays Ukrainian; locales without
+  # patronymics fall back to uk_UA for them. ENV: DATA_MASKING_FAKER_LOCALE
+  faker_locale: "uk_UA"
+
 # --------------------------------------------------------------------------
 # Password generation settings
 # --------------------------------------------------------------------------
@@ -499,6 +511,11 @@ security:
 # Masking rules — enable/disable individual data types
 # --------------------------------------------------------------------------
 masking_rules:
+  # How many leading characters of the ORIGINAL surname to keep in its mask
+  # (0 = none). Short surnames keep at most half of the word:
+  # Петренко -> Пет…енко, Ґудзь -> Ґу…  ENV: DATA_MASKING_SURNAME_PREFIX_LENGTH
+  surname_prefix_length: 3
+
   # Military ranks (with declension and case preservation)
   enable_ranks: true
 
