@@ -175,6 +175,22 @@ startup. The `build/` directory contains the analysis results
 
 ---
 
+## Contributing: git hooks
+
+Shared hooks live in `.githooks/` (the `.git/hooks/` directory is not versioned).
+Enable them once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+`prepare-commit-msg` appends `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`
+to commits made from a Claude Code session (detected via the `CLAUDECODE`
+environment variable); it is idempotent and leaves merge/squash commits alone.
+Override the co-author with `git config claude.coauthor "Name <email>"`.
+
+---
+
 ## Dependencies
 
 | Package | Version | Purpose |

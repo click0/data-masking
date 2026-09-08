@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.9] - 2026-09
+
+### Added — tooling
+- Versioned git hooks in `.githooks/` (enable with
+  `git config core.hooksPath .githooks`): `prepare-commit-msg` appends the
+  `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` trailer to
+  commits made from a Claude Code session (`CLAUDECODE` env), idempotently;
+  merge/squash commits untouched; co-author overridable via
+  `git config claude.coauthor`. Documented in INSTALL.md.
+- `CLAUDE.md`: per-repository instructions for Claude Code sessions (enable
+  the hooks on a fresh clone, commit/version rules, workflow, invariants
+  the tests protect, release procedure).
+
 ## [3.0.8] - 2026-09
 
 ### Added — surname prefix and faker locale (requirements)

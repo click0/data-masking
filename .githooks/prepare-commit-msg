@@ -1,0 +1,31 @@
+#!/bin/sh
+# prepare-commit-msg — додає трейлер співавторства до коміту, коли коміт
+# робиться з сесії Claude Code (у її оточенні є змінна CLAUDECODE).
+#
+# Активація (один раз на клон):
+#     git config core.hooksPath .githooks
+#
+# Ідемпотентно: якщо трейлер уже є (наприклад, переданий через
+# `git commit --trailer ...` або в тексті -m), другий не додається.
+# Для merge/squash-комітів і rebase нічого не робить.
+#
+# Перевизначити співавтора: git config claude.coauthor "Name <email>"
+
+MSG_FILE="$1"
+SOURCE="$2"
+
+# Лише для звичайних комітів (не merge, не squash, не amend через rebase)
+case "$SOURCE" in
+    merge|squash) exit 0 ;;
+esac
+
+# Лише з-під Claude Code
+[ -n "$CLAUDECODE" ] || exit 0
+
+COAUTHOR="$(git config --get claude.coauthor 2>/dev/null)"
+[ -n "$COAUTHOR" ] || COAUTHOR="Claude Fable 5.1 <noreply@anthropic.com>"
+
+git interpret-trailers --in-place \
+    --if-exists doNothing \
+    --trailer "Co-Authored-By: $COAUTHOR" \
+    "$MSG_FILE"
