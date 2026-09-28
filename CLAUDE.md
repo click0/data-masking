@@ -3,7 +3,7 @@
 ## Перше, що зробити в новому клоні
 
 ```bash
-git config core.hooksPath .githooks        # хук додає Co-Authored-By до комітів із Claude Code
+git config core.hooksPath .githooks        # хук дописує блок атрибуції до комітів із Claude Code
 pip install -e '.[full]' && pip install -r requirements-dev.txt
 ```
 
@@ -20,15 +20,20 @@ pip install -e '.[full]' && pip install -r requirements-dev.txt
 - **Кожен коміт бампає patch-версію** у двох місцях: `datamasking/_version.py`
   та літерал `__version__` у `data_masking.py` (CI звіряє їх). Плюс запис у
   `CHANGELOG.md` під новим `## [X.Y.Z]`.
-- Трейлери в кінці повідомлення — повний блок атрибуції (хук додає його
-  сам, якщо `core.hooksPath` увімкнено; інакше — вручну):
+- Трейлери в кінці повідомлення — повний блок атрибуції:
   ```
-  Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+  Co-Authored-By: Claude <Model> <noreply@anthropic.com>
   Claude-Session: https://claude.ai/code/session_<id>
   Generated-With: Claude Code <version>
   ```
-  (`<id>` — `CLAUDE_CODE_REMOTE_SESSION_ID` без префікса `cse_`;
-  версія — `CLAUDE_CODE_VERSION`.)
+  **`Co-Authored-By` — модель, яка робить САМЕ ЦЕЙ коміт** (код і коміти в
+  одній сесії можуть писати різні моделі; модель перемикають посеред сесії).
+  Назви моделі в оточенні немає, тому передавати її явно при кожному коміті:
+  `git commit --trailer "Co-Authored-By: Claude <Model> <noreply@anthropic.com>" ...`.
+  Хук (`core.hooksPath`) явний трейлер не чіпає й сам дописує
+  `Claude-Session` (`CLAUDE_CODE_REMOTE_SESSION_ID` без `cse_`) і
+  `Generated-With` (`CLAUDE_CODE_VERSION`); без явного трейлера ставить
+  узагальнене `Claude <noreply@anthropic.com>` і попереджає.
 - Ніяких ідентифікаторів моделі в коді, коментарях чи PR-описах — лише в трейлері.
 
 ## Робочий процес

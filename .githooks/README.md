@@ -9,6 +9,6 @@ git config core.hooksPath .githooks
 
 | Хук | Що робить |
 |---|---|
-| `prepare-commit-msg` | Якщо коміт робиться з сесії Claude Code (змінна `CLAUDECODE`), додає в кінець повідомлення повний блок атрибуції:<br>`Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`<br>`Claude-Session: https://claude.ai/code/session_<id>` (з `CLAUDE_CODE_REMOTE_SESSION_ID`)<br>`Generated-With: Claude Code <version>` (з `CLAUDE_CODE_VERSION`).<br>Ідемпотентно; merge/squash не чіпає. Співавтора можна перевизначити: `git config claude.coauthor "Name <email>"`. |
+| `prepare-commit-msg` | Якщо коміт робиться з сесії Claude Code (змінна `CLAUDECODE`), дописує в кінець повідомлення блок атрибуції:<br>`Claude-Session: https://claude.ai/code/session_<id>` (з `CLAUDE_CODE_REMOTE_SESSION_ID`)<br>`Generated-With: Claude Code <version>` (з `CLAUDE_CODE_VERSION`).<br>`Co-Authored-By` модель передає сама (`git commit --trailer "Co-Authored-By: Claude <Model> <noreply@anthropic.com>"`), бо в одній сесії коміти можуть робити різні моделі, а назви моделі в оточенні немає. Явний трейлер має пріоритет; без нього — `CLAUDE_COAUTHOR`, потім `git config claude.coauthor`, інакше узагальнене `Claude <noreply@anthropic.com>` з попередженням.<br>Ідемпотентно; merge/squash не чіпає. |
 
 Вимкнути назад: `git config --unset core.hooksPath`.
