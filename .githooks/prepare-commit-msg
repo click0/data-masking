@@ -1,19 +1,26 @@
 #!/bin/sh
-# prepare-commit-msg — додає повний блок атрибуції до коміту, коли коміт
-# робиться з сесії Claude Code (у її оточенні є змінна CLAUDECODE):
+# prepare-commit-msg — додає блок атрибуції до коміту, коли коміт робиться
+# з сесії Claude Code (у її оточенні є змінна CLAUDECODE):
 #
-#     Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+#     Co-Authored-By: <модель, що зробила коміт> <noreply@anthropic.com>
 #     Claude-Session: https://claude.ai/code/session_<id>      (якщо відомо)
 #     Generated-With: Claude Code <version>                     (якщо відомо)
 #
 # Активація (один раз на клон):
 #     git config core.hooksPath .githooks
 #
-# Ідемпотентно: трейлер, що вже є (переданий через `git commit --trailer`
-# або в тексті -m), другий раз не додається. Для merge/squash-комітів нічого
-# не робить.
+# Код і коміти в одній сесії можуть писати РІЗНІ моделі (модель перемикають
+# посеред сесії), а назви поточної моделі в оточенні немає. Тому
+# Co-Authored-By модель передає сама, явно:
+#     git commit --trailer "Co-Authored-By: Claude <Model> <noreply@anthropic.com>" ...
+# Явний трейлер має пріоритет (--if-exists doNothing), хук лише доповнює
+# Claude-Session і Generated-With. Якщо трейлера немає — порядок:
+#   1. змінна CLAUDE_COAUTHOR ("Name <email>");
+#   2. git config claude.coauthor;
+#   3. узагальнене "Claude <noreply@anthropic.com>" + попередження в stderr
+#      (краще без назви моделі, ніж з чужою).
 #
-# Перевизначити співавтора: git config claude.coauthor "Name <email>"
+# Ідемпотентно; для merge/squash-комітів нічого не робить.
 
 MSG_FILE="$1"
 SOURCE="$2"
@@ -26,10 +33,18 @@ esac
 # Лише з-під Claude Code
 [ -n "$CLAUDECODE" ] || exit 0
 
-COAUTHOR="$(git config --get claude.coauthor 2>/dev/null)"
-[ -n "$COAUTHOR" ] || COAUTHOR="Claude Fable 5.1 <noreply@anthropic.com>"
+set -- --in-place --if-exists doNothing
 
-set -- --in-place --if-exists doNothing --trailer "Co-Authored-By: $COAUTHOR"
+if ! git interpret-trailers --parse "$MSG_FILE" | grep -qi '^Co-Authored-By:'; then
+    COAUTHOR="$CLAUDE_COAUTHOR"
+    [ -n "$COAUTHOR" ] || COAUTHOR="$(git config --get claude.coauthor 2>/dev/null)"
+    if [ -z "$COAUTHOR" ]; then
+        COAUTHOR="Claude <noreply@anthropic.com>"
+        echo "prepare-commit-msg: no Co-Authored-By given; using generic '$COAUTHOR'." >&2
+        echo "  Pass it explicitly: git commit --trailer \"Co-Authored-By: Claude <Model> <noreply@anthropic.com>\"" >&2
+    fi
+    set -- "$@" --trailer "Co-Authored-By: $COAUTHOR"
+fi
 
 # Посилання на сесію: CLAUDE_CODE_REMOTE_SESSION_ID має вигляд cse_<id>,
 # а публічний URL сесії — https://claude.ai/code/session_<id>

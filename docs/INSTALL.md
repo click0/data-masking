@@ -188,13 +188,19 @@ git config core.hooksPath .githooks
 Code session (detected via the `CLAUDECODE` environment variable):
 
 ```
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Co-Authored-By: Claude <Model> <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_<id>
 Generated-With: Claude Code <version>
 ```
 
-It is idempotent and leaves merge/squash commits alone.
-Override the co-author with `git config claude.coauthor "Name <email>"`.
+Different models may write the code and the commits within one session, and
+the environment does not expose the current model, so the committing model
+passes `Co-Authored-By` explicitly
+(`git commit --trailer "Co-Authored-By: Claude <Model> <noreply@anthropic.com>"`).
+An explicit trailer always wins; without one the hook uses `CLAUDE_COAUTHOR`,
+then `git config claude.coauthor`, and finally a generic
+`Claude <noreply@anthropic.com>` with a warning. It is idempotent and leaves
+merge/squash commits alone.
 
 ---
 

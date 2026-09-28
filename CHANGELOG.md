@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.17] - 2026-09
+
+### Changed — tooling
+- `prepare-commit-msg` no longer hard-codes the co-author model. Different
+  models may write the code and the commits within one session and the
+  environment does not expose the current model, so the committing model
+  passes `Co-Authored-By` explicitly via `git commit --trailer`; the hook
+  keeps it and appends `Claude-Session` / `Generated-With`. Without an
+  explicit trailer the hook falls back to `CLAUDE_COAUTHOR`, then
+  `git config claude.coauthor`, then a generic
+  `Claude <noreply@anthropic.com>` with a warning (never a wrong model name).
+- `CLAUDE.md`, `.githooks/README.md`, `docs/INSTALL.md` updated accordingly.
+
 ## [3.0.16] - 2026-09
 
 ### Changed — surname prefix rule
