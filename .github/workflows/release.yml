@@ -1,5 +1,12 @@
 name: Release
 
+# Як випустити реліз: Releases → «Draft a new release» → вибрати/створити тег
+# vX.Y.Z (= datamasking/_version.py) → Publish. Опис можна лишити порожнім
+# або згенерованим GitHub: пайплайн збере все, додасть файли й замінить опис
+# текстом із CHANGELOG.md (усі записи після попереднього тегу). Текст,
+# написаний у формі вручну, не перезаписується. Те саме — при `git push`
+# тегу (реліз створює пайплайн). Dry-run: Actions → Release → Run workflow.
+
 on:
   push:
     tags:
@@ -65,6 +72,30 @@ jobs:
           echo "version=$PKG_VER" >> $GITHUB_OUTPUT
           echo "prerelease=$PRE" >> $GITHUB_OUTPUT
           echo "Version verified: v$PKG_VER (prerelease=$PRE)"
+
+      # Опис релізу — з CHANGELOG.md: усі записи після попереднього
+      # релізного тегу до поточної версії. Падає, якщо запису для версії
+      # немає (до публікації). У dry-run текст видно в summary прогону.
+      - name: Generate release notes from CHANGELOG
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude "v${VERSION}" HEAD 2>/dev/null || echo "")
+          echo "Previous release tag: ${PREV_TAG:-<none>}"
+          python .github/scripts/release_notes.py \
+            --version "$VERSION" ${PREV_TAG:+--since "$PREV_TAG"} \
+            --repo "${GITHUB_REPOSITORY}" --output release-notes.md
+          {
+            echo "## Release notes preview — v${VERSION}"
+            echo
+            cat release-notes.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          retention-days: 30
 
       - name: Build wheel and sdist
         run: |
@@ -251,6 +282,10 @@ jobs:
     if: github.ref_type == 'tag'
     needs: [build-python, build-windows]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write        # атестація походження (OIDC цього прогону)
+      attestations: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -266,52 +301,91 @@ jobs:
           name: dist-windows
           path: dist
 
-      - name: Generate changelog
-        run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          if [ -n "$PREV_TAG" ]; then
-            CHANGELOG=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
-          else
-            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges -20)
-          fi
-          {
-            echo "CHANGELOG<<EOF"
-            echo "$CHANGELOG"
-            echo "EOF"
-          } >> $GITHUB_ENV
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+          path: notes
 
-      - name: Create or update GitHub Release
+      # Рівно ті файли, що йдуть у реліз; бракує хоч одного — стоп
+      - name: Collect release files and SHA256SUMS
+        env:
+          VERSION: ${{ needs.build-python.outputs.version }}
+        run: |
+          mkdir release
+          for f in "data-masking-${VERSION}.tar.gz" "data-masking-${VERSION}.zip" \
+                   "data_masking-${VERSION}-py3-none-any.whl" "data_masking-${VERSION}.tar.gz" \
+                   "data-masking-${VERSION}-windows-x64.zip"; do
+            test -f "dist/$f" || { echo "::error::missing release file $f"; ls -la dist; exit 1; }
+            cp "dist/$f" release/
+          done
+          cd release
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      # Атестація GitHub: який коміт, workflow і runner зібрали кожен файл.
+      # Перевірка: gh attestation verify <файл> --repo <owner>/<repo>
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: release/data*
+
+      # Новий реліз збирається як чернетка і публікується, лише коли має
+      # УСІ файли. Реліз, створений у формі GitHub (тег вибрано там), —
+      # доповнюється: файли додаються, опис замінюється, лише якщо він
+      # порожній або згенерований (GitHub чи цим пайплайном), назва — лише
+      # якщо порожня. Текст, написаний вручну, лишається.
+      - name: Create or complete GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.build-python.outputs.version }}
           PRERELEASE: ${{ needs.build-python.outputs.prerelease }}
         run: |
-          cat > /tmp/release-body.md <<BODY_EOF
-          ## Data Masking System v${VERSION}
-
-          ### Changes
-          ${{ env.CHANGELOG }}
-
-          ---
-          See [Installation guide](https://github.com/click0/data-masking/blob/main/docs/INSTALL.md) for setup instructions.
-          BODY_EOF
-          sed -i 's/^          //' /tmp/release-body.md
-
+          TAG="${{ github.ref_name }}"
+          TITLE="Data Masking System v${VERSION}"
           FLAGS=""
           [ "$PRERELEASE" = "true" ] && FLAGS="--prerelease"
-          ASSETS="dist/data-masking-${VERSION}.tar.gz dist/data-masking-${VERSION}.zip dist/*.whl dist/data_masking-*.tar.gz dist/data-masking-${VERSION}-windows-x64.zip"
-          ls -la dist/
+          WANT=$(ls release | wc -l)
 
-          if gh release view "${{ github.ref_name }}" &>/dev/null; then
-            echo "Release exists, uploading assets..."
-            gh release upload "${{ github.ref_name }}" $ASSETS --clobber
-            gh release edit "${{ github.ref_name }}" \
-              --title "Data Masking System v${VERSION}" \
-              --notes-file /tmp/release-body.md $FLAGS
+          if gh release view "$TAG" &>/dev/null; then
+            echo "Release $TAG exists: completing it"
+            gh release view "$TAG" --json body --jq .body > /tmp/current-body.md
+            CUR_TITLE=$(gh release view "$TAG" --json name --jq .name)
+            EDIT=()
+            if python3 .github/scripts/release_notes.py --check-replaceable /tmp/current-body.md; then
+              echo "Description is empty/generated: using CHANGELOG notes"
+              EDIT+=(--notes-file notes/release-notes.md)
+            else
+              echo "::notice::Release description was written by hand; keeping it"
+            fi
+            if [ -z "$CUR_TITLE" ] || [ "$CUR_TITLE" = "$TAG" ]; then
+              EDIT+=(--title "$TITLE")
+            fi
+            OK=true
+            gh release upload "$TAG" release/* --clobber || OK=false
+            if $OK && { [ ${#EDIT[@]} -gt 0 ] || [ -n "$FLAGS" ]; }; then
+              gh release edit "$TAG" "${EDIT[@]}" $FLAGS || OK=false
+            fi
+            if ! $OK; then
+              echo "::error::The existing release $TAG could not be completed."
+              echo "::error::With release immutability on (Settings → General → Releases) a published"
+              echo "::error::release is frozen. Delete the release (the tag can stay) and re-run this workflow."
+              exit 1
+            fi
           else
-            echo "Creating new release..."
-            gh release create "${{ github.ref_name }}" \
+            echo "Creating $TAG as a draft with every file"
+            gh release create "$TAG" release/* --draft \
               --target "${{ github.sha }}" \
-              --title "Data Masking System v${VERSION}" \
-              --notes-file /tmp/release-body.md $FLAGS $ASSETS
+              --title "$TITLE" \
+              --notes-file notes/release-notes.md $FLAGS
           fi
+
+          HAVE=$(gh release view "$TAG" --json assets --jq '.assets | length')
+          if [ "$HAVE" -lt "$WANT" ]; then
+            echo "::error::release has $HAVE of $WANT files; not publishing an incomplete release"
+            gh release view "$TAG" --json assets --jq '.assets[].name'
+            exit 1
+          fi
+          if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ]; then
+            gh release edit "$TAG" --draft=false
+          fi
+          gh release view "$TAG" --json name,isDraft,isPrerelease,assets \
+            --jq '"published \(.name) (draft=\(.isDraft) prerelease=\(.isPrerelease)) with \(.assets | length) file(s): " + (.assets | map(.name) | join(", "))'
