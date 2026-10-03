@@ -16,7 +16,11 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-_spec = importlib.util.spec_from_file_location("release_notes", ROOT / ".github" / "scripts" / "release_notes.py")
+_SCRIPT = ROOT / ".github" / "scripts" / "release_notes.py"
+if not _SCRIPT.exists():
+    # Розпакований sdist (CI-джоба package) не містить .github/ — і не має
+    pytest.skip("release tooling is not part of the sdist", allow_module_level=True)
+_spec = importlib.util.spec_from_file_location("release_notes", _SCRIPT)
 assert _spec and _spec.loader
 rn = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(rn)

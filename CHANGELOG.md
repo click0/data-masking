@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.20] - 2026-10
+
+### Fixed — CI
+- `tests/test_release_notes.py` is skipped when `.github/` is absent: the
+  `package` CI job runs the suite from the unpacked sdist, which does not
+  (and should not) ship the release tooling.
+
 ## [3.0.19] - 2026-10
 
 ### Changed — release pipeline
