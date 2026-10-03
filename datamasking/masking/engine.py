@@ -436,6 +436,11 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
             # mask_* уже запишуть сміття в mapping і цикл крутитиметься вхолосту
             if pib not in current_line_for_parsing:
                 break
+            # Плейсхолдер уже замаскованого фрагмента ніколи не є званням чи
+            # частиною ПІБ (інакше маска загорнулась би в маску, а токен
+            # потрапив у mapping і вихідний текст)
+            if "___" in pib or (rank and "___" in rank):
+                break
 
             if rank and _cfg.MASK_RANKS:
                 masked_rank_val = mask_rank_preserve_case(rank, masking_dict, instance_counters)
@@ -443,20 +448,26 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
 
             if pib and _cfg.MASK_NAMES:
                 parts = pib.split()
+                # Не маскуємо повторно те, що вже є маскою (наприклад,
+                # прізвище, замасковане фазою ініціалів: «сержант Коваль П.П.»
+                # → «Ковар К.К.», далі «сержант Ковар» давав «Ковк») — вкладену
+                # маску unmask не розкручує за один прохід. Стосується і ПІБ
+                # з одного слова після звання.
+                # Лише маски ПРІЗВИЩ: вони гарантовано не збігаються з жодним
+                # словом документа (surname.py), тож збіг = це справді маска.
+                # Маски імен такої гарантії не мають («Олега» → «Олег»), і
+                # справжній «Ґудзь Олег Олегович» далі в рядку вважався
+                # замаскованим і лишався відкритим
+                already_masked = {
+                    info["masked_as"].lower()
+                    for info in masking_dict["mappings"].get("surname", {}).values()
+                    if isinstance(info, dict) and "masked_as" in info
+                }
+                if any(p.lower() in already_masked for p in parts[:2]):
+                    current_line_for_parsing = current_line_for_parsing.replace(pib, _hold("PIB", pib), 1)
+                    iteration += 1
+                    continue
                 if len(parts) >= 2:
-                    # Не маскуємо повторно те, що вже є маскою (наприклад,
-                    # прізвище, замасковане фазою ініціалів) — вкладену маску
-                    # unmask не зможе розкрутити за один прохід
-                    already_masked = {
-                        info["masked_as"].lower()
-                        for cat in ("surname", "name")
-                        for info in masking_dict["mappings"].get(cat, {}).values()
-                        if isinstance(info, dict) and "masked_as" in info
-                    }
-                    if any(p.lower() in already_masked for p in parts[:2]):
-                        current_line_for_parsing = current_line_for_parsing.replace(pib, _hold("PIB", pib), 1)
-                        iteration += 1
-                        continue
                     # «Іван ПЕТРЕНКО» (прізвище виділене капсом) → ім'я перше.
                     # Але якщо ВЕСЬ ПІБ капсом — порядок стандартний
                     # (прізвище перше), інакше «ІВАНОВ ПЕТРО» плуталось місцями
@@ -486,8 +497,10 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
                     current_line_for_parsing = current_line_for_parsing.replace(pib, _hold("PIB", masked_surname), 1)
             iteration += 1
 
+        # У зворотному порядку: значення пізнішого плейсхолдера може містити
+        # раніший токен (перестраховка — див. перевірку "___" вище)
         final_line = current_line_for_parsing
-        for token, value in placeholders:
+        for token, value in reversed(placeholders):
             final_line = final_line.replace(token, value, 1)
         masked_lines.append(final_line)
 

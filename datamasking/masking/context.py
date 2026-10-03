@@ -8,7 +8,7 @@ Extracted from data_masking.py during the package refactoring (v2.5.0).
 """
 
 import re
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from datamasking.masking import constants as _cfg
 from datamasking.masking.helpers import normalize_string, normalize_identifier, is_pib_anchor
@@ -129,6 +129,13 @@ def looks_like_pib_line(line: str) -> bool:
         if line_clean.isupper() and len(line_clean.split()) >= 3:
             if not re.search(r'\b\d{10}\b|\b\d{9}\b|[А-ЯA-Z]{2}\s*-?\s*\d{6}\b', line_clean): return False
 
+    # Звання — сильний контекст: «Відповідно до рапорту старшого сержанта
+    # Мазуренка…», «Згідно з наказом №12 лейтенант Петренко…» — типові
+    # зачини військових документів, і раніше такі рядки пропускались
+    # ЦІЛКОМ (ПІБ лишався відкритим). Канцелярські звороти на місці ПІБ
+    # («Наказ Міністерства…») відсікає parse_hybrid_line (bad_words)
+    if has_rank: return True
+
     exclude_starts = ['відповідно', 'згідно', 'на підставі']
     for start in exclude_starts:
         if line_lower.startswith(start): return False
@@ -137,8 +144,6 @@ def looks_like_pib_line(line: str) -> bool:
         legal_terms = ['статуту', 'кодексу', 'закону', 'указу']
         for term in legal_terms:
             if term in line_lower: return False
-
-    if has_rank: return True
 
     words = line_clean.split()
     capitalize_sequence = 0
@@ -168,7 +173,26 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
     if parts and parts[0].isdigit(): parts = parts[1:]
     if not parts: return None, None, identifier
 
-    normalized_line = normalize_string(line)
+    # Нормалізуємо ПОСЛІВНО і пам'ятаємо, якому слову з parts належить кожен
+    # символ. Раніше позиція звання рахувалась за словами normalize_string(line),
+    # а та розбиває «Г.Г.», «т.ч.» на кілька слів: після таких слів індекс
+    # зсувався відносно parts, і за звання бралось сусіднє слово («сержанта
+    # Мазуренка», «Коваля»), а ПІБ — не той. Так само зсув давав номер на
+    # початку рядка (відкинутий із parts, але не з нормалізованого рядка).
+    chunks: List[str] = []
+    char_tok: List[int] = []     # символ normalized_line → індекс у parts (-1 — роздільник)
+    tok_start: Set[int] = set()  # позиції, з яких починається слово parts
+    for i, part in enumerate(parts):
+        norm = normalize_string(part)
+        if not norm:
+            continue
+        if chunks:
+            char_tok.append(-1)
+        tok_start.add(len(char_tok))
+        char_tok.extend([i] * len(norm))
+        chunks.append(norm)
+    normalized_line = ' '.join(chunks)
+
     pib_start_index = -1
     found_rank = None
     found_rank_original_case = None
@@ -178,32 +202,41 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
     for rank_form in _cfg.ALL_RANK_FORMS:
         rank_pattern = rank_form + ' '
         rank_index = normalized_line.find(rank_pattern)
-        if rank_index != -1:
-            words_before_rank = normalized_line[:rank_index].split()
-            rank_word_count = len(rank_form.split())
-            words_after = normalized_line[rank_index + len(rank_pattern):].split()
-            additional_words = 0
+        # Звання — лише цілими словами: «майора» всередині «генерал-майора»
+        # чи «солдата» всередині «Солдатенка» — не звання
+        while rank_index != -1:
+            end = rank_index + len(rank_form)
+            if rank_index in tok_start and char_tok[end] == -1:
+                break
+            rank_index = normalized_line.find(rank_pattern, rank_index + 1)
+        if rank_index == -1:
+            continue
 
-            if len(words_after) >= 2:
-                two_words = ' '.join(words_after[:2])
-                if two_words == 'медичної служби':
-                    additional_words += 2
-                    words_after = words_after[2:]
-            if words_after and words_after[0] == 'юстиції':
-                additional_words += 1
-                words_after = words_after[1:]
-            if words_after and words_after[0] in ['у', 'в', 'на']:
-                if len(words_after) > 1 and words_after[1] in ['відставці', 'запасі', 'пенсії', 'резерві']:
-                    additional_words += 2
+        first_tok = char_tok[rank_index]
+        last_tok = char_tok[rank_index + len(rank_form) - 1]
+        words_after = normalized_line[rank_index + len(rank_pattern):].split()
+        additional_words = 0
 
-            rank_matches.append((rank_index, rank_form, len(words_before_rank), rank_word_count + additional_words))
+        if len(words_after) >= 2:
+            two_words = ' '.join(words_after[:2])
+            if two_words == 'медичної служби':
+                additional_words += 2
+                words_after = words_after[2:]
+        if words_after and words_after[0] == 'юстиції':
+            additional_words += 1
+            words_after = words_after[1:]
+        if words_after and words_after[0] in ['у', 'в', 'на']:
+            if len(words_after) > 1 and words_after[1] in ['відставці', 'запасі', 'пенсії', 'резерві']:
+                additional_words += 2
+
+        rank_matches.append((rank_index, rank_form, first_tok, last_tok - first_tok + 1 + additional_words))
 
     if rank_matches:
         rank_matches.sort(key=lambda x: x[0])
         rank_index, found_rank, rank_position, rank_word_count = rank_matches[0]
         pib_start_index = rank_position + rank_word_count
         rank_words = [w.strip(_cfg.QUOTE_CHARS) for w in
-                      line.split()[rank_position:rank_position + rank_word_count]]
+                      parts[rank_position:rank_position + rank_word_count]]
         found_rank_original_case = ' '.join(rank_words) if rank_words else found_rank
 
     # Кандидати на початок ПІБ: після звання (пріоритет), далі — кожен

@@ -4,6 +4,39 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.18] - 2026-10
+
+### Fixed — rank/PIB parser (found by fuzzing)
+A fuzzer that masks and unmasks random lines mixing ranks, full names,
+initials, numbers and dates showed that before this release ~65% of 3000
+documents did not round-trip and ~50% left a surname visible in the masked
+text. After the fixes below: 0 failures on 10 000 fresh documents.
+- **Word alignment.** The rank position was counted on the words of the
+  normalized line while the PIB was taken from the raw words; normalization
+  splits `Г.Г.` / `т.ч.` into several words, so after initials the index
+  shifted and a neighbouring word was taken as the rank
+  (`сержанта Мазуренка`, `Коваля`), leaving the real surname unmasked. A
+  leading list number without a dot (`1 рядовий Іванов …`) shifted it the
+  same way and the surname fell out of the PIB. The line is now normalized
+  word by word and every rank match maps back to a real word.
+- **Whole-word ranks.** `майора` is no longer matched inside `генерал-майора`.
+- **No double masking.** A surname already masked by the initials pass
+  (`сержант Коваль П.П.` → `Ковар К.К.`) was masked again when only the
+  surname followed the rank (`Ковар` → `Ковк`), which unmask could not undo.
+- **Name-mask collisions.** The "already masked" check also looked at
+  first-name masks, which may equal a real name later in the line
+  (`Олега` → `Олег`), so a real `Ґудзь Олег Олегович` was skipped and leaked.
+  Only surname masks are checked now (they never equal a document word).
+- **Official openers.** Lines starting with `Відповідно` / `Згідно` /
+  `На підставі` were skipped entirely even with a rank and a name
+  (`Відповідно до рапорту старшого сержанта Мазуренка …`). A rank now
+  overrides these exclusions; official text without a name is unchanged.
+- **3.0.14 regression.** A placeholder token could reach the output
+  (`майора ___RANK_MASKED_5___`); placeholders are never parsed as a rank
+  or PIB, and are substituted in reverse order.
+- Tests: `tests/test_parser_alignment.py` (each case above plus a
+  deterministic 200-document property test).
+
 ## [3.0.17] - 2026-09
 
 ### Changed — tooling
