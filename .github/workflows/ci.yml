@@ -24,6 +24,7 @@ jobs:
       - name: Syntax check
         run: |
           python -m py_compile data_masking.py unmask_data.py diagnose_mapping.py rank_data.py __main__.py
+          python -m py_compile .github/scripts/release_notes.py
           python -m compileall datamasking/ modules/ masking/ unmasking/ tests/ -q
 
       - name: Install flake8
