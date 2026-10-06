@@ -117,31 +117,39 @@ class TestLegalActDates:
 # ---------------------------------------------------------------------------
 # 2. Попередження про ключі, що не діють
 # ---------------------------------------------------------------------------
+# Заплановані опції (є в повному прикладі з позначкою [не реалізовано])
+# проходять мовчки; попередження — лише про ключі, яких немає ніде
+# (опечатки, вигадані секції).
 OLD_STYLE = {
-    "system": {"version": "v2.6.0", "hash_algorithm": "blake2b", "backup_enabled": True},
+    "system": {"version": "v2.6.0", "hash_algorithm": "blake2b", "hash_algoritm": "md5"},
     "security": {"encrypt_output": False, "scrypt_n": 16384,
-                 "password_generation": {"enabled": True, "min_digits": 2}},
-    "masking_rules": {"enable_dates": False, "enable_surnames": True},
-    "remask": {"enabled": True, "max_passes": 5},
+                 "password_generation": {"enabled": True, "min_digits": 2, "min_digitz": 3}},
+    "masking_rules": {"enable_dates": False, "enable_surnames": True, "enable_rankz": False},
+    "remask": {"enabled": True, "max_passes": 5, "colour": "red"},
+    "experimental": {"turbo": True},
 }
 
 
 class TestIgnoredKeys:
-    def test_detects_unknown_and_schema_only_keys(self):
+    def test_reports_only_keys_that_exist_nowhere(self):
         assert ignored_config_keys(OLD_STYLE) == [
-            "system.version", "system.backup_enabled",
-            "security.scrypt_n", "security.password_generation.enabled",
-            "security.password_generation.min_digits",
-            "masking_rules.enable_surnames",
-            "remask.enabled", "remask.max_passes",
+            "system.hash_algoritm",
+            "security.password_generation.min_digitz",
+            "masking_rules.enable_rankz",
+            "remask.colour",
+            "experimental.turbo",
         ]
+
+    def test_planned_keys_pass_silently(self):
+        assert ignored_config_keys({"system": {"backup_enabled": True},
+                                    "remask": {"max_passes": 5}}) == []
 
     def test_effective_only_file_is_clean(self):
         assert ignored_config_keys({"masking_rules": {"enable_dates": False},
                                     "system": {"faker_locale": "uk_UA"}}) == []
 
     def test_non_dict_section(self):
-        assert ignored_config_keys({"router_rules": "mask"}) == ["router_rules"]
+        assert ignored_config_keys({"routing": "mask"}) == ["routing"]
 
     def test_warning_text_is_bounded(self):
         keys = [f"s.k{i}" for i in range(65)]
@@ -153,9 +161,11 @@ class TestIgnoredKeys:
 @needs_yaml
 class TestWarningsInCli:
     OLD_YAML = (
-        "system:\n  version: v2.6.0\n  backup_enabled: true\n"
+        "system:\n  version: v2.6.0\n  backup_enabled: true\n  hash_algoritm: md5\n"
         "masking_rules:\n  enable_dates: false\n  enable_document_numbers: false\n"
-        "remask:\n  max_passes: 5\n"
+        "  enable_rankz: false\n"
+        "remask:\n  max_passes: 5\n  colour: red\n"
+        "experimental:\n  turbo: true\n"
     )
 
     def test_loader_reports_yaml_keys(self, tmp_path):
@@ -164,8 +174,8 @@ class TestWarningsInCli:
         loader = ConfigLoader(str(p))
         cfg = loader.load()
         assert cfg.masking_rules.enable_dates is False  # діючі ключі застосовано
-        assert loader.ignored_keys == ["system.version", "system.backup_enabled",
-                                       "masking_rules.enable_document_numbers", "remask.max_passes"]
+        assert loader.ignored_keys == ["system.hash_algoritm", "masking_rules.enable_rankz",
+                                       "remask.colour", "experimental.turbo"]
         assert loader.ignored_source == str(p)
 
     def test_mask_cli_warns_once_and_still_works(self, tmp_path, monkeypatch, capsys):
@@ -176,7 +186,7 @@ class TestWarningsInCli:
         err = capsys.readouterr().err
         assert rc == 0
         assert err.count("have no effect") == 1
-        assert "4 key(s)" in err and "remask.max_passes" in err
+        assert "4 key(s)" in err and "enable_rankz" in err and "max_passes" not in err
         out = (tmp_path / "out.txt").read_bytes().decode("utf-8")
         assert "12.03.2024" in out  # enable_dates: false подіяв
 
@@ -204,8 +214,9 @@ class TestWarningsInCli:
 def test_python_config_dead_keys_reported(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config.py").write_text(
-        "CONFIG = {'system': {'hash_algorithm': 'sha256', 'strict_mode': True}}\n", encoding="utf-8")
+        "CONFIG = {'system': {'hash_algorithm': 'sha256', 'strict_mode': True, 'turbo': 1}}\n",
+        encoding="utf-8")
     loader = ConfigLoader()
     assert loader.load().system.hash_algorithm == "sha256"
-    assert loader.ignored_keys == ["system.strict_mode"]
+    assert loader.ignored_keys == ["system.turbo"]  # strict_mode — заплановано, мовчки
     assert loader.ignored_source == "config.py"

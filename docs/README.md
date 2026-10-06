@@ -247,7 +247,7 @@ data-mask -i input.txt --config docs/config-examples/share.yaml
 data-unmask output.txt -c config.yaml
 ```
 
-All keys with explanations: [`config_example.yaml`](../config_example.yaml).
+All keys with explanations: [`config_example.yaml`](../config_example.yaml). Options marked `[не реалізовано]` are planned and have no effect yet — see [`TODO-config-options.md`](TODO-config-options.md).
 Ready-made sets: [`docs/config-examples/`](config-examples/README.md)
 (`share` — keep dates and document numbers, `strict` — mask everything, fully synthetic surnames, `pii` — personal data only).
 

@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.26] - 2026-10
+
+### Changed — planned configuration options are marked, not warned about
+- The full example (`config_example.yaml` / `.py`) keeps every option. The 65
+  options that have no effect yet are marked `[не реалізовано]` in place, and
+  the 9 such keys in the `--init-config` template `[not implemented yet]`; the
+  header of each file explains the mark. Nothing else in the files changed.
+- These planned keys (`PLANNED_KEYS` in `datamasking/extras/config.py`) are
+  accepted without the 3.0.22 warning; it now fires only for keys that exist
+  nowhere (typos, made-up sections). The full example and a generated
+  template load silently.
+- `docs/TODO-config-options.md`: every planned option grouped into 31 tasks,
+  ordered from simple to complex (12 simple, 13 medium, 4 complex, 2 that can
+  only be validated), with what to do, the risk, and the example values that
+  would change behaviour once the option is implemented.
+- Tests check that the marks in both examples and the template match
+  `PLANNED_KEYS` exactly, that planned and effective keys never overlap, and
+  that the TODO mentions every planned key.
+
 ## [3.0.25] - 2026-10
 
 ### Fixed — configuration example named the wrong cipher

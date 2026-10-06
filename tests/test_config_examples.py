@@ -136,3 +136,63 @@ def test_examples_readme_lists_every_scenario():
     for s in SCENARIOS:
         assert f"{s}.yaml" in text
     assert os.path.exists(EXAMPLES / "README.md")
+
+
+# ---------------------------------------------------------------------------
+# Варіант 3 (v3.0.26): нереалізовані опції лишаються в прикладах з позначкою
+# і не дають попереджень; позначки ↔ PLANNED_KEYS збігаються точно
+# ---------------------------------------------------------------------------
+import re as _re  # noqa: E402
+
+from datamasking.extras.config import PLANNED_KEYS, ignored_config_keys  # noqa: E402
+
+
+def _tagged_yaml_paths(text: str, tag: str) -> set:
+    paths, stack = set(), []
+    for line in text.split("\n"):
+        m = _re.match(r"^(\s*)([A-Za-z_]+):(.*)$", line)
+        if m and not line.lstrip().startswith("#"):
+            stack = stack[: len(m.group(1)) // 2] + [m.group(2)]
+            if tag in line:
+                paths.add(".".join(stack))
+    return paths
+
+
+def test_planned_and_effective_do_not_overlap():
+    effective = {f"{s}.{k}" for s, ks in EFFECTIVE_KEYS.items() for k in ks}
+    assert not (PLANNED_KEYS & effective)
+
+
+@needs_yaml
+class TestPlannedOptionsInExamples:
+    def test_full_example_loads_without_warning(self):
+        data = yaml.safe_load((ROOT / "config_example.yaml").read_text(encoding="utf-8"))
+        assert ignored_config_keys(data) == []
+
+    def test_example_tags_match_planned_keys(self):
+        text = (ROOT / "config_example.yaml").read_text(encoding="utf-8")
+        data = yaml.safe_load(text)
+        from datamasking.extras.config import _unknown_leaf_keys
+        not_effective = set(_unknown_leaf_keys(data))
+        assert _tagged_yaml_paths(text, "[не реалізовано]") == not_effective
+        assert not_effective <= PLANNED_KEYS
+
+    def test_template_tags_match_and_no_warning(self, tmp_path):
+        out = tmp_path / "c.yaml"
+        ConfigLoader.generate_default_config(str(out))
+        text = out.read_text(encoding="utf-8")
+        data = yaml.safe_load(text)
+        from datamasking.extras.config import _unknown_leaf_keys
+        assert _tagged_yaml_paths(text, "[not implemented yet]") == set(_unknown_leaf_keys(data))
+        assert ignored_config_keys(data) == []
+
+    def test_python_example_tags(self):
+        text = (ROOT / "config_example.py").read_text(encoding="utf-8")
+        tagged = [ln for ln in text.split("\n") if "[не реалізовано]" in ln and not ln.lstrip().startswith(("#", "Options"))]
+        assert len(tagged) == 60  # 65 у YAML мінус секція remask (5), якої тут немає
+
+
+def test_todo_lists_every_planned_key():
+    text = (ROOT / "docs" / "TODO-config-options.md").read_text(encoding="utf-8")
+    missing = sorted(k for k in PLANNED_KEYS if f"`{k}`" not in text)
+    assert missing == []
