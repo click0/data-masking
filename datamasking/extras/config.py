@@ -54,6 +54,17 @@ class SystemConfig:
     # Ліміт розміру вхідного файлу, МБ (діє менший із цього і
     # validation.max_input_size_mb); None — лише validation.max_input_size_mb
     max_file_size_mb: Optional[int] = None
+    # Суворий режим (як validation.strict_mode): попередження конфігурації —
+    # помилки, нерозмасковані значення в unmask — код виходу 1
+    strict_mode: bool = False
+    # Розмір дайджесту blake2b, байт (1–64); None — 64 (стандарт).
+    # Інше значення змінює ВСІ маски
+    hash_digest_size: Optional[int] = None
+    # Каталог для тимчасових файлів (tempfile); "" — системний
+    temp_dir: str = ""
+    # Кодування вхідного файлу: utf-8 | будь-яке кодування Python | auto
+    # (auto — перше з validation.allowed_encodings, що декодує файл)
+    encoding: str = "utf-8"
     # Копія наявного вихідного файлу перед перезаписом (--force)
     backup_enabled: bool = False
     backup_suffix: str = ".bak"
@@ -68,6 +79,11 @@ class PasswordGenerationConfig:
     env_var: str = "DATA_MASKING_PASSWORD"
     # Джерело випадковості; підтримується лише "secrets"
     algorithm: str = "secrets"
+    # Мінімальна кількість символів кожного класу (0 — без гарантії)
+    min_uppercase: int = 0
+    min_lowercase: int = 0
+    min_digits: int = 0
+    min_special: int = 0
 
 
 @dataclass
@@ -81,6 +97,8 @@ class SecurityConfig:
     password_length: int = 24
     # Підтримується лише AES-256-GCM (так шифрує security.py)
     encryption_algorithm: str = "AES-256-GCM"
+    # Затирати нулями тимчасовий файл невдалого запису перед видаленням
+    secure_delete_temp: bool = True
     # false — без пароля --encrypt завершується помилкою, а не генерує його
     auto_generate_password: bool = True
     # Куди зберегти ЗГЕНЕРОВАНИЙ пароль (0600, атомарно); "" — не зберігати
@@ -110,6 +128,12 @@ class MaskingRulesConfig:
     rank_line_break_fix: bool = True
     # Текстові дати («06» жовтня 2025 року); None — як enable_dates
     enable_date_text: Optional[bool] = None
+    # Прізвища / по батькові окремо; None — як enable_names (тоді
+    # enable_names: false вимикає все ПІБ, як до 3.0.28)
+    enable_surnames: Optional[bool] = None
+    enable_patronymics: Optional[bool] = None
+    # Номери документів (№ не після «наказ…»); None — як enable_orders
+    enable_document_numbers: Optional[bool] = None
     # Tuning parameters
     rank_shift_options: List[int] = field(default_factory=lambda: [-2, -1, 1, 2])
     date_shift_days: int = 30
@@ -125,6 +149,15 @@ class ValidationConfig:
     """Input validation configuration."""
     strict_mode: bool = False
     max_input_size_mb: int = 100
+    # Маска ІПН з коректною контрольною цифрою (змінює маски ІПН)
+    validate_ipn_checksum: bool = False
+    # Довжина слова-кандидата в ПІБ; None — 3 / без обмеження
+    min_name_length: Optional[int] = None
+    max_name_length: Optional[int] = None
+    # false — «Іванов І.І.» не маскується (з попередженням)
+    allow_abbreviated_patronymic: bool = True
+    # true — маскується лише повний ПІБ із трьох слів (з попередженням)
+    strict_pib_format: bool = False
     # Роки, які розпізнаються як дата ДД.ММ.РРРР (і маскуються)
     validate_date_range: bool = True
     min_date_year: int = 1900
@@ -155,6 +188,13 @@ class LoggingConfig:
     log_to_file: Optional[bool] = None
     # Друкувати блок статистики після маскування
     log_statistics: bool = True
+    # Ротація файлу логу: розмір, МБ (None — без ротації) і кількість архівів
+    max_log_size_mb: Optional[int] = None
+    log_rotation_count: int = 5
+    # Час етапів (читання, маскування, запис) у лог
+    log_performance: bool = False
+    # Дозволити оригінали у виводі налагодження (за замовчуванням — ніколи)
+    log_sensitive_data: bool = False
 
 
 @dataclass
@@ -177,24 +217,34 @@ EFFECTIVE_KEYS: Dict[str, frozenset] = {
         "enable_ranks", "enable_units", "enable_brigades", "enable_orders",
         "enable_br_numbers", "enable_dates", "surname_prefix_length",
         "preserve_case", "rank_line_break_fix", "enable_date_text",
+        "enable_surnames", "enable_patronymics", "enable_document_numbers",
     }),
     "system": frozenset({
         "preserve_case", "faker_locale", "hash_algorithm", "debug_mode",
-        "version", "max_file_size_mb", "backup_enabled", "backup_suffix",
+        "version", "max_file_size_mb", "backup_enabled", "backup_suffix", "encoding",
+        "strict_mode", "temp_dir", "hash_digest_size",
     }),
     "security": frozenset({
-        "encrypt_output", "password_length", "password_env_var",
+        "encrypt_output", "password_length", "password_env_var", "secure_delete_temp",
         "auto_generate_password", "password_file", "encryption_algorithm",
         # вкладені ключі — через крапку; bool-форма зі старого шаблону теж
         "password_generation", "password_generation.enabled",
         "password_generation.length", "password_generation.algorithm",
+        "password_generation.use_special_chars", "password_generation.min_uppercase",
+        "password_generation.min_lowercase", "password_generation.min_digits",
+        "password_generation.min_special",
     }),
-    "password_generation": frozenset({"enabled", "length", "env_var"}),
+    "password_generation": frozenset({"enabled", "length", "env_var", "use_special_chars"}),
     "validation": frozenset({
         "max_input_size_mb", "validate_date_range", "min_date_year", "max_date_year",
+        "allowed_encodings", "strict_mode", "validate_ipn_checksum",
+        "min_name_length", "max_name_length", "allow_abbreviated_patronymic", "strict_pib_format",
     }),
     "router_rules": frozenset({"skip_types", "only_types"}),
-    "logging": frozenset({"level", "file", "enabled", "log_to_console", "log_to_file", "log_statistics"}),
+    "logging": frozenset({
+        "level", "file", "enabled", "log_to_console", "log_to_file", "log_statistics",
+        "format", "max_log_size_mb", "log_rotation_count", "log_performance", "log_sensitive_data",
+    }),
     "remask": frozenset({"enabled", "max_passes", "chain_format"}),
 }
 
@@ -207,56 +257,27 @@ EFFECTIVE_KEYS: Dict[str, frozenset] = {
 # Реалізована опція переходить звідси в EFFECTIVE_KEYS.
 # План і оцінка складності — docs/TODO-config-options.md.
 PLANNED_KEYS: frozenset = frozenset({
-    # system
-    "system.hash_digest_size",
-    "system.encoding",
-    "system.temp_dir",
-    "system.strict_mode",
     # security
-    "security.password_generation.use_special_chars",
-    "security.password_generation.min_uppercase",
-    "security.password_generation.min_lowercase",
-    "security.password_generation.min_digits",
-    "security.password_generation.min_special",
     "security.key_derivation",
     "security.scrypt_n",
     "security.scrypt_r",
     "security.scrypt_p",
     "security.salt_length",
-    "security.secure_delete_temp",
     # masking_rules
-    "masking_rules.enable_surnames",
-    "masking_rules.enable_patronymics",
-    "masking_rules.enable_document_numbers",
     "masking_rules.preserve_gender",
     "masking_rules.consistent_mapping",
     "masking_rules.instance_tracking",
     "masking_rules.context_aware",
     "masking_rules.custom_patterns",
     # validation
-    "validation.validate_ipn_checksum",
     "validation.validate_rank_dictionary",
-    "validation.strict_pib_format",
-    "validation.allow_abbreviated_patronymic",
-    "validation.max_name_length",
-    "validation.min_name_length",
-    "validation.strict_mode",
-    "validation.allowed_encodings",
     # router_rules
     "router_rules.default_action",
     "router_rules.processing_order",
     "router_rules.priority_overrides",
-    # logging
-    "logging.format",
-    "logging.max_log_size_mb",
-    "logging.log_rotation_count",
-    "logging.log_sensitive_data",
-    "logging.log_performance",
     # remask
     "remask.save_chain",
     "remask.auto_numbering",
-    # password_generation
-    "password_generation.use_special_chars",
 })
 
 
@@ -301,6 +322,12 @@ def _unknown_leaf_keys(data: Any) -> List[str]:
     for section, values in data.items():
         out += leaves(values, str(section))
     return out
+
+
+def is_strict(config: Any) -> bool:
+    """system.strict_mode або validation.strict_mode."""
+    return any(getattr(getattr(config, section, None), "strict_mode", False) is True
+               for section in ("system", "validation"))
 
 
 def format_ignored_keys_warning(source: str, keys: List[str], limit: int = 10) -> str:
@@ -697,7 +724,7 @@ password_generation:
   length: 24
 
   # Include special characters in generated passwords
-  use_special_chars: true   # [not implemented yet]
+  use_special_chars: true
 
   # Environment variable to read password from
   env_var: "DATA_MASKING_PASSWORD"
@@ -762,13 +789,13 @@ masking_rules:
 # --------------------------------------------------------------------------
 validation:
   # Strict mode: reject input that fails validation
-  strict_mode: false   # [not implemented yet]
+  strict_mode: false
 
   # Maximum input file size in megabytes
   max_input_size_mb: 100
 
   # Allowed input file encodings
-  allowed_encodings:   # [not implemented yet]
+  allowed_encodings:
     - "utf-8"
     - "cp1251"
     - "latin-1"
@@ -791,7 +818,7 @@ logging:
   file: null
 
   # Log message format (Python logging format string)
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"   # [not implemented yet]
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 """.format(version=__version__)
 
         output = Path(output_path)

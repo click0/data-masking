@@ -46,11 +46,16 @@ def restore_engine_settings():
     конфігурація пише в модуль constants; CLI в тестах працює в тому самому
     процесі, тож без відновлення налаштування одного тесту «протікали» б
     в інші."""
+    import tempfile
+    from datamasking import _fsutil
     from datamasking.masking import constants as _cfg
-    saved = {k: v for k, v in vars(_cfg).items() if k.isupper() and isinstance(v, (bool, int, float, str))}
+    saved = {k: v for k, v in vars(_cfg).items()
+             if k.isupper() and isinstance(v, (bool, int, float, str, tuple))}
+    saved_tempdir, saved_secure = tempfile.tempdir, _fsutil.SECURE_DELETE_TEMP
     yield
     for k, v in saved.items():
         setattr(_cfg, k, v)
+    tempfile.tempdir, _fsutil.SECURE_DELETE_TEMP = saved_tempdir, saved_secure
 
 
 @pytest.fixture(autouse=True)

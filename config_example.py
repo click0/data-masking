@@ -31,15 +31,15 @@ class SystemConfig:
     """Системні налаштування."""
     version: str = "v2.6.0"
     hash_algorithm: str = "blake2b"
-    hash_digest_size: int = 8  # [не реалізовано]
-    encoding: str = "utf-8"  # [не реалізовано]
+    hash_digest_size: int = 64
+    encoding: str = "utf-8"
     preserve_case: bool = True
     backup_enabled: bool = False
     backup_suffix: str = ".bak"
     max_file_size_mb: int = 100
-    temp_dir: str = ""  # [не реалізовано]
+    temp_dir: str = ""
     debug_mode: bool = False
-    strict_mode: bool = False  # [не реалізовано]
+    strict_mode: bool = False
 
 
 @dataclass
@@ -50,12 +50,12 @@ class SecurityConfig:
     password_generation: dict = field(default_factory=lambda: {
         "enabled": True,
         "length": 24,
-        "use_special_chars": True,  # [не реалізовано]
+        "use_special_chars": True,
         "algorithm": "secrets",
-        "min_uppercase": 2,  # [не реалізовано]
-        "min_lowercase": 2,  # [не реалізовано]
-        "min_digits": 2,  # [не реалізовано]
-        "min_special": 2,  # [не реалізовано]
+        "min_uppercase": 2,
+        "min_lowercase": 2,
+        "min_digits": 2,
+        "min_special": 2,
     })
     encryption_algorithm: str = "AES-256-GCM"
     key_derivation: str = "scrypt"  # [не реалізовано]
@@ -65,7 +65,7 @@ class SecurityConfig:
     salt_length: int = 16  # [не реалізовано]
     auto_generate_password: bool = True
     password_file: str = ""
-    secure_delete_temp: bool = True  # [не реалізовано]
+    secure_delete_temp: bool = True
 
 
 @dataclass
@@ -73,8 +73,8 @@ class MaskingRulesConfig:
     """Налаштування правил маскування."""
     enable_ranks: bool = True
     enable_names: bool = True
-    enable_surnames: bool = True  # [не реалізовано]
-    enable_patronymics: bool = True  # [не реалізовано]
+    enable_surnames: bool = True
+    enable_patronymics: bool = True
     enable_ipn: bool = True
     enable_passport: bool = True
     enable_military_id: bool = True
@@ -84,7 +84,7 @@ class MaskingRulesConfig:
     enable_brigades: bool = True
     enable_orders: bool = True
     enable_br_numbers: bool = True
-    enable_document_numbers: bool = True  # [не реалізовано]
+    enable_document_numbers: bool = True
     preserve_case: bool = True
     preserve_gender: bool = True  # [не реалізовано]
     consistent_mapping: bool = True  # [не реалізовано]
@@ -97,15 +97,15 @@ class MaskingRulesConfig:
 @dataclass
 class ValidationConfig:
     """Налаштування валідації."""
-    validate_ipn_checksum: bool = True  # [не реалізовано]
+    validate_ipn_checksum: bool = False
     validate_date_range: bool = True
     min_date_year: int = 1900
     max_date_year: int = 2100
     validate_rank_dictionary: bool = True  # [не реалізовано]
-    strict_pib_format: bool = False  # [не реалізовано]
-    allow_abbreviated_patronymic: bool = True  # [не реалізовано]
-    max_name_length: int = 50  # [не реалізовано]
-    min_name_length: int = 2  # [не реалізовано]
+    strict_pib_format: bool = False
+    allow_abbreviated_patronymic: bool = True
+    max_name_length: int = 50
+    min_name_length: int = 3
 
 
 @dataclass
@@ -135,13 +135,13 @@ class LoggingConfig:
     enabled: bool = True
     level: str = "INFO"
     file: Optional[str] = None
-    format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"  # [не реалізовано]
-    max_log_size_mb: int = 10  # [не реалізовано]
-    log_rotation_count: int = 5  # [не реалізовано]
+    format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    max_log_size_mb: int = 10
+    log_rotation_count: int = 5
     log_to_console: bool = True
     log_to_file: bool = False
-    log_sensitive_data: bool = False  # [не реалізовано]
-    log_performance: bool = False  # [не реалізовано]
+    log_sensitive_data: bool = False
+    log_performance: bool = False
     log_statistics: bool = True
 
 

@@ -4,6 +4,66 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.28] - 2026-10
+
+### Added — level 2 of the planned configuration options
+26 more options from the full example now work; their `[не реалізовано]`
+marks are removed. Defaults keep the previous behaviour and the previous
+masks. See `docs/TODO-config-options.md`.
+
+- **Generated password:** `use_special_chars` (either section) and
+  `min_uppercase` / `min_lowercase` / `min_digits` / `min_special`; an
+  impossible policy (minimums longer than the password, special characters
+  required but disabled) is a configuration error.
+- **Logging:** `logging.format` (log file lines), `max_log_size_mb` +
+  `log_rotation_count` (rotating log file), `log_performance` (read / mask /
+  save timings), `log_sensitive_data` (originals never appear in debug
+  output unless this is true).
+- **Input encoding:** `system.encoding` — `utf-8` (default), any Python
+  encoding such as `cp1251`, or `auto` (the first of
+  `validation.allowed_encodings` that decodes the file). The output is
+  written in the same encoding; the mapping records it, so `data-unmask`
+  reads and writes the masked file correctly without any configuration.
+  Before, a cp1251 file was rejected.
+- **Names:** `masking_rules.enable_surnames` / `enable_patronymics` switch
+  surnames and patronymics separately (by default they follow
+  `enable_names`, so `enable_names: false` still turns off the whole name).
+- **Document numbers:** `masking_rules.enable_document_numbers` covers
+  `№ N` that is not an order number (certificates, reports, protocols);
+  numbers after `наказ…` / `розпорядження…` / `директива…` in the same
+  sentence stay under `enable_orders`. By default it follows `enable_orders`.
+- **Strict mode:** `system.strict_mode` / `validation.strict_mode` turn
+  configuration warnings (unknown keys, a config for a newer version, an
+  invalid log format …) into errors, and make `data-unmask` exit with 1 when
+  some masked values were not restored (the output is still written).
+- `system.temp_dir` (directory for temporary files; atomic writes stay next
+  to their target) and `security.secure_delete_temp` (the temporary file of
+  a failed mapping write is overwritten with zeros before deletion).
+- `validation.validate_ipn_checksum`: a valid IPN gets a mask with a valid
+  check digit (changes IPN masks, off by default).
+- `system.hash_digest_size`: blake2b digest size, 1–64 (64 is the default;
+  any other value changes every mask; blake2b only).
+- `validation.min_name_length` / `max_name_length` (default 3 / no limit),
+  `allow_abbreviated_patronymic: false` (initials are not masked — with a
+  warning), `strict_pib_format: true` (only full three-word names are masked
+  — with a warning).
+
+### Changed
+- `--only` / `--exclude`: `surname`, `name` and `patronymic` are now
+  separate switches — `--exclude patronymic` used to do nothing, and
+  `--only patronymic` masked whole names. `names` / `імена` mean the whole
+  name, as before.
+- Example values that would have changed behaviour are corrected:
+  `hash_digest_size` 8 → 64, `validate_ipn_checksum` true → false,
+  `min_name_length` 2 → 3.
+
+### Fixed
+- `№` numbers were masked whenever orders *or* BR numbers were enabled,
+  regardless of their type: with `enable_orders: false` order numbers were
+  still masked if BR numbers were on, and vice versa. Each type now follows
+  its own switch.
+- Tests: `tests/test_config_level2.py` (48 tests, no pyyaml needed).
+
 ## [3.0.27] - 2026-10
 
 ### Added — level 1 of the planned configuration options
