@@ -140,12 +140,109 @@ EFFECTIVE_KEYS: Dict[str, frozenset] = {
 }
 
 
+# Заплановані опції (варіант 3, v3.0.26): є в повному прикладі
+# (config_example.yaml/.py) або в шаблоні --init-config з позначкою
+# «[не реалізовано]» / «[not implemented yet]», але поки ні на що не
+# впливають. Завантажувач приймає їх БЕЗ попередження (про них уже сказано
+# в самому файлі); попередження — лише про ключі, яких немає ніде.
+# Реалізована опція переходить звідси в EFFECTIVE_KEYS.
+# План і оцінка складності — docs/TODO-config-options.md.
+PLANNED_KEYS: frozenset = frozenset({
+    # system
+    "system.version",
+    "system.hash_digest_size",
+    "system.encoding",
+    "system.backup_enabled",
+    "system.backup_suffix",
+    "system.max_file_size_mb",
+    "system.temp_dir",
+    "system.strict_mode",
+    # security
+    "security.password_env_var",
+    "security.password_generation.enabled",
+    "security.password_generation.length",
+    "security.password_generation.use_special_chars",
+    "security.password_generation.algorithm",
+    "security.password_generation.min_uppercase",
+    "security.password_generation.min_lowercase",
+    "security.password_generation.min_digits",
+    "security.password_generation.min_special",
+    "security.encryption_algorithm",
+    "security.key_derivation",
+    "security.scrypt_n",
+    "security.scrypt_r",
+    "security.scrypt_p",
+    "security.salt_length",
+    "security.auto_generate_password",
+    "security.password_file",
+    "security.secure_delete_temp",
+    "security.password_generation",
+    # masking_rules
+    "masking_rules.enable_surnames",
+    "masking_rules.enable_patronymics",
+    "masking_rules.enable_date_text",
+    "masking_rules.enable_document_numbers",
+    "masking_rules.preserve_case",
+    "masking_rules.preserve_gender",
+    "masking_rules.consistent_mapping",
+    "masking_rules.instance_tracking",
+    "masking_rules.context_aware",
+    "masking_rules.rank_line_break_fix",
+    "masking_rules.custom_patterns",
+    # validation
+    "validation.validate_ipn_checksum",
+    "validation.validate_date_range",
+    "validation.min_date_year",
+    "validation.max_date_year",
+    "validation.validate_rank_dictionary",
+    "validation.strict_pib_format",
+    "validation.allow_abbreviated_patronymic",
+    "validation.max_name_length",
+    "validation.min_name_length",
+    "validation.strict_mode",
+    "validation.allowed_encodings",
+    # router_rules
+    "router_rules.default_action",
+    "router_rules.processing_order",
+    "router_rules.skip_types",
+    "router_rules.only_types",
+    "router_rules.priority_overrides",
+    # logging
+    "logging.enabled",
+    "logging.format",
+    "logging.max_log_size_mb",
+    "logging.log_rotation_count",
+    "logging.log_to_console",
+    "logging.log_to_file",
+    "logging.log_sensitive_data",
+    "logging.log_performance",
+    "logging.log_statistics",
+    # remask
+    "remask.enabled",
+    "remask.max_passes",
+    "remask.save_chain",
+    "remask.chain_format",
+    "remask.auto_numbering",
+    # password_generation
+    "password_generation.enabled",
+    "password_generation.length",
+    "password_generation.use_special_chars",
+    "password_generation.env_var",
+})
+
+
 def ignored_config_keys(data: Any) -> List[str]:
-    """Ключі файлу конфігурації, які ні на що не впливають (не в EFFECTIVE_KEYS).
+    """Ключі файлу конфігурації, про які треба попередити: не діють
+    (не в EFFECTIVE_KEYS) і не заплановані (не в PLANNED_KEYS).
 
     Повертає «section.key» у порядку файлу; невідома секція-словник
     розгортається до своїх ключів (``remask.enabled`` …).
     """
+    return [k for k in _unknown_leaf_keys(data) if k not in PLANNED_KEYS]
+
+
+def _unknown_leaf_keys(data: Any) -> List[str]:
+    """Усі листові ключі поза EFFECTIVE_KEYS (і заплановані, і невідомі)."""
     out: List[str] = []
     if not isinstance(data, dict):
         return out
@@ -518,6 +615,9 @@ class ConfigLoader:
 #
 # Priority: CLI > ENV > config.yaml > config.py > Default
 #
+# Options marked [not implemented yet] are planned but have no effect yet;
+# they are accepted without a warning. See docs/TODO-config-options.md.
+#
 # Author: Vladyslav V. Prodan
 # Contact: github.com/click0
 # License: BSD 3-Clause
@@ -548,16 +648,16 @@ system:
 # --------------------------------------------------------------------------
 password_generation:
   # Enable automatic password generation
-  enabled: true
+  enabled: true   # [not implemented yet]
 
   # Length of generated password (characters)
-  length: 24
+  length: 24   # [not implemented yet]
 
   # Include special characters in generated passwords
-  use_special_chars: true
+  use_special_chars: true   # [not implemented yet]
 
   # Environment variable to read password from
-  env_var: "DATA_MASKING_PASSWORD"
+  env_var: "DATA_MASKING_PASSWORD"   # [not implemented yet]
 
 # --------------------------------------------------------------------------
 # Security settings
@@ -569,7 +669,7 @@ security:
   encrypt_output: false
 
   # Environment variable for password (alternative to --password)
-  password_env_var: "DATA_MASKING_PASSWORD"
+  password_env_var: "DATA_MASKING_PASSWORD"   # [not implemented yet]
 
   # Length of auto-generated password (characters)
   password_length: 24
@@ -619,13 +719,13 @@ masking_rules:
 # --------------------------------------------------------------------------
 validation:
   # Strict mode: reject input that fails validation
-  strict_mode: false
+  strict_mode: false   # [not implemented yet]
 
   # Maximum input file size in megabytes
   max_input_size_mb: 100
 
   # Allowed input file encodings
-  allowed_encodings:
+  allowed_encodings:   # [not implemented yet]
     - "utf-8"
     - "cp1251"
     - "latin-1"
@@ -635,7 +735,7 @@ validation:
 # --------------------------------------------------------------------------
 router_rules:
   # Default action for unmatched patterns: mask | skip | warn
-  default_action: "mask"
+  default_action: "mask"   # [not implemented yet]
 
 # --------------------------------------------------------------------------
 # Logging settings
@@ -648,7 +748,7 @@ logging:
   file: null
 
   # Log message format (Python logging format string)
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"   # [not implemented yet]
 """.format(version=__version__)
 
         output = Path(output_path)

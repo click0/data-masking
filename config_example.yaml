@@ -5,6 +5,10 @@
 # Згенерувати конфігурацію за замовчуванням:
 #   python data_masking.py --init-config
 #
+# Опції з позначкою [не реалізовано] заплановані, але поки ні на що не
+# впливають: програма їх приймає (без попереджень) і ігнорує. Перелік і
+# порядок реалізації — docs/TODO-config-options.md.
+#
 # Author: Vladyslav V. Prodan
 # Contact: github.com/click0
 # Phone: +38(099)6053340
@@ -18,7 +22,7 @@
 # --------------------------------------------------------------------------
 system:
   # Версія конфігурації (для сумісності)
-  version: "v2.6.0"
+  version: "v2.6.0"   # [не реалізовано]
 
   # Алгоритм хешування для детерміністичного маскування.
   # Той самий вхід завжди дає той самий замаскований результат.
@@ -26,10 +30,10 @@ system:
   hash_algorithm: "blake2b"
 
   # Розмір дайджесту хешу (у байтах)
-  hash_digest_size: 8
+  hash_digest_size: 8   # [не реалізовано]
 
   # Кодування файлів (за замовчуванням UTF-8)
-  encoding: "utf-8"
+  encoding: "utf-8"   # [не реалізовано]
 
   # Зберігати регістр літер замаскованих значень:
   #   ВЕЛИКІ ЛІТЕРИ  -> ВЕЛИКІ ЛІТЕРИ
@@ -38,20 +42,20 @@ system:
   preserve_case: true
 
   # Створювати резервні копії вхідних файлів
-  backup_enabled: true
-  backup_suffix: ".bak"
+  backup_enabled: true   # [не реалізовано]
+  backup_suffix: ".bak"   # [не реалізовано]
 
   # Максимальний розмір файлу для обробки (МБ)
-  max_file_size_mb: 50
+  max_file_size_mb: 50   # [не реалізовано]
 
   # Тимчасова директорія (порожнє = системна за замовчуванням)
-  temp_dir: ""
+  temp_dir: ""   # [не реалізовано]
 
   # Режим налагодження (детальний вивід у консоль)
   debug_mode: false
 
   # Строгий режим — зупиняє обробку при будь-якій помилці
-  strict_mode: false
+  strict_mode: false   # [не реалізовано]
 
 # --------------------------------------------------------------------------
 # Налаштування безпеки та шифрування
@@ -61,45 +65,45 @@ security:
   encrypt_output: false
 
   # Змінна оточення для зчитування пароля (альтернатива --password)
-  password_env_var: "DATA_MASKING_PASSWORD"
+  password_env_var: "DATA_MASKING_PASSWORD"   # [не реалізовано]
 
   # Налаштування автоматичної генерації пароля
   password_generation:
     # Увімкнути автоматичну генерацію пароля
-    enabled: true
+    enabled: true   # [не реалізовано]
     # Довжина пароля (символів)
-    length: 24
+    length: 24   # [не реалізовано]
     # Використовувати спеціальні символи (!@#$%^&*)
-    use_special_chars: true
+    use_special_chars: true   # [не реалізовано]
     # Алгоритм генерації: secrets (рекомендовано) або random
-    algorithm: "secrets"
+    algorithm: "secrets"   # [не реалізовано]
     # Мінімальна кількість великих літер
-    min_uppercase: 2
+    min_uppercase: 2   # [не реалізовано]
     # Мінімальна кількість малих літер
-    min_lowercase: 2
+    min_lowercase: 2   # [не реалізовано]
     # Мінімальна кількість цифр
-    min_digits: 2
+    min_digits: 2   # [не реалізовано]
     # Мінімальна кількість спецсимволів
-    min_special: 2
+    min_special: 2   # [не реалізовано]
 
   # Алгоритм шифрування
-  encryption_algorithm: "AES-256-GCM"
+  encryption_algorithm: "AES-256-GCM"   # [не реалізовано]
 
   # Деривація ключа
-  key_derivation: "scrypt"
-  scrypt_n: 16384
-  scrypt_r: 8
-  scrypt_p: 1
-  salt_length: 16
+  key_derivation: "scrypt"   # [не реалізовано]
+  scrypt_n: 16384   # [не реалізовано]
+  scrypt_r: 8   # [не реалізовано]
+  scrypt_p: 1   # [не реалізовано]
+  salt_length: 16   # [не реалізовано]
 
   # Автоматично генерувати пароль, якщо --password не вказано
-  auto_generate_password: true
+  auto_generate_password: true   # [не реалізовано]
 
   # Файл для збереження згенерованого пароля (порожнє = не зберігати)
-  password_file: ""
+  password_file: ""   # [не реалізовано]
 
   # Безпечне видалення тимчасових файлів
-  secure_delete_temp: true
+  secure_delete_temp: true   # [не реалізовано]
 
 # --------------------------------------------------------------------------
 # Правила маскування — увімкнути/вимкнути окремі типи даних
@@ -112,10 +116,10 @@ masking_rules:
   enable_names: true
 
   # Прізвища
-  enable_surnames: true
+  enable_surnames: true   # [не реалізовано]
 
   # По батькові
-  enable_patronymics: true
+  enable_patronymics: true   # [не реалізовано]
 
   # Індивідуальний податковий номер / ІПН (10 цифр)
   enable_ipn: true
@@ -130,7 +134,7 @@ masking_rules:
   enable_dates: true
 
   # Текстові дати ("06" жовтня 2025 року)
-  enable_date_text: true
+  enable_date_text: true   # [не реалізовано]
 
   # Військові частини (наприклад, А1234)
   enable_units: true
@@ -145,65 +149,65 @@ masking_rules:
   enable_br_numbers: true
 
   # Номери документів
-  enable_document_numbers: true
+  enable_document_numbers: true   # [не реалізовано]
 
   # Зберігати регістр при маскуванні
-  preserve_case: true
+  preserve_case: true   # [не реалізовано]
 
   # Зберігати стать при підборі замін
-  preserve_gender: true
+  preserve_gender: true   # [не реалізовано]
 
   # Послідовне маскування (однакові значення -> однакова заміна)
-  consistent_mapping: true
+  consistent_mapping: true   # [не реалізовано]
 
   # Відстеження instances (кількість входжень)
-  instance_tracking: true
+  instance_tracking: true   # [не реалізовано]
 
   # Контекстно-залежне маскування
-  context_aware: true
+  context_aware: true   # [не реалізовано]
 
   # Виправлення розірваних звань через перенос рядка (Fix #20)
-  rank_line_break_fix: true
+  rank_line_break_fix: true   # [не реалізовано]
 
   # Власні шаблони регулярних виразів (додатково)
-  custom_patterns: []
+  custom_patterns: []   # [не реалізовано]
 
 # --------------------------------------------------------------------------
 # Налаштування валідації
 # --------------------------------------------------------------------------
 validation:
   # Перевіряти контрольну суму ІПН
-  validate_ipn_checksum: true
+  validate_ipn_checksum: true   # [не реалізовано]
 
   # Перевіряти діапазон дат
-  validate_date_range: true
-  min_date_year: 1900
-  max_date_year: 2030
+  validate_date_range: true   # [не реалізовано]
+  min_date_year: 1900   # [не реалізовано]
+  max_date_year: 2030   # [не реалізовано]
 
   # Перевіряти звання за словником
-  validate_rank_dictionary: true
+  validate_rank_dictionary: true   # [не реалізовано]
 
   # Строгий формат ПІБ (Прізвище Ім'я По батькові)
-  strict_pib_format: false
+  strict_pib_format: false   # [не реалізовано]
 
   # Дозволити скорочене по батькові (І.І.)
-  allow_abbreviated_patronymic: true
+  allow_abbreviated_patronymic: true   # [не реалізовано]
 
   # Обмеження довжини імен
-  max_name_length: 50
-  min_name_length: 2
+  max_name_length: 50   # [не реалізовано]
+  min_name_length: 2   # [не реалізовано]
 
 # --------------------------------------------------------------------------
 # Правила маршрутизації (порядок обробки та вибіркове маскування)
 # --------------------------------------------------------------------------
 router_rules:
   # Дія за замовчуванням для невизначених шаблонів
-  default_action: "mask"
+  default_action: "mask"   # [не реалізовано]
 
   # Порядок обробки типів даних (важливий для коректності!)
   # Дати та числові типи обробляються першими, щоб уникнути
   # хибних спрацювань при обробці тексту
-  processing_order:
+  processing_order:   # [не реалізовано]
     - "date_text"
     - "date"
     - "ipn"
@@ -217,21 +221,21 @@ router_rules:
 
   # Пропустити вказані типи (має пріоритет над processing_order)
   # Приклад: skip_types: ["date", "ipn"]
-  skip_types: []
+  skip_types: []   # [не реалізовано]
 
   # Маскувати ТІЛЬКИ вказані типи (решта пропускається)
   # Приклад: only_types: ["ipn", "rank"]
-  only_types: []
+  only_types: []   # [не реалізовано]
 
   # Перевизначення пріоритетів (ключ: тип, значення: пріоритет)
-  priority_overrides: {}
+  priority_overrides: {}   # [не реалізовано]
 
 # --------------------------------------------------------------------------
 # Налаштування логування
 # --------------------------------------------------------------------------
 logging:
   # Увімкнути логування
-  enabled: true
+  enabled: true   # [не реалізовано]
 
   # Рівень логування: DEBUG | INFO | WARNING | ERROR | CRITICAL
   level: "INFO"
@@ -240,47 +244,47 @@ logging:
   file: null
 
   # Формат повідомлень логу (Python logging format)
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"   # [не реалізовано]
 
   # Максимальний розмір файлу логу (МБ)
-  max_log_size_mb: 10
+  max_log_size_mb: 10   # [не реалізовано]
 
   # Кількість ротаційних файлів логу
-  log_rotation_count: 5
+  log_rotation_count: 5   # [не реалізовано]
 
   # Виводити логи у консоль
-  log_to_console: true
+  log_to_console: true   # [не реалізовано]
 
   # Записувати логи у файл
-  log_to_file: false
+  log_to_file: false   # [не реалізовано]
 
   # НЕ логувати чутливі дані (завжди false у продакшені!)
-  log_sensitive_data: false
+  log_sensitive_data: false   # [не реалізовано]
 
   # Логувати продуктивність (час обробки)
-  log_performance: false
+  log_performance: false   # [не реалізовано]
 
   # Логувати статистику маскування
-  log_statistics: true
+  log_statistics: true   # [не реалізовано]
 
 # --------------------------------------------------------------------------
 # Налаштування повторного маскування (re-mask)
 # --------------------------------------------------------------------------
 remask:
   # Увімкнути підтримку багатопрохідного маскування
-  enabled: true
+  enabled: true   # [не реалізовано]
 
   # Максимальна кількість проходів
-  max_passes: 5
+  max_passes: 5   # [не реалізовано]
 
   # Зберігати ланцюг маппінгів для відновлення
-  save_chain: true
+  save_chain: true   # [не реалізовано]
 
   # Формат файлу ланцюга
-  chain_format: "json"
+  chain_format: "json"   # [не реалізовано]
 
   # Автоматично нумерувати проходи
-  auto_numbering: true
+  auto_numbering: true   # [не реалізовано]
 
 # ==========================================================================
 # Приклади використання
