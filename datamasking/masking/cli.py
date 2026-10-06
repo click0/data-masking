@@ -523,6 +523,14 @@ def _apply_level1_settings_impl(args, config, logger) -> Optional[str]:
         if value is not None and str(value).strip().lower() not in {a.lower() for a in allowed}:
             return f"{name}: only {', '.join(allowed)} is supported, got {value!r}"
 
+    # Незмінна поведінка: приймається лише true
+    from datamasking.extras.config import ALWAYS_ON_KEYS
+    for dotted, reason in ALWAYS_ON_KEYS.items():
+        section, key = dotted.split('.')
+        value = getattr(getattr(config, section, None), key, True)
+        if value is not True:
+            return f"{dotted}: only true is supported, got {value!r} ({reason})"
+
     # masking_rules.preserve_case — перекриває system.preserve_case
     rules_case = getattr(rules, 'preserve_case', None)
     if rules_case is not None:

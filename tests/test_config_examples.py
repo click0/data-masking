@@ -193,7 +193,7 @@ class TestPlannedOptionsInExamples:
                     "MaskingRulesConfig": "masking_rules", "ValidationConfig": "validation",
                     "RouterRulesConfig": "router_rules", "LoggingConfig": "logging"}
         sec = indict = None
-        tagged, planned = set(), set()
+        tagged, planned, seen = set(), set(), set()
         for line in (ROOT / "config_example.py").read_text(encoding="utf-8").split("\n"):
             m = _re.match(r"^class (\w+)", line)
             if m:
@@ -207,11 +207,16 @@ class TestPlannedOptionsInExamples:
             elif dm and indict:
                 path = f"{indict}.{dm.group(1)}"
             if path:
+                seen.add(path)
                 if "[не реалізовано]" in line:
                     tagged.add(path)
                 if path in PLANNED_KEYS:
                     planned.add(path)
-        assert tagged == planned and tagged
+        assert tagged == planned
+        # Парсер справді бачить поля, і кожне з них або діє, або заплановане
+        effective = {f"{s}.{k}" for s, ks in EFFECTIVE_KEYS.items() for k in ks}
+        assert len(seen) > 50
+        assert seen - effective - PLANNED_KEYS == set()
 
 
 def test_todo_lists_every_planned_key():

@@ -95,6 +95,9 @@ pip install -e '.[full]' && pip install -r requirements-dev.txt
   (`PLANNED_KEYS`, план — `docs/TODO-config-options.md`). Реалізували — перенести
   ключ у `EFFECTIVE_KEYS`, зняти позначку, виправити значення в прикладі, якщо
   воно не збігається з фактичною поведінкою (таблиця в TODO).
+  З v3.0.30 `PLANNED_KEYS` порожній. Ключі, що описують незмінну поведінку
+  (`ALWAYS_ON_KEYS`: `consistent_mapping`, `save_chain` тощо), приймають лише
+  `true`; інше значення — помилка конфігурації з поясненням.
 - `--encrypt` пише лише `.enc` (plaintext mapping не створюється), mapping —
   атомарно з правами 0600.
 - Формат `.enc` 1 (PBKDF2, сіль 16) — за замовчуванням, його читають усі версії;

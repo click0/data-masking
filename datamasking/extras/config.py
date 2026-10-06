@@ -143,6 +143,11 @@ class MaskingRulesConfig:
     enable_document_numbers: Optional[bool] = None
     # Рід маски імені/по батькові = реальний; false — псевдовипадковий
     preserve_gender: bool = True
+    # Інваріанти програми, не перемикачі: приймається лише true (див.
+    # ALWAYS_ON_KEYS) — без них розмаскування неможливе
+    consistent_mapping: bool = True
+    instance_tracking: bool = True
+    context_aware: bool = True
     # Власні шаблони: рядок-regex або {pattern, name, action: mask|skip|warn}
     custom_patterns: List[Any] = field(default_factory=list)
     # Tuning parameters
@@ -176,6 +181,8 @@ class ValidationConfig:
     allowed_encodings: List[str] = field(
         default_factory=lambda: ["utf-8", "cp1251", "latin-1"]
     )
+    # Звання розпізнаються лише за вбудованим словником (лише true)
+    validate_rank_dictionary: bool = True
 
 
 @dataclass
@@ -216,8 +223,10 @@ class RemaskConfig:
     """Re-masking (--re-mask) settings."""
     enabled: bool = True
     max_passes: int = 10
+    # Ланцюг і нумерація проходів — основа --to-version (лише true)
     save_chain: bool = True
     chain_format: str = "json"
+    auto_numbering: bool = True
 
 
 # Ключі, які програма справді читає (masking/cli.py, unmasking/cli.py).
@@ -232,7 +241,7 @@ EFFECTIVE_KEYS: Dict[str, frozenset] = {
         "enable_br_numbers", "enable_dates", "surname_prefix_length",
         "preserve_case", "rank_line_break_fix", "enable_date_text",
         "enable_surnames", "enable_patronymics", "enable_document_numbers", "custom_patterns",
-        "preserve_gender",
+        "preserve_gender", "consistent_mapping", "instance_tracking", "context_aware",
     }),
     "system": frozenset({
         "preserve_case", "faker_locale", "hash_algorithm", "debug_mode",
@@ -255,6 +264,7 @@ EFFECTIVE_KEYS: Dict[str, frozenset] = {
         "max_input_size_mb", "validate_date_range", "min_date_year", "max_date_year",
         "allowed_encodings", "strict_mode", "validate_ipn_checksum",
         "min_name_length", "max_name_length", "allow_abbreviated_patronymic", "strict_pib_format",
+        "validate_rank_dictionary",
     }),
     "router_rules": frozenset({"skip_types", "only_types", "default_action",
                                "processing_order", "priority_overrides"}),
@@ -262,7 +272,7 @@ EFFECTIVE_KEYS: Dict[str, frozenset] = {
         "level", "file", "enabled", "log_to_console", "log_to_file", "log_statistics",
         "format", "max_log_size_mb", "log_rotation_count", "log_performance", "log_sensitive_data",
     }),
-    "remask": frozenset({"enabled", "max_passes", "chain_format"}),
+    "remask": frozenset({"enabled", "max_passes", "chain_format", "save_chain", "auto_numbering"}),
 }
 
 
@@ -273,17 +283,32 @@ EFFECTIVE_KEYS: Dict[str, frozenset] = {
 # в самому файлі); попередження — лише про ключі, яких немає ніде.
 # Реалізована опція переходить звідси в EFFECTIVE_KEYS.
 # План і оцінка складності — docs/TODO-config-options.md.
-PLANNED_KEYS: frozenset = frozenset({
-    # masking_rules
-    "masking_rules.consistent_mapping",
-    "masking_rules.instance_tracking",
-    "masking_rules.context_aware",
-    # validation
-    "validation.validate_rank_dictionary",
-    # remask
-    "remask.save_chain",
-    "remask.auto_numbering",
-})
+# З v3.0.30 усі опції реалізовано — перелік порожній (механізм лишається
+# для майбутніх опцій).
+PLANNED_KEYS: frozenset = frozenset()
+
+
+# Ключі, що описують незмінну поведінку програми: false не підтримується
+# (вимкнути це не можна, не зламавши розмаскування). Значення — пояснення
+# для повідомлення про помилку (masking/cli.py).
+ALWAYS_ON_KEYS: Dict[str, str] = {
+    "masking_rules.consistent_mapping":
+        "the same value always gets the same mask; without it unmasking "
+        "could not restore the original",
+    "masking_rules.instance_tracking":
+        "unmasking restores every occurrence by its number in the mapping",
+    "masking_rules.context_aware":
+        "names and ranks are recognised only by context; to stop masking "
+        "them use enable_names / enable_ranks",
+    "validation.validate_rank_dictionary":
+        "ranks are recognised only by the built-in dictionary; to stop "
+        "masking them use enable_ranks: false",
+    "remask.save_chain":
+        "in --re-mask mode the chain file is the mapping; without it the "
+        "output could not be unmasked",
+    "remask.auto_numbering":
+        "re-mask passes are always numbered; --to-version relies on it",
+}
 
 
 def ignored_config_keys(data: Any) -> List[str]:
@@ -689,9 +714,6 @@ class ConfigLoader:
 # Adjust values as needed for your environment.
 #
 # Priority: CLI > ENV > config.yaml > config.py > Default
-#
-# Options marked [not implemented yet] are planned but have no effect yet;
-# they are accepted without a warning. See docs/TODO-config-options.md.
 #
 # Author: Vladyslav V. Prodan
 # Contact: github.com/click0
