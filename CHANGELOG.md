@@ -4,6 +4,56 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.0] - 2026-10
+
+Minor release: the configuration file is now fully functional. Every option
+in the full example (`config_example.yaml` / `config_example.py`) and in the
+`--init-config` template is read by the program — up to 3.0.20 most of them
+were silently ignored. Details are in the 3.0.21 – 3.0.30 entries below.
+
+### Highlights since 3.0.20
+- **All configuration options work** (3.0.27 – 3.0.30): 72 options in four
+  levels, from aliases of existing settings to new features. Defaults keep
+  the previous behaviour and the previous masks — without a configuration
+  nothing changes.
+- **New features behind options:** cp1251 and other input encodings
+  (`system.encoding`, recorded in the mapping for unmasking); custom regex
+  patterns with `mask` / `skip` / `warn` actions; configurable processing
+  order; scrypt key derivation (new `.enc` format 2, only when chosen);
+  separate switches for surnames, patronymics, written-out dates and
+  document numbers; password composition rules; log format and rotation;
+  strict mode; gender-neutral name masks.
+- **Configuration checks:** keys the program does not know produce a
+  warning; options that cannot be switched off (`consistent_mapping`,
+  `save_chain`, …) accept only `true`; impossible values are configuration
+  errors, not silent fallbacks.
+- **Masking fixes:** dates of birth and other pre-2015 dates are now masked
+  (3.0.22); the date shift is never zero; dates of legal acts are kept;
+  "Кабінет Міністрів" in any case is no longer taken for a name (3.0.24);
+  `№` numbers follow their own type's switch (3.0.28).
+
+### Compatibility
+- Mappings and `.enc` files written by 3.0.x unmask unchanged. The default
+  `.enc` format is still format 1, readable by all versions; format 2 is
+  written only with `security.key_derivation: scrypt` or a non-default
+  `salt_length`, and needs 3.0.29+ to read.
+- Without a configuration file, masks are the same as in 3.0.20 for the same
+  input, except dates that were previously left unmasked (pre-2015 dates and
+  the former zero-shift dates) and "Кабінет Міністрів", which is no longer
+  masked.
+- **Check old configuration files.** Options that used to be ignored now
+  apply. A file copied from the pre-3.0.21 example may contain values that
+  change masks or behaviour (e.g. `hash_digest_size: 8`,
+  `validate_ipn_checksum: true`, `key_derivation: scrypt`,
+  `max_date_year: 2030`). Compare it with the current `config_example.yaml`
+  or regenerate it with `data-mask --init-config`.
+- A configuration that sets one of the options below to `false` now fails
+  instead of being ignored: `consistent_mapping`, `instance_tracking`,
+  `context_aware`, `validate_rank_dictionary`, `remask.save_chain`,
+  `remask.auto_numbering`.
+- `--only` / `--exclude`: `name` now means the first name only; use `names`
+  for the whole name, as before.
+
 ## [3.0.30] - 2026-10
 
 ### Added — level 4 of the configuration options: all options now implemented
