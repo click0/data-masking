@@ -97,6 +97,13 @@ class SecurityConfig:
     password_length: int = 24
     # Підтримується лише AES-256-GCM (так шифрує security.py)
     encryption_algorithm: str = "AES-256-GCM"
+    # Виведення ключа з пароля: pbkdf2 (формат .enc, який читають усі версії)
+    # або scrypt (формат 2 — лише v3.0.29+); параметри scrypt і довжина солі
+    key_derivation: str = "pbkdf2"
+    scrypt_n: int = 16384
+    scrypt_r: int = 8
+    scrypt_p: int = 1
+    salt_length: int = 16
     # Затирати нулями тимчасовий файл невдалого запису перед видаленням
     secure_delete_temp: bool = True
     # false — без пароля --encrypt завершується помилкою, а не генерує його
@@ -134,6 +141,10 @@ class MaskingRulesConfig:
     enable_patronymics: Optional[bool] = None
     # Номери документів (№ не після «наказ…»); None — як enable_orders
     enable_document_numbers: Optional[bool] = None
+    # Рід маски імені/по батькові = реальний; false — псевдовипадковий
+    preserve_gender: bool = True
+    # Власні шаблони: рядок-regex або {pattern, name, action: mask|skip|warn}
+    custom_patterns: List[Any] = field(default_factory=list)
     # Tuning parameters
     rank_shift_options: List[int] = field(default_factory=lambda: [-2, -1, 1, 2])
     date_shift_days: int = 30
@@ -174,6 +185,9 @@ class RouterRulesConfig:
     # Як --exclude / --only (CLI має пріоритет); разом — помилка
     skip_types: List[str] = field(default_factory=list)
     only_types: List[str] = field(default_factory=list)
+    # Порядок фаз шаблонних типів (None — типовий) і перевизначення пріоритетів
+    processing_order: Optional[List[str]] = None
+    priority_overrides: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -217,7 +231,8 @@ EFFECTIVE_KEYS: Dict[str, frozenset] = {
         "enable_ranks", "enable_units", "enable_brigades", "enable_orders",
         "enable_br_numbers", "enable_dates", "surname_prefix_length",
         "preserve_case", "rank_line_break_fix", "enable_date_text",
-        "enable_surnames", "enable_patronymics", "enable_document_numbers",
+        "enable_surnames", "enable_patronymics", "enable_document_numbers", "custom_patterns",
+        "preserve_gender",
     }),
     "system": frozenset({
         "preserve_case", "faker_locale", "hash_algorithm", "debug_mode",
@@ -226,6 +241,7 @@ EFFECTIVE_KEYS: Dict[str, frozenset] = {
     }),
     "security": frozenset({
         "encrypt_output", "password_length", "password_env_var", "secure_delete_temp",
+        "key_derivation", "scrypt_n", "scrypt_r", "scrypt_p", "salt_length",
         "auto_generate_password", "password_file", "encryption_algorithm",
         # вкладені ключі — через крапку; bool-форма зі старого шаблону теж
         "password_generation", "password_generation.enabled",
@@ -240,7 +256,8 @@ EFFECTIVE_KEYS: Dict[str, frozenset] = {
         "allowed_encodings", "strict_mode", "validate_ipn_checksum",
         "min_name_length", "max_name_length", "allow_abbreviated_patronymic", "strict_pib_format",
     }),
-    "router_rules": frozenset({"skip_types", "only_types"}),
+    "router_rules": frozenset({"skip_types", "only_types", "default_action",
+                               "processing_order", "priority_overrides"}),
     "logging": frozenset({
         "level", "file", "enabled", "log_to_console", "log_to_file", "log_statistics",
         "format", "max_log_size_mb", "log_rotation_count", "log_performance", "log_sensitive_data",
@@ -257,24 +274,12 @@ EFFECTIVE_KEYS: Dict[str, frozenset] = {
 # Реалізована опція переходить звідси в EFFECTIVE_KEYS.
 # План і оцінка складності — docs/TODO-config-options.md.
 PLANNED_KEYS: frozenset = frozenset({
-    # security
-    "security.key_derivation",
-    "security.scrypt_n",
-    "security.scrypt_r",
-    "security.scrypt_p",
-    "security.salt_length",
     # masking_rules
-    "masking_rules.preserve_gender",
     "masking_rules.consistent_mapping",
     "masking_rules.instance_tracking",
     "masking_rules.context_aware",
-    "masking_rules.custom_patterns",
     # validation
     "validation.validate_rank_dictionary",
-    # router_rules
-    "router_rules.default_action",
-    "router_rules.processing_order",
-    "router_rules.priority_overrides",
     # remask
     "remask.save_chain",
     "remask.auto_numbering",
@@ -805,7 +810,7 @@ validation:
 # --------------------------------------------------------------------------
 router_rules:
   # Default action for unmatched patterns: mask | skip | warn
-  default_action: "mask"   # [not implemented yet]
+  default_action: "mask"
 
 # --------------------------------------------------------------------------
 # Logging settings

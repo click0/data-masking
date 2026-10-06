@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Pattern, Tuple
 
 from datamasking.masking import constants as _cfg
 from datamasking.masking import surname as _surname
+from datamasking.masking import custom as _custom
 from datamasking.masking.context import (
     analyze_number_sign_context, analyze_br_keyword,
     looks_like_pib_line, parse_hybrid_line,
@@ -291,7 +292,54 @@ def mask_text_context_aware(text: str, masking_dict: Dict, instance_counters: Di
         _surname.exit_document()
 
 
+def _protect_custom(text: str) -> Tuple[str, List[Tuple[str, str]]]:
+    """custom_patterns з action skip/warn: збіги замінюються токенами з
+    латинських літер (їх не чіпає жоден тип маскування), а наприкінці
+    повертаються. warn — ще й рахує збіги для попередження в CLI."""
+    kept: List[Tuple[str, str]] = []
+    if not _cfg.CUSTOM_PATTERNS:
+        return text, kept
+    spans: List[Tuple[int, int, str]] = []
+    for cp in _cfg.CUSTOM_PATTERNS:
+        if cp.action == "mask":
+            continue
+        for s, e in _custom.iter_matches(cp, text):
+            if not any(s < pe and e > ps for ps, pe, _ in spans):
+                spans.append((s, e, cp.name))
+                if cp.action == "warn":
+                    _custom.WARN_COUNTS[cp.name] = _custom.WARN_COUNTS.get(cp.name, 0) + 1
+    if not spans:
+        return text, kept
+    spans.sort()
+    out, prev = [], 0
+    for i, (s, e, _name) in enumerate(spans):
+        token = "___KEEP" + _letters(i) + "___"
+        kept.append((token, text[s:e]))
+        out.append(text[prev:s])
+        out.append(token)
+        prev = e
+    out.append(text[prev:])
+    return "".join(out), kept
+
+
+def _letters(n: int) -> str:
+    s = ""
+    n += 1
+    while n:
+        n, r = divmod(n - 1, 26)
+        s = chr(ord("A") + r) + s
+    return s
+
+
 def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counters: Dict) -> str:
+    text, kept = _protect_custom(text)
+    text = _mask_text_core(text, masking_dict, instance_counters)
+    for token, original in kept:
+        text = text.replace(token, original, 1)
+    return text
+
+
+def _mask_text_core(text: str, masking_dict: Dict, instance_counters: Dict) -> str:
     # === ШАГ 0: Нормалізація розірваних звань
     if _cfg.RANK_LINE_BREAK_FIX:
         text = normalize_broken_ranks(text)
@@ -345,33 +393,47 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
             for num_match in re.finditer(r'\d+', numbers_text):
                 _add_skip({'start': base_pos + num_match.start(), 'end': base_pos + num_match.end(), 'text': num_match.group(0), 'reason': 'legal', 'type': 'legal_number', 'context': term})
 
-    if _cfg.MASK_ORDERS or _cfg.MASK_BR_NUMBERS or _cfg.MASK_DOCUMENT_NUMBERS:
+    def _phase_custom() -> None:
+        for cp in _cfg.CUSTOM_PATTERNS:
+            if cp.action != "mask":
+                continue
+            for s, e in _custom.iter_matches(cp, text):
+                if not (_overlaps_skip(s, e) or _overlaps_mask(s, e)):
+                    _add_mask({'type': 'custom', 'full_text': text[s:e], 'number_part': text[s:e],
+                               'start': s, 'end': e})
+
+    def _phase_order_number() -> None:
+        if not (_cfg.MASK_ORDERS or _cfg.MASK_BR_NUMBERS or _cfg.MASK_DOCUMENT_NUMBERS):
+            return
         for match in re.finditer(r'№', text):
             result = analyze_number_sign_context(text, match)
             # Кожен тип — за своїм прапорцем (до 3.0.28 тип не перевірявся:
             # з увімкненими БР маскувались і номери наказів, і навпаки)
-            if result and _number_sign_enabled(text, match.start(), result['type']):
+            if result and _number_sign_enabled(text, match.start(), result['type']) \
+                    and not _overlaps_mask(result['start'], result['end']):
                 _add_mask(result)
 
-    if _cfg.MASK_BR_NUMBERS:
+    def _phase_br_number() -> None:
+        if not _cfg.MASK_BR_NUMBERS:
+            return
         for match in re.finditer(r'\bБР\b', text, re.IGNORECASE):
             result = analyze_br_keyword(text, match)
             if result:
                 skip = _overlaps_skip(result['start'], result['end']) or _overlaps_mask(result['start'], result['end'])
                 if not skip: _add_mask(result)
 
-    for item_type, flag, pattern in [
-        ('ipn', _cfg.MASK_IPN, r'\b\d{10}\b'),
-        ('passport_id', _cfg.MASK_PASSPORT, r'\b\d{9}\b'),
-        ('military_id', _cfg.MASK_MILITARY_ID, r'\b[A-ZА-Я]{2}[\s-]?\d{6}\b'),
-        ('military_unit', _cfg.MASK_UNITS, r'\b[А-ЯA-Z]\d{4}\b')
-    ]:
-        if flag:
+    def _simple_phase(item_type: str, flag_name: str, pattern: str):
+        def run() -> None:
+            if not getattr(_cfg, flag_name):
+                return
             for match in re.finditer(pattern, text, re.IGNORECASE if item_type == 'military_id' else 0):
                 skip = _inside_skip(match.start(), match.end()) or _overlaps_mask(match.start(), match.end())
                 if not skip: _add_mask({'type': item_type, 'full_text': match.group(0), 'number_part': match.group(0), 'start': match.start(), 'end': match.end()})
+        return run
 
-    if _cfg.MASK_BRIGADES:
+    def _phase_brigade_number() -> None:
+        if not _cfg.MASK_BRIGADES:
+            return
         for match in _cfg.COMPILED_PATTERNS["brigade_number"].finditer(text):
             skip = _inside_skip(match.start(), match.end()) or _overlaps_mask(match.start(), match.end())
             if not skip: _add_mask({'type': 'brigade_number', 'full_text': match.group(0), 'number_part': match.group(1), 'start': match.start(), 'end': match.end()})
@@ -379,7 +441,9 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
     def _legal_act_date(start: int) -> bool:
         return _cfg.LEGAL_ACT_DATE_PREFIX.search(text[max(0, start - 160):start]) is not None
 
-    if _cfg.MASK_DATES:
+    def _phase_date() -> None:
+        if not _cfg.MASK_DATES:
+            return
         for match in _cfg.COMPILED_PATTERNS["date"].finditer(text):
             if _legal_act_date(match.start()):
                 continue
@@ -387,7 +451,9 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
                 skip = _inside_skip(match.start(), match.end()) or _overlaps_mask(match.start(), match.end())
                 if not skip: _add_mask({'type': 'date', 'full_text': match.group(0), 'number_part': match.group(0), 'start': match.start(), 'end': match.end()})
 
-    if _cfg.MASK_DATE_TEXT:
+    def _phase_date_text() -> None:
+        if not _cfg.MASK_DATE_TEXT:
+            return
         # Text dates: "06" жовтня 2025 року
         if "date_text" not in masking_dict["mappings"]:
             masking_dict["mappings"]["date_text"] = {}
@@ -397,6 +463,24 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
             skip = _inside_skip(match.start(), match.end()) or _overlaps_mask(match.start(), match.end())
             if not skip:
                 _add_mask({'type': 'date_text', 'full_text': match.group(0), 'number_part': match.group(0), 'start': match.start(), 'end': match.end()})
+
+    # Фази шаблонних типів — у порядку router_rules.processing_order /
+    # priority_overrides: при перекритті перемагає раніша фаза. Звання й ПІБ
+    # розбирають рядок цілком і завжди йдуть після них (нижче)
+    phases = {
+        'custom': _phase_custom,
+        'order_number': _phase_order_number,
+        'br_number': _phase_br_number,
+        'ipn': _simple_phase('ipn', 'MASK_IPN', r'\b\d{10}\b'),
+        'passport_id': _simple_phase('passport_id', 'MASK_PASSPORT', r'\b\d{9}\b'),
+        'military_id': _simple_phase('military_id', 'MASK_MILITARY_ID', r'\b[A-ZА-Я]{2}[\s-]?\d{6}\b'),
+        'military_unit': _simple_phase('military_unit', 'MASK_UNITS', r'\b[А-ЯA-Z]\d{4}\b'),
+        'brigade_number': _phase_brigade_number,
+        'date': _phase_date,
+        'date_text': _phase_date_text,
+    }
+    for phase_name in _cfg.PROCESSING_ORDER:
+        phases[phase_name]()
 
     # Обхід у порядку документа: instance tracking збігається з порядком
     # входжень (потрібно для unmask), а заміни збираються сегментами —
@@ -420,6 +504,8 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
             replacement = mask_date(item['full_text'], masking_dict, instance_counters)
         elif item['type'] == 'date_text':
             replacement = _mask_date_text(item['full_text'], masking_dict, instance_counters)
+        elif item['type'] == 'custom':
+            replacement = _custom.mask_custom(item['full_text'], masking_dict, instance_counters, text)
         elif item['type'] == 'order_simple':
             masked = mask_order_number(item['number_part'], masking_dict, instance_counters)
             replacement = item['full_text'].replace(item['number_part'], masked, 1)

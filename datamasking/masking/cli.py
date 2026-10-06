@@ -606,6 +606,33 @@ def _apply_level1_settings_impl(args, config, logger) -> Optional[str]:
         print("Warning: validation.strict_pib_format is true — only full three-word names "
               "are masked; a surname alone or two words stay open", file=sys.stderr)
 
+    # Рід масок імен (preserve_gender: false — не видавати стать)
+    _cfg.PRESERVE_GENDER = getattr(rules, 'preserve_gender', True) is not False
+    if not _cfg.PRESERVE_GENDER:
+        print("Note: masking_rules.preserve_gender is false — first names and patronymics get a "
+              "random gender; surname endings (-ова), feminine ranks and verbs can still reveal it",
+              file=sys.stderr)
+
+    # Власні шаблони і порядок фаз
+    from datamasking.masking import custom as _custom
+    router = getattr(config, 'router_rules', None)
+    _cfg.CUSTOM_PATTERNS = _custom.compile_patterns(getattr(rules, 'custom_patterns', None),
+                                                    getattr(router, 'default_action', 'mask'))
+    _cfg.PROCESSING_ORDER = _custom.build_processing_order(
+        getattr(router, 'processing_order', None), getattr(router, 'priority_overrides', None),
+        _cfg.DEFAULT_PROCESSING_ORDER)
+
+    # Виведення ключа для .enc (перевірка — до запису файлів)
+    kdf = {
+        "kdf": getattr(security, 'key_derivation', 'pbkdf2'),
+        "n": getattr(security, 'scrypt_n', 16384),
+        "r": getattr(security, 'scrypt_r', 8),
+        "p": getattr(security, 'scrypt_p', 1),
+        "salt_length": getattr(security, 'salt_length', 16),
+    }
+    if SECURITY_AVAILABLE:
+        args._kdf = MappingSecurityManager.check_kdf(kdf)
+
     # Тимчасові файли
     temp_dir = str(getattr(system, 'temp_dir', '') or '')
     if temp_dir:
@@ -934,7 +961,7 @@ def _print_generated_password(password: str, saved_to: Optional[Path] = None) ->
 
 
 def _write_mapping(mapping: Dict, json_path: Path, password: Optional[str],
-                   logger) -> Path:
+                   logger, kdf: Optional[Dict] = None) -> Path:
     """Записує mapping (звичайний або chain) — ОДИН файл.
 
     Без пароля: plaintext JSON (атомарно, 0600).
@@ -943,7 +970,7 @@ def _write_mapping(mapping: Dict, json_path: Path, password: Optional[str],
     """
     if password:
         enc_path = json_path.with_suffix('.enc')
-        MappingSecurityManager().encrypt_mapping(mapping, password, enc_path)
+        MappingSecurityManager().encrypt_mapping(mapping, password, enc_path, kdf=kdf)
         if logger:
             logger.info(f"Mapping encrypted to {enc_path}")
         return enc_path
@@ -1090,10 +1117,12 @@ def _save_results(masked_data, is_json: bool, masking_dict: Dict,
             chain_dict = chain.to_dict()
             if "input_encoding" in masking_dict:
                 chain_dict["input_encoding"] = masking_dict["input_encoding"]
-            written_map = _write_mapping(chain_dict, chain_json, password, logger)
+            written_map = _write_mapping(chain_dict, chain_json, password, logger,
+                                         kdf=getattr(args, '_kdf', None))
             print(f"  Chain mapping ({len(chain.passes)} passes): {written_map}")
         else:
-            written_map = _write_mapping(masking_dict, map_path, password, logger)
+            written_map = _write_mapping(masking_dict, map_path, password, logger,
+                                         kdf=getattr(args, '_kdf', None))
         if password:
             print(f"  Encrypted mapping: {written_map}")
         # security.password_file — лише ЗГЕНЕРОВАНИЙ пароль, після успішного запису mapping
@@ -1265,6 +1294,8 @@ def main(argv=None) -> int:
     if input_data is None:
         return EXIT_ERROR
     t_read = _time.perf_counter()
+    from datamasking.masking import custom as _custom
+    _custom.WARN_COUNTS.clear()
 
     # ================================================================
     # Run masking pipeline
@@ -1274,6 +1305,11 @@ def main(argv=None) -> int:
         args, logger, timestamp, random_suffix
     )
     t_mask = _time.perf_counter()
+    for name, count in _custom.WARN_COUNTS.items():
+        print(f"Warning: custom pattern {name!r}: {count} match(es) left unmasked (action: warn)",
+              file=sys.stderr)
+        if logger:
+            logger.warning(f"Custom pattern {name}: {count} match(es) left unmasked")
 
     # ================================================================
     # Save results

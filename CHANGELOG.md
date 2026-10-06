@@ -4,6 +4,55 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.29] - 2026-10
+
+### Added — level 3 of the planned configuration options
+The last 10 options that change behaviour now work; their `[не реалізовано]`
+marks are removed. Defaults keep the previous behaviour, the previous masks
+and the previous `.enc` format. See `docs/TODO-config-options.md`.
+
+- **scrypt key derivation:** `security.key_derivation: scrypt` with
+  `scrypt_n` / `scrypt_r` / `scrypt_p`, and `salt_length`. These need a new
+  `.enc` format (format 2): a `DMENC2` header records the method and its
+  parameters and is authenticated by AES-GCM, so it cannot be altered
+  unnoticed. Format 2 is written **only** when scrypt or a non-default salt
+  length is chosen; the default stays format 1 (PBKDF2, 16-byte salt), which
+  all versions read. `data-unmask` recognises both formats by itself. Older
+  versions cannot read format 2.
+- **Custom patterns:** `masking_rules.custom_patterns` — a regular
+  expression, or `{pattern, name, action}`; group 1, if present, is the part
+  to mask. Actions:
+  - `mask` — a deterministic mask of the same shape (digits → digits,
+    letters → letters of the same alphabet and case), stored in the mapping
+    and restored by unmask; it never equals text already in the document;
+  - `skip` — the match is protected from all masking (numbers, dates, names,
+    ranks), e.g. law numbers `№ 1932-XII`;
+  - `warn` — like `skip`, plus a warning with the number of matches left
+    open.
+  `router_rules.default_action` is the action for entries without one.
+  Invalid patterns (bad syntax, patterns that match empty text, unknown
+  keys) are configuration errors.
+- **Processing order:** `router_rules.processing_order` and
+  `priority_overrides` set the order of the pattern-based types (`custom`,
+  `order_number`, `br_number`, `ipn`, `passport_id`, `military_id`,
+  `military_unit`, `brigade_number`, `date`, `date_text`); on overlaps the
+  earlier one wins. Types left out keep the default order; `rank` and `pib`
+  are accepted but always run after them (they parse whole lines).
+- **Gender-neutral masks:** `masking_rules.preserve_gender: false` — the
+  gender of first-name and patronymic masks is pseudo-random (derived from
+  the value), so masks no longer reveal it. Surname endings (`-ова`),
+  feminine ranks and verbs can still reveal it, and a name and patronymic
+  of one person may get different genders — a note is printed.
+
+### Changed
+- Example values that would have changed behaviour are corrected:
+  `key_derivation` scrypt → pbkdf2; `processing_order` now lists the
+  engine's actual order (dates were first and `military_unit` last). The
+  full example now masks exactly like no configuration at all.
+- The masking engine runs its pattern-based phases from a table; the
+  default order is the previous one (verified with the round-trip fuzzer).
+- Tests: `tests/test_config_level3.py` (37 tests).
+
 ## [3.0.28] - 2026-10
 
 ### Added — level 2 of the planned configuration options

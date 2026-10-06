@@ -111,6 +111,17 @@ NAME_MAX_LENGTH = 0
 ALLOW_ABBREVIATED_PATRONYMIC = True
 # Лише повний ПІБ із трьох слів — validation.strict_pib_format
 STRICT_PIB_FORMAT = False
+# Рід маски імені / по батькові = реальний рід (masking_rules.preserve_gender);
+# false — псевдовипадковий (маска не видає стать)
+PRESERVE_GENDER = True
+# Власні шаблони (masking_rules.custom_patterns) — кортеж CustomPattern
+CUSTOM_PATTERNS: tuple = ()
+# Порядок фаз шаблонних типів (router_rules.processing_order /
+# priority_overrides): при перекритті перемагає раніша. Звання й ПІБ —
+# завжди після них
+DEFAULT_PROCESSING_ORDER = ("custom", "order_number", "br_number", "ipn", "passport_id",
+                            "military_id", "military_unit", "brigade_number", "date", "date_text")
+PROCESSING_ORDER: "tuple[str, ...]" = DEFAULT_PROCESSING_ORDER
 # Кодування вхідного файлу (system.encoding) і кандидати для "auto"
 # (validation.allowed_encodings); вихід пишеться тим самим кодуванням
 INPUT_ENCODING = "utf-8"
