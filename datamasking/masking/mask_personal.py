@@ -130,6 +130,12 @@ def mask_surname(original: str, masking_dict: Dict, instance_counters: Dict) -> 
             masked = _apply_original_case(original, synthesize_surname(original, forbidden=forbidden))
     return add_to_mapping(masking_dict, instance_counters, "surname", original, masked)
 
+def pseudo_gender(value: str) -> str:
+    """masking_rules.preserve_gender: false — рід маски не залежить від
+    реального: детерміновано з хешу самого значення (≈50/50)."""
+    return 'male' if get_deterministic_seed("gender\x00" + value.lower()) % 2 == 0 else 'female'
+
+
 def mask_patronymic(patronymic: str, gender: str, masking_dict: Dict, instance_counters: Dict) -> str:
     """
     Маскує по батькові з урахуванням роду.
@@ -148,6 +154,8 @@ def mask_patronymic(patronymic: str, gender: str, masking_dict: Dict, instance_c
         return masked_with_case
 
     # Генеруємо нове по батькові відповідного роду
+    if not _cfg.PRESERVE_GENDER:
+        gender = pseudo_gender(patronymic_lower)
     seed = get_deterministic_seed(patronymic_lower)
     random.seed(seed)
     _cfg.fake_uk.seed_instance(seed)
@@ -191,6 +199,8 @@ def mask_name(original: str, masking_dict: Dict, instance_counters: Dict,
             if gender == 'unknown': gender = gender_from_name
         else: gender = gender_from_name
         if gender == 'unknown': gender = 'male'
+        if not _cfg.PRESERVE_GENDER:
+            gender = pseudo_gender(original)
 
         # Генеруємо нове ім'я з тією ж першою літерою; оригінал (у називному)
         # виключаємо з кандидатів явно — інакше єдина кандидатка на літеру

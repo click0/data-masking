@@ -58,11 +58,11 @@ class SecurityConfig:
         "min_special": 2,
     })
     encryption_algorithm: str = "AES-256-GCM"
-    key_derivation: str = "scrypt"  # [не реалізовано]
-    scrypt_n: int = 2**14  # [не реалізовано]
-    scrypt_r: int = 8  # [не реалізовано]
-    scrypt_p: int = 1  # [не реалізовано]
-    salt_length: int = 16  # [не реалізовано]
+    key_derivation: str = "pbkdf2"
+    scrypt_n: int = 2**14
+    scrypt_r: int = 8
+    scrypt_p: int = 1
+    salt_length: int = 16
     auto_generate_password: bool = True
     password_file: str = ""
     secure_delete_temp: bool = True
@@ -86,12 +86,12 @@ class MaskingRulesConfig:
     enable_br_numbers: bool = True
     enable_document_numbers: bool = True
     preserve_case: bool = True
-    preserve_gender: bool = True  # [не реалізовано]
+    preserve_gender: bool = True
     consistent_mapping: bool = True  # [не реалізовано]
     instance_tracking: bool = True  # [не реалізовано]
     context_aware: bool = True  # [не реалізовано]
     rank_line_break_fix: bool = True
-    custom_patterns: List[str] = field(default_factory=list)  # [не реалізовано]
+    custom_patterns: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -111,22 +111,24 @@ class ValidationConfig:
 @dataclass
 class RouterRulesConfig:
     """Налаштування правил маршрутизації (порядок обробки)."""
-    default_action: str = "mask"  # [не реалізовано]
-    processing_order: List[str] = field(default_factory=lambda: [  # [не реалізовано]
-        "date_text",
-        "date",
+    default_action: str = "mask"
+    processing_order: List[str] = field(default_factory=lambda: [
+        "custom",
+        "order_number",
+        "br_number",
         "ipn",
         "passport_id",
         "military_id",
-        "order_number",
+        "military_unit",
         "brigade_number",
+        "date",
+        "date_text",
         "rank",
         "pib",
-        "military_unit",
     ])
     skip_types: List[str] = field(default_factory=list)
     only_types: List[str] = field(default_factory=list)
-    priority_overrides: Dict[str, int] = field(default_factory=dict)  # [не реалізовано]
+    priority_overrides: Dict[str, int] = field(default_factory=dict)
 
 
 @dataclass

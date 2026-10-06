@@ -97,6 +97,9 @@ pip install -e '.[full]' && pip install -r requirements-dev.txt
   воно не збігається з фактичною поведінкою (таблиця в TODO).
 - `--encrypt` пише лише `.enc` (plaintext mapping не створюється), mapping —
   атомарно з правами 0600.
+- Формат `.enc` 1 (PBKDF2, сіль 16) — за замовчуванням, його читають усі версії;
+  формат 2 (заголовок `DMENC2`, scrypt або інша сіль) — лише за явного
+  `security.key_derivation`/`salt_length`. Читання розпізнає обидва.
 - Коди виходу: 0 успіх, 1 помилка, 2 неправильне використання; жодних
   traceback-ів на очікуваних помилках.
 - Тести, що потребують cryptography/pyyaml, мають `skipif` (є CI-джоба

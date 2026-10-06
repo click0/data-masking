@@ -30,6 +30,7 @@ CRYPTOGRAPHY_AVAILABLE = False
 try:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
     from cryptography.hazmat.primitives import hashes
     CRYPTOGRAPHY_AVAILABLE = True
 except ImportError:
@@ -39,9 +40,22 @@ except ImportError:
 class MappingSecurityManager:
     """Manages encryption and decryption of mapping files.
 
-    Uses AES-256-GCM authenticated encryption with PBKDF2-derived keys.
-    File layout: [16 bytes salt][12 bytes nonce][ciphertext + 16 bytes GCM tag]
+    Uses AES-256-GCM authenticated encryption.
+
+    Формат 1 (за замовчуванням, читають усі версії 2.3+):
+        [16 bytes salt][12 bytes nonce][ciphertext + 16 bytes GCM tag],
+        ключ — PBKDF2-HMAC-SHA256, 600 000 ітерацій.
+    Формат 2 (v3.0.29+, якщо security.key_derivation: scrypt або інша
+    довжина солі; старі версії його НЕ прочитають):
+        b"DMENC2" [2 bytes: довжина заголовка][JSON-заголовок: kdf і параметри]
+        [salt][12 bytes nonce][ciphertext + tag]; заголовок автентифікується
+        як associated data GCM — підмінити параметри непомітно не можна.
+    Читання розпізнає формат сам.
     """
+
+    MAGIC_V2: bytes = b"DMENC2"
+    # Межі параметрів scrypt (захист від заголовка, що вимагає гігабайти пам'яті)
+    SCRYPT_MAX_MEMORY: int = 1 << 30
 
     SALT_LENGTH: int = 16
     NONCE_LENGTH: int = 12
@@ -76,6 +90,53 @@ class MappingSecurityManager:
         )
         return kdf.derive(password.encode("utf-8"))
 
+    @staticmethod
+    def check_kdf(kdf: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Нормалізує і перевіряє параметри виведення ключа.
+
+        kdf: {"kdf": "pbkdf2"|"scrypt", "n", "r", "p", "salt_length"}.
+        Raises ValueError з текстом для користувача.
+        """
+        kdf = dict(kdf or {})
+        name = str(kdf.get("kdf", "pbkdf2") or "pbkdf2").strip().lower()
+        if name not in ("pbkdf2", "scrypt"):
+            raise ValueError(f"security.key_derivation must be pbkdf2 or scrypt, got {name!r}")
+
+        names = {"n": "scrypt_n", "r": "scrypt_r", "p": "scrypt_p", "salt_length": "salt_length"}
+
+        def as_int(key: str, default: int, lo: int, hi: int) -> int:
+            value = kdf.get(key, default)
+            if isinstance(value, bool) or not isinstance(value, int) or not lo <= value <= hi:
+                raise ValueError(f"security.{names[key]} must be an integer between {lo} and {hi}, "
+                                 f"got {value!r}")
+            return value
+
+        salt_key = "salt_length"
+        out: Dict[str, Any] = {"kdf": name, "salt_length": as_int(salt_key, 16, 16, 64)}
+        if name == "scrypt":
+            out["n"] = as_int("n", 16384, 2, 1 << 20)
+            if out["n"] & (out["n"] - 1):
+                raise ValueError(f"security.scrypt_n must be a power of two, got {out['n']}")
+            out["r"] = as_int("r", 8, 1, 64)
+            out["p"] = as_int("p", 1, 1, 16)
+            if 128 * out["n"] * out["r"] > MappingSecurityManager.SCRYPT_MAX_MEMORY:
+                raise ValueError("security.scrypt_n × scrypt_r needs more than 1 GiB of memory")
+        return out
+
+    @classmethod
+    def _derive_key_v2(cls, password: str, salt: bytes, header: Dict[str, Any]) -> bytes:
+        if header.get("kdf") == "scrypt":
+            kdf = Scrypt(salt=salt, length=cls.KEY_LENGTH, n=int(header["n"]),
+                         r=int(header["r"]), p=int(header["p"]))
+            return kdf.derive(password.encode("utf-8"))
+        if header.get("kdf") == "pbkdf2":
+            iterations = int(header.get("iterations", cls.ITERATIONS))
+            if not 100_000 <= iterations <= 10_000_000:
+                raise ValueError("Encrypted file header has an invalid PBKDF2 iteration count")
+            return PBKDF2HMAC(algorithm=hashes.SHA256(), length=cls.KEY_LENGTH,
+                              salt=salt, iterations=iterations).derive(password.encode("utf-8"))
+        raise ValueError(f"Encrypted file uses an unknown key derivation: {header.get('kdf')!r}")
+
     # ------------------------------------------------------------------
     # Core encrypt / decrypt
     # ------------------------------------------------------------------
@@ -85,8 +146,13 @@ class MappingSecurityManager:
         mapping_dict: Dict[str, Any],
         password: str,
         output_path: Any,
+        kdf: Optional[Dict[str, Any]] = None,
     ) -> Path:
         """Encrypt *mapping_dict* with AES-256-GCM and write to *output_path*.
+
+        kdf — параметри виведення ключа (див. check_kdf). PBKDF2 із сіллю
+        16 байт (за замовчуванням) — формат 1, сумісний зі старими версіями;
+        інакше — формат 2 із заголовком.
 
         Returns the resolved Path of the written file.
         """
@@ -104,16 +170,28 @@ class MappingSecurityManager:
             mapping_dict, ensure_ascii=False, indent=2
         ).encode("utf-8")
 
-        salt = os.urandom(self.SALT_LENGTH)
-        nonce = os.urandom(self.NONCE_LENGTH)
-        key = self._derive_key(password, salt)
-
-        aesgcm = AESGCM(key)
-        ciphertext = aesgcm.encrypt(nonce, json_bytes, None)
-
-        # Атомарно і з правами 0600 — це ключ до оригіналів
+        params = self.check_kdf(kdf)
         from datamasking._fsutil import atomic_write_private
-        resolved = atomic_write_private(output_path, salt + nonce + ciphertext)
+        nonce = os.urandom(self.NONCE_LENGTH)
+
+        if params["kdf"] == "pbkdf2" and params["salt_length"] == self.SALT_LENGTH:
+            salt = os.urandom(self.SALT_LENGTH)
+            key = self._derive_key(password, salt)
+            ciphertext = AESGCM(key).encrypt(nonce, json_bytes, None)
+            # Атомарно і з правами 0600 — це ключ до оригіналів
+            resolved = atomic_write_private(output_path, salt + nonce + ciphertext)
+        else:
+            header: Dict[str, Any] = {"v": 2, "kdf": params["kdf"], "salt_length": params["salt_length"]}
+            if params["kdf"] == "scrypt":
+                header.update(n=params["n"], r=params["r"], p=params["p"])
+            else:
+                header["iterations"] = self.ITERATIONS
+            header_bytes = json.dumps(header, sort_keys=True).encode("ascii")
+            prefix = self.MAGIC_V2 + len(header_bytes).to_bytes(2, "big") + header_bytes
+            salt = os.urandom(params["salt_length"])
+            key = self._derive_key_v2(password, salt, header)
+            ciphertext = AESGCM(key).encrypt(nonce, json_bytes, prefix)
+            resolved = atomic_write_private(output_path, prefix + salt + nonce + ciphertext)
 
         logger.info("Encrypted mapping written to %s", resolved)
         return resolved
@@ -136,6 +214,9 @@ class MappingSecurityManager:
         encrypted_path = Path(encrypted_path)
         raw = encrypted_path.read_bytes()
 
+        if raw.startswith(self.MAGIC_V2):
+            return self._decrypt_v2(raw, password)
+
         min_length = self.SALT_LENGTH + self.NONCE_LENGTH + 16  # tag
         if len(raw) < min_length:
             raise ValueError(
@@ -157,6 +238,35 @@ class MappingSecurityManager:
                 "Decryption failed. Wrong password or corrupted file."
             ) from exc
 
+        data = json.loads(plaintext.decode("utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("Decrypted mapping is not a JSON object")
+        return data
+
+    def _decrypt_v2(self, raw: bytes, password: str) -> Dict[str, Any]:
+        """Формат 2: заголовок із параметрами KDF, автентифікований GCM."""
+        try:
+            pos = len(self.MAGIC_V2)
+            header_len = int.from_bytes(raw[pos:pos + 2], "big")
+            header_bytes = raw[pos + 2:pos + 2 + header_len]
+            header = json.loads(header_bytes.decode("ascii"))
+            if not isinstance(header, dict) or header.get("v") != 2:
+                raise ValueError("bad header")
+            params = self.check_kdf({"kdf": header.get("kdf"), "n": header.get("n", 16384),
+                                     "r": header.get("r", 8), "p": header.get("p", 1),
+                                     "salt_length": header.get("salt_length", 16)})
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ValueError(f"Encrypted file has an invalid header: {exc}") from exc
+        prefix_end = pos + 2 + header_len
+        salt_end = prefix_end + params["salt_length"]
+        nonce_end = salt_end + self.NONCE_LENGTH
+        if len(raw) < nonce_end + 16:
+            raise ValueError("Encrypted file is too short.")
+        key = self._derive_key_v2(password, raw[prefix_end:salt_end], header)
+        try:
+            plaintext = AESGCM(key).decrypt(raw[salt_end:nonce_end], raw[nonce_end:], raw[:prefix_end])
+        except Exception as exc:
+            raise ValueError("Decryption failed. Wrong password or corrupted file.") from exc
         data = json.loads(plaintext.decode("utf-8"))
         if not isinstance(data, dict):
             raise ValueError("Decrypted mapping is not a JSON object")
