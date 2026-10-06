@@ -180,11 +180,11 @@ class TestWarningsInCli:
         out = (tmp_path / "out.txt").read_bytes().decode("utf-8")
         assert "12.03.2024" in out  # enable_dates: false подіяв
 
-    def test_mask_cli_silent_for_current_example(self, tmp_path, monkeypatch, capsys):
+    def test_mask_cli_silent_for_effective_only_file(self, tmp_path, monkeypatch, capsys):
         monkeypatch.chdir(tmp_path)
         (tmp_path / "in.txt").write_bytes("капітан Петренко Іван Іванович\n".encode("utf-8"))
         rc = mask_cli.main(["-i", "in.txt", "-o", "out.txt", "--no-report",
-                            "--config", str(ROOT / "config_example.yaml")])
+                            "--config", str(ROOT / "docs" / "config-examples" / "share.yaml")])
         assert rc == 0
         assert "have no effect" not in capsys.readouterr().err
 

@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.23] - 2026-10
+
+### Reverted — full configuration example restored
+- 3.0.21 rewrote `config_example.yaml`, `config_example.py` and the
+  `--init-config` template down to the keys the program currently reads,
+  dropping every other option. That was not what was asked: the full example
+  is restored exactly as in 3.0.20 (all options and defaults), and so is the
+  `--init-config` template. The scenario sets in `docs/config-examples/`
+  (`share`, `strict`, `pii`) stay as additional examples.
+- The 3.0.22 warning still lists options that have no effect yet when such a
+  file is loaded; copying the full example therefore prints it.
+- Tests: the template and example tests are back to their 3.0.20 form; the
+  "effective keys only" check now covers the scenario sets only.
+
 ## [3.0.22] - 2026-10
 
 ### Fixed — dates of birth were never masked

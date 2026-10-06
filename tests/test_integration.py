@@ -136,8 +136,7 @@ class TestInitConfig:
         assert "security:" in content
         assert "masking_rules:" in content
         assert "logging:" in content
-        # Мертві ключі (нічого не роблять) у шаблоні більше не пропонуються
-        assert "router_rules:" not in content
+        assert "router_rules:" in content
 
         # Перевіряємо версію
         from datamasking.masking.constants import __version__ as pkg_version
@@ -145,9 +144,8 @@ class TestInitConfig:
 
         # Перевіряємо параметри безпеки
         assert "encrypt_output:" in content
-        assert "password_length:" in content
-        assert "password_generation:" not in content
-        assert "AES-256-GCM" in content
+        assert "password_generation:" in content
+        assert "password_env_var:" in content
 
     def test_init_config_yaml_valid(self, temp_dir):
         """Тест: згенерований YAML є валідним."""
