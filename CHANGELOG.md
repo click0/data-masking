@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.24] - 2026-10
+
+### Fixed — "Кабінет Міністрів" masked as a name
+- `постанови Кабінету Міністрів` became `постанови Кабалу Михайло`: the two
+  capitalised words were taken for a surname and a first name. All case
+  forms of `Кабінет` (Кабінет, Кабінету, Кабінетові, Кабінетом, Кабінеті,
+  Кабінете) and `Міністрів` are now excluded words; a name later on the same
+  line is still masked.
+- Tests: `tests/test_exclusions.py`.
+
 ## [3.0.23] - 2026-10
 
 ### Reverted — full configuration example restored
