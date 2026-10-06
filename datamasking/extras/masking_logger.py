@@ -114,6 +114,8 @@ class MaskingLogger:
         level: str = "INFO",
         format_type: str = "console",
         log_file: Optional[str] = None,
+        console: bool = True,
+        replace_handlers: bool = False,
     ) -> None:
         """Initialize the masking logger.
 
@@ -137,12 +139,19 @@ class MaskingLogger:
             "files_processed": 0,
         }
 
+        # Повторне налаштування (setup_logging) замінює обробники: раніше
+        # вони лишались від першого виклику, і новий log_file/консоль
+        # мовчки ігнорувались
+        if replace_handlers:
+            for handler in list(self.logger.handlers):
+                self.logger.removeHandler(handler)
+                handler.close()
         # Avoid adding duplicate handlers
         if not self.logger.handlers:
-            self._setup_handlers(format_type, log_file)
+            self._setup_handlers(format_type, log_file, console)
 
     def _setup_handlers(
-        self, format_type: str, log_file: Optional[str]
+        self, format_type: str, log_file: Optional[str], console: bool = True
     ) -> None:
         """Configure logging handlers based on format type.
 
@@ -155,10 +164,14 @@ class MaskingLogger:
         else:
             formatter = ConsoleFormatter()
 
-        # Console handler
-        console_handler = logging.StreamHandler(sys.stderr)
-        console_handler.setFormatter(formatter)
-        self.logger.addHandler(console_handler)
+        # Console handler (logging.log_to_console: false — без нього)
+        if console:
+            console_handler = logging.StreamHandler(sys.stderr)
+            console_handler.setFormatter(formatter)
+            self.logger.addHandler(console_handler)
+        if not console and not log_file:
+            # Нікуди не писати — але без попередження logging про «no handlers»
+            self.logger.addHandler(logging.NullHandler())
 
         # File handler (optional)
         if log_file:
@@ -364,6 +377,7 @@ def get_logger(
     format_type: str = "console",
     log_file: Optional[str] = None,
     reinit: bool = False,
+    console: bool = True,
 ) -> MaskingLogger:
     """Get or create the global MaskingLogger instance.
 
@@ -383,6 +397,8 @@ def get_logger(
             level=level,
             format_type=format_type,
             log_file=log_file,
+            console=console,
+            replace_handlers=reinit,
         )
     return _logger
 
@@ -391,6 +407,7 @@ def setup_logging(
     level: str = "INFO",
     format_type: str = "console",
     log_file: Optional[str] = None,
+    console: bool = True,
 ) -> MaskingLogger:
     """Set up and return a configured MaskingLogger.
 
@@ -409,4 +426,5 @@ def setup_logging(
         format_type=format_type,
         log_file=log_file,
         reinit=True,
+        console=console,
     )

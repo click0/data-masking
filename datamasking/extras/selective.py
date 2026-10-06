@@ -332,6 +332,9 @@ def apply_filter_to_globals(
     all_mask_globals: Set[str] = set(_TYPE_TO_GLOBAL.values())
     for gname in all_mask_globals:
         globals_dict[gname] = gname in enabled_globals
+    # Тип «date» охоплює і цифрові, і текстові дати
+    if "MASK_DATES" in globals_dict:
+        globals_dict["MASK_DATE_TEXT"] = globals_dict["MASK_DATES"]
 
 
 # ============================================================================

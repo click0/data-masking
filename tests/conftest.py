@@ -41,6 +41,19 @@ def guard_repo_root_config_yaml():
 
 
 @pytest.fixture(autouse=True)
+def restore_engine_settings():
+    """Глобальні налаштування рушія (MASK_*, межі дат, PRESERVE_CASE …)
+    конфігурація пише в модуль constants; CLI в тестах працює в тому самому
+    процесі, тож без відновлення налаштування одного тесту «протікали» б
+    в інші."""
+    from datamasking.masking import constants as _cfg
+    saved = {k: v for k, v in vars(_cfg).items() if k.isupper() and isinstance(v, (bool, int, float, str))}
+    yield
+    for k, v in saved.items():
+        setattr(_cfg, k, v)
+
+
+@pytest.fixture(autouse=True)
 def restore_environment():
     """Відновлює os.environ після тесту (замість видалення всіх DM_*/DATA_MASKING_*,
     включно з тими, що встановив розробник до запуску pytest)."""

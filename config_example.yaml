@@ -22,7 +22,7 @@
 # --------------------------------------------------------------------------
 system:
   # Версія конфігурації (для сумісності)
-  version: "v2.6.0"   # [не реалізовано]
+  version: "v2.6.0"
 
   # Алгоритм хешування для детерміністичного маскування.
   # Той самий вхід завжди дає той самий замаскований результат.
@@ -41,12 +41,14 @@ system:
   #   малі літери    -> малі літери
   preserve_case: true
 
-  # Створювати резервні копії вхідних файлів
-  backup_enabled: true   # [не реалізовано]
-  backup_suffix: ".bak"   # [не реалізовано]
+  # Резервна копія наявного ВИХІДНОГО файлу перед перезаписом (--force):
+  # <файл><backup_suffix>. Вхідний файл програма не змінює.
+  backup_enabled: false
+  backup_suffix: ".bak"
 
-  # Максимальний розмір файлу для обробки (МБ)
-  max_file_size_mb: 50   # [не реалізовано]
+  # Максимальний розмір файлу для обробки (МБ); діє менший із цього
+  # і validation.max_input_size_mb
+  max_file_size_mb: 100
 
   # Тимчасова директорія (порожнє = системна за замовчуванням)
   temp_dir: ""   # [не реалізовано]
@@ -65,18 +67,18 @@ security:
   encrypt_output: false
 
   # Змінна оточення для зчитування пароля (альтернатива --password)
-  password_env_var: "DATA_MASKING_PASSWORD"   # [не реалізовано]
+  password_env_var: "DATA_MASKING_PASSWORD"
 
   # Налаштування автоматичної генерації пароля
   password_generation:
     # Увімкнути автоматичну генерацію пароля
-    enabled: true   # [не реалізовано]
+    enabled: true
     # Довжина пароля (символів)
-    length: 24   # [не реалізовано]
+    length: 24
     # Використовувати спеціальні символи (!@#$%^&*)
     use_special_chars: true   # [не реалізовано]
     # Алгоритм генерації: secrets (рекомендовано) або random
-    algorithm: "secrets"   # [не реалізовано]
+    algorithm: "secrets"
     # Мінімальна кількість великих літер
     min_uppercase: 2   # [не реалізовано]
     # Мінімальна кількість малих літер
@@ -87,7 +89,7 @@ security:
     min_special: 2   # [не реалізовано]
 
   # Алгоритм шифрування
-  encryption_algorithm: "AES-256-GCM"   # [не реалізовано]
+  encryption_algorithm: "AES-256-GCM"
 
   # Деривація ключа
   key_derivation: "scrypt"   # [не реалізовано]
@@ -97,10 +99,10 @@ security:
   salt_length: 16   # [не реалізовано]
 
   # Автоматично генерувати пароль, якщо --password не вказано
-  auto_generate_password: true   # [не реалізовано]
+  auto_generate_password: true
 
   # Файл для збереження згенерованого пароля (порожнє = не зберігати)
-  password_file: ""   # [не реалізовано]
+  password_file: ""
 
   # Безпечне видалення тимчасових файлів
   secure_delete_temp: true   # [не реалізовано]
@@ -134,7 +136,7 @@ masking_rules:
   enable_dates: true
 
   # Текстові дати ("06" жовтня 2025 року)
-  enable_date_text: true   # [не реалізовано]
+  enable_date_text: true
 
   # Військові частини (наприклад, А1234)
   enable_units: true
@@ -152,7 +154,7 @@ masking_rules:
   enable_document_numbers: true   # [не реалізовано]
 
   # Зберігати регістр при маскуванні
-  preserve_case: true   # [не реалізовано]
+  preserve_case: true
 
   # Зберігати стать при підборі замін
   preserve_gender: true   # [не реалізовано]
@@ -167,7 +169,7 @@ masking_rules:
   context_aware: true   # [не реалізовано]
 
   # Виправлення розірваних звань через перенос рядка (Fix #20)
-  rank_line_break_fix: true   # [не реалізовано]
+  rank_line_break_fix: true
 
   # Власні шаблони регулярних виразів (додатково)
   custom_patterns: []   # [не реалізовано]
@@ -180,9 +182,9 @@ validation:
   validate_ipn_checksum: true   # [не реалізовано]
 
   # Перевіряти діапазон дат
-  validate_date_range: true   # [не реалізовано]
-  min_date_year: 1900   # [не реалізовано]
-  max_date_year: 2030   # [не реалізовано]
+  validate_date_range: true
+  min_date_year: 1900
+  max_date_year: 2100
 
   # Перевіряти звання за словником
   validate_rank_dictionary: true   # [не реалізовано]
@@ -221,11 +223,11 @@ router_rules:
 
   # Пропустити вказані типи (має пріоритет над processing_order)
   # Приклад: skip_types: ["date", "ipn"]
-  skip_types: []   # [не реалізовано]
+  skip_types: []
 
   # Маскувати ТІЛЬКИ вказані типи (решта пропускається)
   # Приклад: only_types: ["ipn", "rank"]
-  only_types: []   # [не реалізовано]
+  only_types: []
 
   # Перевизначення пріоритетів (ключ: тип, значення: пріоритет)
   priority_overrides: {}   # [не реалізовано]
@@ -235,7 +237,7 @@ router_rules:
 # --------------------------------------------------------------------------
 logging:
   # Увімкнути логування
-  enabled: true   # [не реалізовано]
+  enabled: true
 
   # Рівень логування: DEBUG | INFO | WARNING | ERROR | CRITICAL
   level: "INFO"
@@ -253,10 +255,10 @@ logging:
   log_rotation_count: 5   # [не реалізовано]
 
   # Виводити логи у консоль
-  log_to_console: true   # [не реалізовано]
+  log_to_console: true
 
   # Записувати логи у файл
-  log_to_file: false   # [не реалізовано]
+  log_to_file: false
 
   # НЕ логувати чутливі дані (завжди false у продакшені!)
   log_sensitive_data: false   # [не реалізовано]
@@ -265,23 +267,23 @@ logging:
   log_performance: false   # [не реалізовано]
 
   # Логувати статистику маскування
-  log_statistics: true   # [не реалізовано]
+  log_statistics: true
 
 # --------------------------------------------------------------------------
 # Налаштування повторного маскування (re-mask)
 # --------------------------------------------------------------------------
 remask:
   # Увімкнути підтримку багатопрохідного маскування
-  enabled: true   # [не реалізовано]
+  enabled: true
 
   # Максимальна кількість проходів
-  max_passes: 5   # [не реалізовано]
+  max_passes: 10
 
   # Зберігати ланцюг маппінгів для відновлення
   save_chain: true   # [не реалізовано]
 
   # Формат файлу ланцюга
-  chain_format: "json"   # [не реалізовано]
+  chain_format: "json"
 
   # Автоматично нумерувати проходи
   auto_numbering: true   # [не реалізовано]
