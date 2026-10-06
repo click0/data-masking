@@ -4,6 +4,61 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.27] - 2026-10
+
+### Added — level 1 of the planned configuration options
+30 options from the full example (`config_example.yaml`) now work; their
+`[не реалізовано]` marks are removed. Defaults keep the previous behaviour —
+without a configuration nothing changes. See `docs/TODO-config-options.md`.
+
+- **Aliases of existing settings:** `masking_rules.preserve_case` (overrides
+  `system.preserve_case`), `system.max_file_size_mb` (the smaller of it and
+  `validation.max_input_size_mb` applies), `password_generation.length` in
+  both sections (the longest configured password length wins),
+  `router_rules.only_types` / `skip_types` (like `--only` / `--exclude`; the
+  CLI flags take precedence, the two together are an error).
+- **Password:** `security.password_env_var` / `password_generation.env_var`
+  name the environment variable with the password, for masking and
+  unmasking; `security.auto_generate_password: false` (or
+  `password_generation.enabled: false`) makes `--encrypt` without a password
+  an error instead of generating one; `security.password_file` saves a
+  *generated* password (mode 0600, after the mapping is written, never
+  overwritten without `--force`).
+- **Dates:** `validation.min_date_year` / `max_date_year` set which years are
+  recognised as dates; `validate_date_range: false` removes the limit.
+  `masking_rules.enable_date_text` switches written-out dates separately
+  (default: same as `enable_dates`).
+- `masking_rules.rank_line_break_fix: false` turns off joining ranks broken
+  across lines.
+- `system.version`: a warning when the file is for a newer major version.
+- **Logging:** `logging.enabled`, `log_to_console`, `log_to_file`,
+  `log_statistics` (hide the statistics block).
+- `system.backup_enabled` / `backup_suffix`: copy of an existing output file
+  before it is overwritten with `--force`.
+- `remask.enabled: false` forbids `--re-mask`; `remask.max_passes` caps it
+  (2–10).
+- Keys with one supported value are validated instead of ignored:
+  `security.encryption_algorithm` (AES-256-GCM),
+  `security.password_generation.algorithm` (secrets), `remask.chain_format`
+  (json). Any other value is a configuration error.
+
+### Changed
+- `data-unmask` now loads `./config.yaml` / `./config.py` like `data-mask`
+  does (before only with `-c`), so shared settings such as the password
+  variable apply to both.
+- Example values that would have changed behaviour once these options
+  worked are corrected: `max_date_year` 2030 → 2100, `max_file_size_mb`
+  50 → 100, `backup_enabled` true → false, `remask.max_passes` 5 → 10.
+- `remask.save_chain` moved to the options that can only be validated: when
+  re-masking, the chain file *is* the mapping.
+
+### Fixed
+- Setting up the logger again in the same process kept the first handlers,
+  so a new log file or console setting was ignored.
+- Tests: engine settings written by a configuration are restored after each
+  test (`tests/conftest.py`); new `tests/test_config_level1.py` (45 tests,
+  no pyyaml needed).
+
 ## [3.0.26] - 2026-10
 
 ### Changed — planned configuration options are marked, not warned about

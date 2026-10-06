@@ -5,16 +5,18 @@
 Перелік у коді — `PLANNED_KEYS` (`datamasking/extras/config.py`). Реалізована опція
 переходить у `EFFECTIVE_KEYS`, з прикладів знімається позначка.
 
+Стан: рівень 1 зроблено (v3.0.27); рівні 2–4 — заплановано.
+
 Задачі впорядковано від простих до складних. Тест перевіряє, що тут згадано кожен ключ із `PLANNED_KEYS`.
 
 ## Підсумок
 
 | Рівень | Задач | Ключів |
 |---|---|---|
-| Рівень 1 — прості | 12 | 31 |
+| Рівень 1 — прості | 12 | 30 |
 | Рівень 2 — середні | 13 | 26 |
 | Рівень 3 — складні | 4 | 10 |
-| Рівень 4 — недоцільні як перемикачі | 2 | 5 |
+| Рівень 4 — недоцільні як перемикачі | 2 | 6 |
 | **Разом** | **31** | **72** |
 
 ## Перед реалізацією: значення в прикладі, що змінять поведінку
@@ -23,53 +25,54 @@
 чинним для всіх, хто скопіював приклад. Ці значення не збігаються з фактичною поведінкою і їх треба
 виправити разом з реалізацією відповідної опції:
 
-| Ключ | У прикладі | Фактично | Наслідок, якщо лишити |
-|---|---|---|---|
-| `validation.max_date_year` | 2030 | 2100 | дати 2031+ перестануть маскуватись |
-| `system.hash_digest_size` | 8 | 64 | зміняться всі маски |
-| `security.key_derivation` | scrypt | pbkdf2 | новий формат `.enc`, старі версії його не прочитають |
-| `system.max_file_size_mb` | 50 | 100 | файли 50–100 МБ почнуть відхилятись |
-| `system.backup_enabled` | true | — | з'являться файли `.bak` поруч із виходом |
-| `validation.validate_ipn_checksum` | true | — | зміняться маски ІПН |
+| Ключ | У прикладі | Фактично | Наслідок, якщо лишити | Стан |
+|---|---|---|---|---|
+| `validation.max_date_year` | 2030 | 2100 | дати 2031+ перестануть маскуватись | виправлено у v3.0.27 |
+| `system.max_file_size_mb` | 50 | 100 | файли 50–100 МБ почнуть відхилятись | виправлено у v3.0.27 |
+| `system.backup_enabled` | true | false | з'являться файли `.bak` поруч із виходом | виправлено у v3.0.27 |
+| `remask.max_passes` | 5 | 10 | `--re-mask` понад 5 проходів обрізатиметься | виправлено у v3.0.27 |
+| `system.hash_digest_size` | 8 | 64 | зміняться всі маски | рівень 2 |
+| `validation.validate_ipn_checksum` | true | — | зміняться маски ІПН | рівень 2 |
+| `security.key_derivation` | scrypt | pbkdf2 | новий формат `.enc`, старі версії його не прочитають | рівень 3 |
 
 ## Рівень 1 — прості
 
-Нової логіки майже немає: передати значення в наявний механізм або додати одну перевірку. Ризик для маскування — нульовий.
+**Зроблено у v3.0.27.** Нової логіки майже немає: передати значення в наявний механізм або додати одну перевірку. Ризик для маскування — нульовий.
 
-- [ ] **1. Аліаси вже діючих ключів** — `masking_rules.preserve_case`, `system.max_file_size_mb`, `security.password_generation.length`, `password_generation.length`, `router_rules.skip_types`, `router_rules.only_types`
+- [x] **1. Аліаси вже діючих ключів** — `masking_rules.preserve_case`, `system.max_file_size_mb`, `security.password_generation.length`, `password_generation.length`, `router_rules.skip_types`, `router_rules.only_types`
   - Що: Передати значення в уже наявний механізм: `system.preserve_case`, `validation.max_input_size_mb` (діє менший із двох лімітів), `security.password_length`, `--exclude` / `--only`.
   - Складність: Нової логіки немає — лише читання ключа і тест.
-- [ ] **2. Змінна оточення з паролем** — `security.password_env_var`, `password_generation.env_var`
+- [x] **2. Змінна оточення з паролем** — `security.password_env_var`, `password_generation.env_var`
   - Що: Назва змінної, з якої mask і unmask беруть пароль (зараз жорстко `DATA_MASKING_PASSWORD`).
   - Складність: Два місця читання пароля; `--password-env` лишається пріоритетнішим.
-- [ ] **3. Без автогенерації пароля** — `security.auto_generate_password`, `security.password_generation.enabled`, `password_generation.enabled`, `security.password_generation`
+- [x] **3. Без автогенерації пароля** — `security.auto_generate_password`, `security.password_generation.enabled`, `password_generation.enabled`, `security.password_generation`
   - Що: `false` — якщо пароль не задано, `--encrypt` завершується помилкою (код 1) замість генерації.
   - Складність: Одна гілка в `_resolve_password`.
-- [ ] **4. Зберегти згенерований пароль у файл** — `security.password_file`
+- [x] **4. Зберегти згенерований пароль у файл** — `security.password_file`
   - Що: Записати згенерований пароль у файл з правами 0600, атомарно; не перезаписувати без `--force`.
   - Складність: Є готовий `atomic_write_private`.
-- [ ] **5. Межі розпізнавання дат** — `validation.validate_date_range`, `validation.min_date_year`, `validation.max_date_year`
+- [x] **5. Межі розпізнавання дат** — `validation.validate_date_range`, `validation.min_date_year`, `validation.max_date_year`
   - Що: Передати в `DATE_DETECT_YEAR_MIN/MAX` (з 3.0.22 це вже константи). `validate_date_range: false` — без меж.
   - Складність: **Значення в прикладі (`max_date_year: 2030`) треба змінити на 2100**, інакше дати 2031+ перестануть маскуватись.
-- [ ] **6. Вимикач склеювання розірваних звань** — `masking_rules.rank_line_break_fix`
+- [x] **6. Вимикач склеювання розірваних звань** — `masking_rules.rank_line_break_fix`
   - Що: `false` — не викликати `normalize_broken_ranks`.
   - Складність: Один виклик у рушії.
-- [ ] **7. Текстові дати окремо** — `masking_rules.enable_date_text`
+- [x] **7. Текстові дати окремо** — `masking_rules.enable_date_text`
   - Що: Окремий прапорець для «06» жовтня 2025 року; за замовчуванням дорівнює `enable_dates`.
   - Складність: Зараз обидва типи під одним `MASK_DATES`.
-- [ ] **8. Версія конфігурації** — `system.version`
+- [x] **8. Версія конфігурації** — `system.version`
   - Що: Попередження, якщо файл новішої мажорної версії, ніж програма.
   - Складність: Лише порівняння рядків версій.
-- [ ] **9. Прості перемикачі логування** — `logging.enabled`, `logging.log_to_console`, `logging.log_to_file`, `logging.log_statistics`
+- [x] **9. Прості перемикачі логування** — `logging.enabled`, `logging.log_to_console`, `logging.log_to_file`, `logging.log_statistics`
   - Що: Вимкнути лог повністю / лише консоль / лише файл; не друкувати блок статистики.
   - Складність: Параметри `setup_logging` і виводу статистики.
-- [ ] **10. Резервна копія вихідного файлу** — `system.backup_enabled`, `system.backup_suffix`
+- [x] **10. Резервна копія вихідного файлу** — `system.backup_enabled`, `system.backup_suffix`
   - Що: Перед перезаписом наявного вихідного файлу з `--force` зберегти копію `<файл><suffix>`.
   - Складність: Вхідний файл програма не змінює, тож копія потрібна саме для виходу. **Значення в прикладі `true` змінить поведінку** — за замовчуванням має бути `false`.
-- [ ] **11. Обмеження перемаскування** — `remask.enabled`, `remask.max_passes`, `remask.save_chain`
-  - Що: `enabled: false` забороняє `--re-mask`; `max_passes` — верхня межа (не більше 10); `save_chain: false` — не писати окремий chain-файл.
-  - Складність: Перевірити, що `--to-version` не залежить від chain-файлу (лише від mapping).
-- [ ] **12. Ключі з єдиним допустимим значенням** — `security.encryption_algorithm`, `remask.chain_format`, `security.password_generation.algorithm`
+- [x] **11. Обмеження перемаскування** — `remask.enabled`, `remask.max_passes`
+  - Що: `enabled: false` забороняє `--re-mask`; `max_passes` — верхня межа (2–10).
+  - Складність: `save_chain` перенесено на рівень 4: при перемаскуванні chain-файл і є mapping.
+- [x] **12. Ключі з єдиним допустимим значенням** — `security.encryption_algorithm`, `remask.chain_format`, `security.password_generation.algorithm`
   - Що: Приймати лише те, що реалізовано: `AES-256-GCM`, `json`, `secrets`; інше — зрозуміла помилка конфігурації.
   - Складність: `random` для пароля навмисно не підтримується: небезпечно.
 
@@ -141,6 +144,6 @@
 - [ ] **30. Перемикачі, без яких не працює розмаскування** — `masking_rules.consistent_mapping`, `masking_rules.instance_tracking`
   - Що: Приймати лише `true`; `false` — помилка з поясненням.
   - Складність: Без однозначного mapping і нумерації входжень відновити текст неможливо.
-- [ ] **31. Перемикачі без визначеної альтернативи** — `masking_rules.context_aware`, `validation.validate_rank_dictionary`, `remask.auto_numbering`
+- [ ] **31. Перемикачі без визначеної альтернативи** — `masking_rules.context_aware`, `validation.validate_rank_dictionary`, `remask.auto_numbering`, `remask.save_chain`
   - Що: Приймати лише `true`; `false` — помилка з поясненням.
-  - Складність: ПІБ і звання розпізнаються лише за контекстом і словником; проходи перемаскування завжди нумеруються (на цьому тримається `--to-version`). Якщо знадобиться — окремий дизайн.
+  - Складність: ПІБ і звання розпізнаються лише за контекстом і словником; проходи перемаскування завжди нумеруються (на цьому тримається `--to-version`). При перемаскуванні chain-файл — це і є mapping: без нього розмаскувати нічим, а скласти проходи в один сумісний mapping код не вміє. Якщо знадобиться — окремий дизайн.

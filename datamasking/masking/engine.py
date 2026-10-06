@@ -273,7 +273,8 @@ def mask_text_context_aware(text: str, masking_dict: Dict, instance_counters: Di
 
 def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counters: Dict) -> str:
     # === ШАГ 0: Нормалізація розірваних звань
-    text = normalize_broken_ranks(text)
+    if _cfg.RANK_LINE_BREAK_FIX:
+        text = normalize_broken_ranks(text)
 
     # === ШАГ 0.5: ПІБ з ініціалами (Іванов П.А., П. Іванов тощо)
     # Запускаємо ДО основного парсера, щоб ініціали не плутали looks_like_pib_line
@@ -351,10 +352,10 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
             skip = _inside_skip(match.start(), match.end()) or _overlaps_mask(match.start(), match.end())
             if not skip: _add_mask({'type': 'brigade_number', 'full_text': match.group(0), 'number_part': match.group(1), 'start': match.start(), 'end': match.end()})
 
-    if _cfg.MASK_DATES:
-        def _legal_act_date(start: int) -> bool:
-            return _cfg.LEGAL_ACT_DATE_PREFIX.search(text[max(0, start - 160):start]) is not None
+    def _legal_act_date(start: int) -> bool:
+        return _cfg.LEGAL_ACT_DATE_PREFIX.search(text[max(0, start - 160):start]) is not None
 
+    if _cfg.MASK_DATES:
         for match in _cfg.COMPILED_PATTERNS["date"].finditer(text):
             if _legal_act_date(match.start()):
                 continue
@@ -362,6 +363,7 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
                 skip = _inside_skip(match.start(), match.end()) or _overlaps_mask(match.start(), match.end())
                 if not skip: _add_mask({'type': 'date', 'full_text': match.group(0), 'number_part': match.group(0), 'start': match.start(), 'end': match.end()})
 
+    if _cfg.MASK_DATE_TEXT:
         # Text dates: "06" жовтня 2025 року
         if "date_text" not in masking_dict["mappings"]:
             masking_dict["mappings"]["date_text"] = {}

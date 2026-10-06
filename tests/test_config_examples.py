@@ -187,9 +187,31 @@ class TestPlannedOptionsInExamples:
         assert ignored_config_keys(data) == []
 
     def test_python_example_tags(self):
-        text = (ROOT / "config_example.py").read_text(encoding="utf-8")
-        tagged = [ln for ln in text.split("\n") if "[не реалізовано]" in ln and not ln.lstrip().startswith(("#", "Options"))]
-        assert len(tagged) == 60  # 65 у YAML мінус секція remask (5), якої тут немає
+        # Поле dataclass-у (або ключ словника password_generation) позначене
+        # [не реалізовано] тоді й лише тоді, коли його шлях — у PLANNED_KEYS
+        sections = {"SystemConfig": "system", "SecurityConfig": "security",
+                    "MaskingRulesConfig": "masking_rules", "ValidationConfig": "validation",
+                    "RouterRulesConfig": "router_rules", "LoggingConfig": "logging"}
+        sec = indict = None
+        tagged, planned = set(), set()
+        for line in (ROOT / "config_example.py").read_text(encoding="utf-8").split("\n"):
+            m = _re.match(r"^class (\w+)", line)
+            if m:
+                sec, indict = sections.get(m.group(1)), None
+            fm = _re.match(r"^    (\w+): [^=]+=(.*)$", line)
+            dm = _re.match(r'^        "(\w+)": ', line)
+            path = None
+            if fm and sec:
+                path = f"{sec}.{fm.group(1)}"
+                indict = path if "{" in fm.group(2) and "}" not in fm.group(2) else None
+            elif dm and indict:
+                path = f"{indict}.{dm.group(1)}"
+            if path:
+                if "[не реалізовано]" in line:
+                    tagged.add(path)
+                if path in PLANNED_KEYS:
+                    planned.add(path)
+        assert tagged == planned and tagged
 
 
 def test_todo_lists_every_planned_key():

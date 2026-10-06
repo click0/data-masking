@@ -9,12 +9,14 @@ Extracted from data_masking.py during the package refactoring (v2.5.0).
 
 import json
 import os
+import re
+import shutil
 import sys
 import random
 import argparse
 from pathlib import Path
 from datetime import datetime
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from datamasking._fsutil import atomic_write_private
 from datamasking.masking import constants as _cfg
@@ -138,14 +140,51 @@ router_rules:
     Path(output_path).write_text(config_content, encoding='utf-8')
 
 
+def _password_settings(config) -> Tuple[str, bool, int]:
+    """(назва змінної з паролем, чи можна генерувати, довжина) з конфігурації.
+
+    Змінна: перша задана, відмінна від стандартної, з security.password_env_var,
+    password_generation.env_var. Генерація дозволена, лише якщо жоден із
+    security.auto_generate_password / security.password_generation.enabled /
+    password_generation.enabled не false. Довжина — найбільша із
+    security.password_length і password_generation.length (обох секцій):
+    довший пароль ніколи не шкодить.
+    """
+    security = getattr(config, 'security', None)
+    sec_gen = getattr(security, 'password_generation', None)
+    top_gen = getattr(config, 'password_generation', None)
+
+    env_name = PASSWORD_ENV_DEFAULT
+    for candidate in (getattr(security, 'password_env_var', None), getattr(top_gen, 'env_var', None)):
+        if candidate and str(candidate) != PASSWORD_ENV_DEFAULT:
+            env_name = str(candidate)
+            break
+
+    allowed = all(flag is not False for flag in (
+        getattr(security, 'auto_generate_password', True),
+        getattr(sec_gen, 'enabled', True),
+        getattr(top_gen, 'enabled', True),
+    ))
+
+    lengths = []
+    for value in (getattr(security, 'password_length', 24), getattr(sec_gen, 'length', 24),
+                  getattr(top_gen, 'length', 24)):
+        try:
+            if not isinstance(value, bool):
+                lengths.append(int(value))
+        except (TypeError, ValueError):
+            pass
+    length = max([n for n in lengths if 8 <= n <= 1024] or [24])
+    return env_name, allowed, length
+
+
 def generate_password_from_config(config) -> str:
     """Generate a secure password, optionally using config settings."""
     import secrets
     import string
     length = 24
     if config is not None:
-        length = getattr(getattr(config, 'security', None),
-                         'password_length', 24)
+        length = _password_settings(config)[2]
     alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
@@ -245,18 +284,32 @@ def _setup_logger(args, config) -> Optional[Any]:
 
     log_level = args.log_level
     log_file = args.log_file
+    log_cfg = getattr(config, 'logging', None) if config is not None else None
+    cli_logging = log_level is not None or log_file is not None
 
-    if config is not None:
+    # logging.enabled: false — структурований лог вимкнено (прапорці CLI
+    # --log-level / --log-file все одно вмикають його на цей запуск)
+    if getattr(log_cfg, 'enabled', True) is False and not cli_logging:
+        return None
+
+    if log_cfg is not None:
         if log_level is None:
-            log_level = getattr(getattr(config, 'logging', None), 'level', None)
+            log_level = getattr(log_cfg, 'level', None)
         if log_file is None:
-            log_file = getattr(getattr(config, 'logging', None), 'file', None)
+            to_file = getattr(log_cfg, 'log_to_file', None)
+            cfg_file = getattr(log_cfg, 'file', None)
+            if to_file is not False:
+                log_file = cfg_file
+            if to_file is True and not cfg_file:
+                print("Warning: logging.log_to_file is true but logging.file is not set — "
+                      "logging to the console only", file=sys.stderr)
 
     if log_level is None:
         log_level = "INFO"
+    console = getattr(log_cfg, 'log_to_console', True) is not False
 
     try:
-        logger = setup_logging(level=log_level, log_file=log_file)
+        logger = setup_logging(level=log_level, log_file=log_file, console=console)
         logger.info(f"Data Masking Script v{_cfg.__version__} started")
         return logger
     except (ValueError, OSError, TypeError) as e:
@@ -303,10 +356,140 @@ def _apply_selective_filters(args, logger) -> Optional[str]:
     apply_filter_to_globals(selective_filter, vars(_cfg))
 
     mode = "--only" if only_types else "--exclude"
+    source = getattr(args, '_selective_source', None)
+    if source:
+        mode = f"{source} ({mode})"
     enabled = ", ".join(selective_filter.get_enabled_list())
     print(f"Selective masking: {mode} {only_str or exclude_str} → enabled: {enabled}")
     if logger:
         logger.info(f"Selective masking: {mode} {only_str or exclude_str} → enabled: {enabled}")
+    return None
+
+
+def _selective_from_config(args, config) -> Optional[str]:
+    """router_rules.only_types / skip_types → як --only / --exclude.
+
+    Діє, лише якщо в CLI немає ні --only, ні --exclude (CLI пріоритетніший).
+    Як і в CLI, разом не поєднуються. Повертає помилку або None.
+    """
+    router = getattr(config, 'router_rules', None) if config is not None else None
+    if router is None or getattr(args, 'only', None) or getattr(args, 'exclude', None):
+        return None
+
+    def as_list(name: str) -> Tuple[Optional[List[str]], Optional[str]]:
+        value = getattr(router, name, None)
+        if value in (None, "", []):
+            return None, None
+        if isinstance(value, str):
+            value = [value]
+        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+            return None, f"router_rules.{name} must be a list of type names, got {value!r}"
+        return list(value), None
+
+    only, err = as_list('only_types')
+    if err:
+        return err
+    skip, err = as_list('skip_types')
+    if err:
+        return err
+    if only and skip:
+        return "router_rules.only_types and router_rules.skip_types cannot be combined"
+    if only:
+        args.only, args._selective_source = only, "router_rules.only_types"
+    elif skip:
+        args.exclude, args._selective_source = skip, "router_rules.skip_types"
+    return None
+
+
+def _major(version: str) -> Optional[int]:
+    m = re.match(r"^\s*v?(\d+)", str(version or ""))
+    return int(m.group(1)) if m else None
+
+
+def _int_setting(value, name: str, lo: int, hi: int) -> int:
+    """Ціле в межах [lo, hi]; інакше ValueError з текстом для користувача."""
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be an integer, got {value!r}")
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be an integer, got {value!r}") from None
+    if not lo <= n <= hi:
+        raise ValueError(f"{name} must be between {lo} and {hi}, got {n}")
+    return n
+
+
+def _apply_level1_settings(args, config, logger) -> Optional[str]:
+    """Опції рівня 1 (v3.0.27): аліаси, межі дат, перемикачі, перевірки
+    значень. Повертає помилку конфігурації або None."""
+    try:
+        return _apply_level1_settings_impl(args, config, logger)
+    except ValueError as e:
+        return str(e)
+
+
+def _apply_level1_settings_impl(args, config, logger) -> Optional[str]:
+    system = getattr(config, 'system', None)
+    rules = getattr(config, 'masking_rules', None)
+    validation = getattr(config, 'validation', None)
+    security = getattr(config, 'security', None)
+    remask = getattr(config, 'remask', None)
+
+    # system.version — файл для новішої мажорної версії програми
+    cfg_version = getattr(system, 'version', '')
+    cfg_major, prog_major = _major(cfg_version), _major(_cfg.__version__)
+    if cfg_major is not None and prog_major is not None and cfg_major > prog_major:
+        print(f"Warning: config is for version {cfg_version}, this program is "
+              f"{_cfg.__version__}; some options may not be understood", file=sys.stderr)
+
+    # Ключі з єдиним підтримуваним значенням
+    checks = [
+        (getattr(security, 'encryption_algorithm', None), "security.encryption_algorithm", ("AES-256-GCM",)),
+        (getattr(getattr(security, 'password_generation', None), 'algorithm', None),
+         "security.password_generation.algorithm", ("secrets",)),
+        (getattr(remask, 'chain_format', None), "remask.chain_format", ("json",)),
+    ]
+    for value, name, allowed in checks:
+        if value is not None and str(value).strip().lower() not in {a.lower() for a in allowed}:
+            return f"{name}: only {', '.join(allowed)} is supported, got {value!r}"
+
+    # masking_rules.preserve_case — перекриває system.preserve_case
+    rules_case = getattr(rules, 'preserve_case', None)
+    if rules_case is not None:
+        _cfg.PRESERVE_CASE = bool(rules_case)
+
+    # Ліміт розміру: діє менший із system.max_file_size_mb і validation.max_input_size_mb
+    sys_mb = getattr(system, 'max_file_size_mb', None)
+    if sys_mb is not None:
+        limit_mb = _int_setting(sys_mb, "system.max_file_size_mb", 1, 1_000_000)
+        _cfg.MAX_INPUT_FILE_SIZE = min(_cfg.MAX_INPUT_FILE_SIZE, limit_mb * 1024 * 1024)
+
+    # Межі розпізнавання дат
+    if validation is not None:
+        if getattr(validation, 'validate_date_range', True) is False:
+            _cfg.DATE_DETECT_YEAR_MIN, _cfg.DATE_DETECT_YEAR_MAX = 1, 9999
+        else:
+            lo = _int_setting(getattr(validation, 'min_date_year', 1900), "validation.min_date_year", 1, 9999)
+            hi = _int_setting(getattr(validation, 'max_date_year', 2100), "validation.max_date_year", 1, 9999)
+            if lo > hi:
+                return f"validation.min_date_year ({lo}) is greater than validation.max_date_year ({hi})"
+            _cfg.DATE_DETECT_YEAR_MIN, _cfg.DATE_DETECT_YEAR_MAX = lo, hi
+
+    # Склеювання розірваних звань
+    line_fix = getattr(rules, 'rank_line_break_fix', None)
+    if line_fix is not None:
+        _cfg.RANK_LINE_BREAK_FIX = bool(line_fix)
+
+    # Текстові дати: окремо або «як enable_dates»
+    if not getattr(args, 'only', None) and not getattr(args, 'exclude', None):
+        date_text = getattr(rules, 'enable_date_text', None)
+        _cfg.MASK_DATE_TEXT = _cfg.MASK_DATES if date_text is None else bool(date_text)
+
+    # Перемаскування
+    if remask is not None:
+        if getattr(remask, 'enabled', True) is False and getattr(args, 're_mask', None):
+            return "--re-mask is disabled by the configuration (remask.enabled: false)"
+        _cfg.REMASK_MAX_PASSES = _int_setting(getattr(remask, 'max_passes', 10), "remask.max_passes", 2, 10)
     return None
 
 
@@ -392,7 +575,7 @@ def _apply_config_settings(args, config, logger) -> Optional[str]:
         args.encrypt = True
         if logger:
             logger.info("Encryption enabled by config (security.encrypt_output)")
-    return None
+    return _apply_level1_settings(args, config, logger)
 
 
 def _prepare_output_paths(args, input_path: Path) -> Tuple[Path, Path, Path, str, int]:
@@ -460,14 +643,26 @@ def _resolve_password(args, config, logger) -> Tuple[Optional[str], Optional[str
             return None, f"Environment variable '{password_env}' is not set or empty"
         return password, None
 
-    password = os.environ.get(PASSWORD_ENV_DEFAULT)
+    env_name, generation_allowed, _length = _password_settings(config)
+    password = os.environ.get(env_name)
     if password:
         if logger:
-            logger.info(f"Password taken from ${PASSWORD_ENV_DEFAULT}")
+            logger.info(f"Password taken from ${env_name}")
         return password, None
 
+    if not generation_allowed:
+        return None, (f"--encrypt needs a password: set ${env_name}, use --password-env VAR, "
+                      f"or allow generation (security.auto_generate_password)")
+
+    password_file = str(getattr(getattr(config, 'security', None), 'password_file', '') or '')
+    if password_file:
+        target = Path(password_file)
+        if target.exists() and not getattr(args, 'force', False):
+            return None, f"security.password_file {target} already exists (use --force to overwrite)"
+        args._password_file = target
+
     password = generate_password_from_config(config)
-    _print_generated_password(password)
+    _print_generated_password(password, getattr(args, '_password_file', None))
     return password, None
 
 
@@ -505,11 +700,12 @@ def _run_masking(input_data, is_json: bool, masking_dict: Dict,
             if logger:
                 logger.warning("--re-mask value < 2, falling back to single-pass")
             re_mask_passes = None
-        elif re_mask_passes > 10:
-            print(f"Warning: --re-mask capped at 10 passes (was {re_mask_passes})")
+        elif re_mask_passes > _cfg.REMASK_MAX_PASSES:
+            cap = _cfg.REMASK_MAX_PASSES
+            print(f"Warning: --re-mask capped at {cap} passes (was {re_mask_passes})")
             if logger:
-                logger.warning(f"--re-mask capped at 10 (requested {re_mask_passes})")
-            re_mask_passes = 10
+                logger.warning(f"--re-mask capped at {cap} (requested {re_mask_passes})")
+            re_mask_passes = cap
 
     if REMASK_AVAILABLE and re_mask_passes and re_mask_passes > 1:
         return _run_multi_pass_masking(
@@ -590,12 +786,14 @@ def _run_single_pass_masking(input_data, is_json: bool, masking_dict: Dict,
     return masked_data, total_unique
 
 
-def _print_generated_password(password: str) -> None:
+def _print_generated_password(password: str, saved_to: Optional[Path] = None) -> None:
     """Показує згенерований пароль у stderr (не stdout), щоб він не
     потрапляв у перенаправлений вивід, пайпи та логи CI."""
     import sys
-    print("  Generated password (shown once, NOT saved anywhere):",
-          file=sys.stderr)
+    if saved_to:
+        print(f"  Generated password (also saved to {saved_to}, mode 0600):", file=sys.stderr)
+    else:
+        print("  Generated password (shown once, NOT saved anywhere):", file=sys.stderr)
     print(f"  {password}", file=sys.stderr)
 
 
@@ -685,13 +883,7 @@ def _write_report(report_path: Path, masking_dict: Dict, input_path: Path,
         f.write("=" * 60 + "\n")
 
 
-def _print_summary(masking_dict: Dict, total_unique: int,
-                   output_path: Path, map_path: Path,
-                   report_path: Optional[Path], logger) -> None:
-    """Print masking summary to console."""
-    print()
-    print("✅ Маскування завершено успішно!")
-    print()
+def _print_statistics(masking_dict: Dict, total_unique: int) -> None:
     print(f"📊 Статистика:")
     print(f"   Загальна кількість УНІКАЛЬНИХ замаскованих елементів: {total_unique}")
     for key, value in sorted(masking_dict["statistics"].items()):
@@ -704,8 +896,20 @@ def _print_summary(masking_dict: Dict, total_unique: int,
         print(f"   • '{masked_val}': {count} входжень")
     if len(sorted_instances) > 10:
         print(f"   ... та ще {len(sorted_instances) - 10} записів")
-
     print()
+
+
+def _print_summary(masking_dict: Dict, total_unique: int,
+                   output_path: Path, map_path: Path,
+                   report_path: Optional[Path], logger,
+                   show_statistics: bool = True) -> None:
+    """Print masking summary to console (logging.log_statistics: false —
+    без блоку статистики)."""
+    print()
+    print("✅ Маскування завершено успішно!")
+    print()
+    if show_statistics:
+        _print_statistics(masking_dict, total_unique)
     print(f"📁 Файли збережено:")
     print(f"   • Замасковані дані: {output_path.absolute()}")
     print(f"   • Словник замін: {map_path.absolute()}")
@@ -724,8 +928,17 @@ def _save_results(masked_data, is_json: bool, masking_dict: Dict,
                   chain=None, password: Optional[str] = None) -> int:
     """Save masked output, mapping (or chain), and report. Returns exit code."""
     re_mask_passes = getattr(args, 're_mask', None)
+    system_cfg = getattr(config, 'system', None)
 
     try:
+        # system.backup_enabled: копія наявного вихідного файлу перед перезаписом
+        if getattr(system_cfg, 'backup_enabled', False) and output_path.exists():
+            suffix = str(getattr(system_cfg, 'backup_suffix', '.bak') or '.bak')
+            backup_path = output_path.with_name(output_path.name + suffix)
+            shutil.copy2(output_path, backup_path)
+            print(f"  Backup of the previous output: {backup_path}")
+            if logger:
+                logger.info(f"Backup of existing output: {backup_path}")
         with open(output_path, 'w', encoding='utf-8', newline='') as f:
             if is_json:
                 json.dump(masked_data, f, ensure_ascii=False, indent=2)
@@ -740,6 +953,12 @@ def _save_results(masked_data, is_json: bool, masking_dict: Dict,
             written_map = _write_mapping(masking_dict, map_path, password, logger)
         if password:
             print(f"  Encrypted mapping: {written_map}")
+        # security.password_file — лише ЗГЕНЕРОВАНИЙ пароль, після успішного запису mapping
+        password_file = getattr(args, '_password_file', None)
+        if password and password_file:
+            atomic_write_private(Path(password_file), (password + "\n").encode("utf-8"))
+            if logger:
+                logger.info(f"Generated password saved to {password_file}")
 
         # Generate report
         if not args.no_report:
@@ -749,7 +968,8 @@ def _save_results(masked_data, is_json: bool, masking_dict: Dict,
 
         _print_summary(
             masking_dict, total_unique, output_path, written_map,
-            report_path if not args.no_report else None, logger
+            report_path if not args.no_report else None, logger,
+            show_statistics=getattr(getattr(config, 'logging', None), 'log_statistics', True) is not False,
         )
         return EXIT_OK
 
@@ -803,6 +1023,10 @@ def main(argv=None) -> int:
     if args.debug:
         _cfg.DEBUG_MODE = True
 
+    cfg_sel_error = _selective_from_config(args, config)
+    if cfg_sel_error:
+        print(f"Error: {cfg_sel_error}")
+        return EXIT_ERROR
     filter_error = _apply_selective_filters(args, logger)
     if filter_error:
         print(f"Error: {filter_error}")

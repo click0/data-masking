@@ -79,6 +79,13 @@ MASK_UNITS = True
 MASK_ORDERS = True
 MASK_BR_NUMBERS = True
 MASK_DATES = True
+# Текстові дати («06» жовтня 2025 року); config: masking_rules.enable_date_text
+# (за замовчуванням дорівнює MASK_DATES)
+MASK_DATE_TEXT = True
+# Склеювати звання, розірвані переносом рядка; config: masking_rules.rank_line_break_fix
+RANK_LINE_BREAK_FIX = True
+# Верхня межа --re-mask; config: remask.max_passes (не більше 10)
+REMASK_MAX_PASSES = 10
 
 # Rank masking: allowed shift values for rank position offset
 RANK_SHIFT_OPTIONS = [-2, -1, 1, 2]

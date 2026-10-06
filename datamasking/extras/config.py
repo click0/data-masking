@@ -49,6 +49,14 @@ class SystemConfig:
     debug_mode: bool = False
     # Локаль faker для синтетичних прізвищ/імен (морфологія лишається uk)
     faker_locale: str = "uk_UA"
+    # Версія, для якої писали файл (попередження, якщо новіша за програму)
+    version: str = ""
+    # Ліміт розміру вхідного файлу, МБ (діє менший із цього і
+    # validation.max_input_size_mb); None — лише validation.max_input_size_mb
+    max_file_size_mb: Optional[int] = None
+    # Копія наявного вихідного файлу перед перезаписом (--force)
+    backup_enabled: bool = False
+    backup_suffix: str = ".bak"
 
 
 @dataclass
@@ -58,6 +66,8 @@ class PasswordGenerationConfig:
     length: int = 24
     use_special_chars: bool = True
     env_var: str = "DATA_MASKING_PASSWORD"
+    # Джерело випадковості; підтримується лише "secrets"
+    algorithm: str = "secrets"
 
 
 @dataclass
@@ -69,6 +79,12 @@ class SecurityConfig:
     )
     password_env_var: str = "DATA_MASKING_PASSWORD"
     password_length: int = 24
+    # Підтримується лише AES-256-GCM (так шифрує security.py)
+    encryption_algorithm: str = "AES-256-GCM"
+    # false — без пароля --encrypt завершується помилкою, а не генерує його
+    auto_generate_password: bool = True
+    # Куди зберегти ЗГЕНЕРОВАНИЙ пароль (0600, атомарно); "" — не зберігати
+    password_file: str = ""
 
 
 @dataclass
@@ -88,6 +104,12 @@ class MaskingRulesConfig:
     # (0 = не зберігати; разом зі збереженим закінченням — не більше половини
     # прізвища: Коваль → 3, Іванов → 1, Петренко → 0)
     surname_prefix_length: int = 3
+    # None — як system.preserve_case
+    preserve_case: Optional[bool] = None
+    # Склеювати звання, розірвані переносом рядка
+    rank_line_break_fix: bool = True
+    # Текстові дати («06» жовтня 2025 року); None — як enable_dates
+    enable_date_text: Optional[bool] = None
     # Tuning parameters
     rank_shift_options: List[int] = field(default_factory=lambda: [-2, -1, 1, 2])
     date_shift_days: int = 30
@@ -103,6 +125,10 @@ class ValidationConfig:
     """Input validation configuration."""
     strict_mode: bool = False
     max_input_size_mb: int = 100
+    # Роки, які розпізнаються як дата ДД.ММ.РРРР (і маскуються)
+    validate_date_range: bool = True
+    min_date_year: int = 1900
+    max_date_year: int = 2100
     allowed_encodings: List[str] = field(
         default_factory=lambda: ["utf-8", "cp1251", "latin-1"]
     )
@@ -112,6 +138,9 @@ class ValidationConfig:
 class RouterRulesConfig:
     """Router rules for selective masking."""
     default_action: str = "mask"
+    # Як --exclude / --only (CLI має пріоритет); разом — помилка
+    skip_types: List[str] = field(default_factory=list)
+    only_types: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -120,6 +149,21 @@ class LoggingConfig:
     level: str = "INFO"
     file: Optional[str] = None
     format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    enabled: bool = True
+    log_to_console: bool = True
+    # None — писати у file, якщо його задано; false — не писати навіть тоді
+    log_to_file: Optional[bool] = None
+    # Друкувати блок статистики після маскування
+    log_statistics: bool = True
+
+
+@dataclass
+class RemaskConfig:
+    """Re-masking (--re-mask) settings."""
+    enabled: bool = True
+    max_passes: int = 10
+    save_chain: bool = True
+    chain_format: str = "json"
 
 
 # Ключі, які програма справді читає (masking/cli.py, unmasking/cli.py).
@@ -132,11 +176,26 @@ EFFECTIVE_KEYS: Dict[str, frozenset] = {
         "enable_names", "enable_ipn", "enable_passport", "enable_military_id",
         "enable_ranks", "enable_units", "enable_brigades", "enable_orders",
         "enable_br_numbers", "enable_dates", "surname_prefix_length",
+        "preserve_case", "rank_line_break_fix", "enable_date_text",
     }),
-    "system": frozenset({"preserve_case", "faker_locale", "hash_algorithm", "debug_mode"}),
-    "security": frozenset({"encrypt_output", "password_length"}),
-    "validation": frozenset({"max_input_size_mb"}),
-    "logging": frozenset({"level", "file"}),
+    "system": frozenset({
+        "preserve_case", "faker_locale", "hash_algorithm", "debug_mode",
+        "version", "max_file_size_mb", "backup_enabled", "backup_suffix",
+    }),
+    "security": frozenset({
+        "encrypt_output", "password_length", "password_env_var",
+        "auto_generate_password", "password_file", "encryption_algorithm",
+        # вкладені ключі — через крапку; bool-форма зі старого шаблону теж
+        "password_generation", "password_generation.enabled",
+        "password_generation.length", "password_generation.algorithm",
+    }),
+    "password_generation": frozenset({"enabled", "length", "env_var"}),
+    "validation": frozenset({
+        "max_input_size_mb", "validate_date_range", "min_date_year", "max_date_year",
+    }),
+    "router_rules": frozenset({"skip_types", "only_types"}),
+    "logging": frozenset({"level", "file", "enabled", "log_to_console", "log_to_file", "log_statistics"}),
+    "remask": frozenset({"enabled", "max_passes", "chain_format"}),
 }
 
 
@@ -149,51 +208,33 @@ EFFECTIVE_KEYS: Dict[str, frozenset] = {
 # План і оцінка складності — docs/TODO-config-options.md.
 PLANNED_KEYS: frozenset = frozenset({
     # system
-    "system.version",
     "system.hash_digest_size",
     "system.encoding",
-    "system.backup_enabled",
-    "system.backup_suffix",
-    "system.max_file_size_mb",
     "system.temp_dir",
     "system.strict_mode",
     # security
-    "security.password_env_var",
-    "security.password_generation.enabled",
-    "security.password_generation.length",
     "security.password_generation.use_special_chars",
-    "security.password_generation.algorithm",
     "security.password_generation.min_uppercase",
     "security.password_generation.min_lowercase",
     "security.password_generation.min_digits",
     "security.password_generation.min_special",
-    "security.encryption_algorithm",
     "security.key_derivation",
     "security.scrypt_n",
     "security.scrypt_r",
     "security.scrypt_p",
     "security.salt_length",
-    "security.auto_generate_password",
-    "security.password_file",
     "security.secure_delete_temp",
-    "security.password_generation",
     # masking_rules
     "masking_rules.enable_surnames",
     "masking_rules.enable_patronymics",
-    "masking_rules.enable_date_text",
     "masking_rules.enable_document_numbers",
-    "masking_rules.preserve_case",
     "masking_rules.preserve_gender",
     "masking_rules.consistent_mapping",
     "masking_rules.instance_tracking",
     "masking_rules.context_aware",
-    "masking_rules.rank_line_break_fix",
     "masking_rules.custom_patterns",
     # validation
     "validation.validate_ipn_checksum",
-    "validation.validate_date_range",
-    "validation.min_date_year",
-    "validation.max_date_year",
     "validation.validate_rank_dictionary",
     "validation.strict_pib_format",
     "validation.allow_abbreviated_patronymic",
@@ -204,30 +245,18 @@ PLANNED_KEYS: frozenset = frozenset({
     # router_rules
     "router_rules.default_action",
     "router_rules.processing_order",
-    "router_rules.skip_types",
-    "router_rules.only_types",
     "router_rules.priority_overrides",
     # logging
-    "logging.enabled",
     "logging.format",
     "logging.max_log_size_mb",
     "logging.log_rotation_count",
-    "logging.log_to_console",
-    "logging.log_to_file",
     "logging.log_sensitive_data",
     "logging.log_performance",
-    "logging.log_statistics",
     # remask
-    "remask.enabled",
-    "remask.max_passes",
     "remask.save_chain",
-    "remask.chain_format",
     "remask.auto_numbering",
     # password_generation
-    "password_generation.enabled",
-    "password_generation.length",
     "password_generation.use_special_chars",
-    "password_generation.env_var",
 })
 
 
@@ -241,28 +270,36 @@ def ignored_config_keys(data: Any) -> List[str]:
     return [k for k in _unknown_leaf_keys(data) if k not in PLANNED_KEYS]
 
 
+def _effective_paths() -> frozenset:
+    return frozenset(f"{s}.{k}" for s, keys in EFFECTIVE_KEYS.items() for k in keys)
+
+
 def _unknown_leaf_keys(data: Any) -> List[str]:
-    """Усі листові ключі поза EFFECTIVE_KEYS (і заплановані, і невідомі)."""
-    out: List[str] = []
+    """Усі листові ключі поза EFFECTIVE_KEYS (і заплановані, і невідомі).
+
+    Шлях — через крапку (``security.password_generation.enabled``), тож
+    вкладені ключі в EFFECTIVE_KEYS записуються так само.
+    """
     if not isinstance(data, dict):
-        return out
+        return []
+    effective = _effective_paths()
 
     def leaves(value: Any, prefix: str) -> List[str]:
-        if isinstance(value, dict) and value:
+        is_section = isinstance(value, dict) and bool(value)
+        # Ключ діючий сам по собі (не секція): bool-форма
+        # security.password_generation не має ховати ключі всередині секції
+        if prefix in effective and not is_section:
+            return []
+        if is_section:
             res: List[str] = []
             for k, v in value.items():
                 res += leaves(v, f"{prefix}.{k}")
             return res
         return [prefix]
 
+    out: List[str] = []
     for section, values in data.items():
-        allowed = EFFECTIVE_KEYS.get(str(section))
-        if allowed is None or not isinstance(values, dict):
-            out += leaves(values, str(section))
-            continue
-        for key, value in values.items():
-            if key not in allowed:
-                out += leaves(value, f"{section}.{key}")
+        out += leaves(values, str(section))
     return out
 
 
@@ -291,6 +328,7 @@ class Config:
     validation: ValidationConfig = field(default_factory=ValidationConfig)
     router_rules: RouterRulesConfig = field(default_factory=RouterRulesConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    remask: RemaskConfig = field(default_factory=RemaskConfig)
 
     # ----- serialisation helpers -----
 
@@ -346,6 +384,11 @@ class Config:
             for k, v in data["logging"].items():
                 if hasattr(cfg.logging, k):
                     setattr(cfg.logging, k, v)
+
+        if "remask" in data and isinstance(data["remask"], dict):
+            for k, v in data["remask"].items():
+                if hasattr(cfg.remask, k):
+                    setattr(cfg.remask, k, v)
 
         return cfg
 
@@ -648,16 +691,16 @@ system:
 # --------------------------------------------------------------------------
 password_generation:
   # Enable automatic password generation
-  enabled: true   # [not implemented yet]
+  enabled: true
 
   # Length of generated password (characters)
-  length: 24   # [not implemented yet]
+  length: 24
 
   # Include special characters in generated passwords
   use_special_chars: true   # [not implemented yet]
 
   # Environment variable to read password from
-  env_var: "DATA_MASKING_PASSWORD"   # [not implemented yet]
+  env_var: "DATA_MASKING_PASSWORD"
 
 # --------------------------------------------------------------------------
 # Security settings
@@ -669,7 +712,7 @@ security:
   encrypt_output: false
 
   # Environment variable for password (alternative to --password)
-  password_env_var: "DATA_MASKING_PASSWORD"   # [not implemented yet]
+  password_env_var: "DATA_MASKING_PASSWORD"
 
   # Length of auto-generated password (characters)
   password_length: 24

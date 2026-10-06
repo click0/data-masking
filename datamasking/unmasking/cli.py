@@ -167,14 +167,22 @@ Examples:
     # ЗАВАНТАЖЕННЯ КОНФІГУРАЦІЇ
     # ========================================================================
 
+    # Як і в маскуванні, конфігурація читається завжди: -c FILE, інакше
+    # ./config.yaml / ./config.py, якщо є (до 3.0.27 — лише з -c, тож
+    # security.password_env_var та інші спільні ключі для unmask не діяли)
     config: Any = {}
-    if CONFIG_AVAILABLE and getattr(args, 'config', None):
+    if CONFIG_AVAILABLE:
         try:
-            loader = ConfigLoader(args.config)
+            config_path = getattr(args, 'config', None)
+            if config_path and not Path(config_path).exists():
+                raise FileNotFoundError(f"Config file not found: {config_path}")
+            loader = ConfigLoader(config_path)
             config = loader.load()
-            log_info(f"Конфігурацію завантажено з {args.config}")
+            source = loader.loaded_from or loader.ignored_source
+            if source:
+                log_info(f"Конфігурацію завантажено з {source}")
             if loader.ignored_keys:
-                print(format_ignored_keys_warning(loader.ignored_source or args.config,
+                print(format_ignored_keys_warning(loader.ignored_source or str(config_path),
                                                   loader.ignored_keys), file=sys.stderr)
         except (FileNotFoundError, PermissionError, ValueError, OSError) as e:
             print(f"❌ Помилка завантаження конфігурації: {e}")
@@ -197,6 +205,15 @@ Examples:
                 return EXIT_ERROR
         else:
             password = _config_password(config)
+            # security.password_env_var / password_generation.env_var — назва
+            # змінної з паролем (якщо відрізняється від DATA_MASKING_PASSWORD,
+            # яку io.load_mapping перевіряє й так)
+            if not password and not isinstance(config, dict):
+                for candidate in (getattr(getattr(config, 'security', None), 'password_env_var', None),
+                                  getattr(getattr(config, 'password_generation', None), 'env_var', None)):
+                    if candidate and candidate != 'DATA_MASKING_PASSWORD':
+                        password = os.environ.get(str(candidate), '') or None
+                        break
 
     # ========================================================================
     # ЛОГІКА ПОШУКУ ТА ВИБОРУ ФАЙЛІВ
