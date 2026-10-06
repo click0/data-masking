@@ -5,7 +5,7 @@
 Перелік у коді — `PLANNED_KEYS` (`datamasking/extras/config.py`). Реалізована опція
 переходить у `EFFECTIVE_KEYS`, з прикладів знімається позначка.
 
-Стан: рівень 1 зроблено (v3.0.27); рівні 2–4 — заплановано.
+Стан: рівень 1 зроблено у v3.0.27, рівень 2 — у v3.0.28; рівні 3–4 — заплановано.
 
 Задачі впорядковано від простих до складних. Тест перевіряє, що тут згадано кожен ключ із `PLANNED_KEYS`.
 
@@ -31,8 +31,9 @@
 | `system.max_file_size_mb` | 50 | 100 | файли 50–100 МБ почнуть відхилятись | виправлено у v3.0.27 |
 | `system.backup_enabled` | true | false | з'являться файли `.bak` поруч із виходом | виправлено у v3.0.27 |
 | `remask.max_passes` | 5 | 10 | `--re-mask` понад 5 проходів обрізатиметься | виправлено у v3.0.27 |
-| `system.hash_digest_size` | 8 | 64 | зміняться всі маски | рівень 2 |
-| `validation.validate_ipn_checksum` | true | — | зміняться маски ІПН | рівень 2 |
+| `system.hash_digest_size` | 8 | 64 | зміняться всі маски | виправлено у v3.0.28 |
+| `validation.validate_ipn_checksum` | true | false | зміняться маски ІПН | виправлено у v3.0.28 |
+| `validation.min_name_length` | 2 | 3 | дволітерні слова з великої («Як», «Ці») маскуватимуться як імена | виправлено у v3.0.28 |
 | `security.key_derivation` | scrypt | pbkdf2 | новий формат `.enc`, старі версії його не прочитають | рівень 3 |
 
 ## Рівень 1 — прості
@@ -78,45 +79,45 @@
 
 ## Рівень 2 — середні
 
-Нова логіка в одному модулі; є ризик для розпізнавання або сумісності, потрібні окремі тести.
+**Зроблено у v3.0.28.** Нова логіка в одному модулі; є ризик для розпізнавання або сумісності, потрібні окремі тести.
 
-- [ ] **13. Склад згенерованого пароля** — `security.password_generation.use_special_chars`, `password_generation.use_special_chars`, `security.password_generation.min_uppercase`, `security.password_generation.min_lowercase`, `security.password_generation.min_digits`, `security.password_generation.min_special`
+- [x] **13. Склад згенерованого пароля** — `security.password_generation.use_special_chars`, `password_generation.use_special_chars`, `security.password_generation.min_uppercase`, `security.password_generation.min_lowercase`, `security.password_generation.min_digits`, `security.password_generation.min_special`
   - Що: Генерувати через `extras.password_generator` з мінімальною кількістю символів кожного класу.
   - Складність: Генератор уміє «хоча б один з кожного класу», мінімальних кількостей немає — треба додати.
-- [ ] **14. Формат, ротація і продуктивність логів** — `logging.format`, `logging.max_log_size_mb`, `logging.log_rotation_count`, `logging.log_performance`
+- [x] **14. Формат, ротація і продуктивність логів** — `logging.format`, `logging.max_log_size_mb`, `logging.log_rotation_count`, `logging.log_performance`
   - Що: Свій формат рядка, `RotatingFileHandler`, час етапів обробки.
   - Складність: Зміни в `masking_logger`; JSON-формат логу має лишитись валідним.
-- [ ] **15. Чутливі дані в логах** — `logging.log_sensitive_data`
+- [x] **15. Чутливі дані в логах** — `logging.log_sensitive_data`
   - Що: `false` гарантує, що оригінали ніде не друкуються; `true` дозволяє їх лише на рівні DEBUG.
   - Складність: Потрібен аудит усіх `print`/лог-викликів (щонайменше один уже друкує оригінальну дату).
-- [ ] **16. Кодування вхідних файлів** — `system.encoding`, `validation.allowed_encodings`
+- [x] **16. Кодування вхідних файлів** — `system.encoding`, `validation.allowed_encodings`
   - Що: Читати cp1251 / автовизначення з переліку дозволених; вихід писати тим самим кодуванням; unmask так само.
   - Складність: Зараз файл не в UTF-8 відхиляється помилкою. Ризик — хибне автовизначення.
-- [ ] **17. Прізвища та по батькові окремо** — `masking_rules.enable_surnames`, `masking_rules.enable_patronymics`
+- [x] **17. Прізвища та по батькові окремо** — `masking_rules.enable_surnames`, `masking_rules.enable_patronymics`
   - Що: Розділити `MASK_NAMES` на прізвища / імена / по батькові (за замовчуванням — як `enable_names`).
   - Складність: Зачіпає рушій, фазу ініціалів і `--only/--exclude`; заодно виправляє `--exclude patronymic`, який зараз нічого не робить.
-- [ ] **18. Номери документів окремо від наказів** — `masking_rules.enable_document_numbers`
+- [x] **18. Номери документів окремо від наказів** — `masking_rules.enable_document_numbers`
   - Що: Розрізняти № наказу і № довідки / рапорту / протоколу за словом перед №.
   - Складність: Зараз будь-який «№ N» вважається номером наказу. За замовчуванням — як `enable_orders`.
-- [ ] **19. Суворий режим** — `system.strict_mode`, `validation.strict_mode`
+- [x] **19. Суворий режим** — `system.strict_mode`, `validation.strict_mode`
   - Що: Помилка замість попередження: невідомі ключі конфігурації, нерозмасковані значення в unmask, невдале декодування.
   - Складність: Кілька точок у mask і unmask; коди виходу мають лишитись 0/1/2.
-- [ ] **20. Тимчасові файли** — `system.temp_dir`, `security.secure_delete_temp`
+- [x] **20. Тимчасові файли** — `system.temp_dir`, `security.secure_delete_temp`
   - Що: Каталог для тимчасових файлів і затирання тимчасового файлу перед видаленням.
   - Складність: Атомарний запис мусить лишатись у каталозі призначення (інакше не атомарний). Затирання на SSD мало що гарантує.
-- [ ] **21. Контрольна сума ІПН** — `validation.validate_ipn_checksum`
+- [x] **21. Контрольна сума ІПН** — `validation.validate_ipn_checksum`
   - Що: Маска ІПН з коректною контрольною цифрою.
   - Складність: Не відмовлятись маскувати ІПН з невалідною сумою — це був би витік. **Змінює маски ІПН** — за замовчуванням `false`.
-- [ ] **22. Розмір дайджесту хешу** — `system.hash_digest_size`
+- [x] **22. Розмір дайджесту хешу** — `system.hash_digest_size`
   - Що: Передати `digest_size` у blake2b.
   - Складність: **Будь-яке значення, крім фактичного 64, змінює ВСІ маски.** У прикладі стоїть 8 — значення треба виправити.
-- [ ] **23. Довжина імен** — `validation.max_name_length`, `validation.min_name_length`
+- [x] **23. Довжина імен** — `validation.max_name_length`, `validation.min_name_length`
   - Що: Фільтр кандидатів у ПІБ за довжиною.
   - Складність: Ризик пропустити короткі прізвища (Ус, Бут) — тобто витік. Потрібні тести на розпізнавання.
-- [ ] **24. Скорочене по батькові (ініціали)** — `validation.allow_abbreviated_patronymic`
+- [x] **24. Скорочене по батькові (ініціали)** — `validation.allow_abbreviated_patronymic`
   - Що: `false` — вимкнути фазу ініціалів.
   - Складність: Тоді «Іванов І.І.» лишиться відкритим — лише з явним попередженням.
-- [ ] **25. Суворий формат ПІБ** — `validation.strict_pib_format`
+- [x] **25. Суворий формат ПІБ** — `validation.strict_pib_format`
   - Що: Вважати ПІБ лише повне «Прізвище Ім'я По батькові».
   - Складність: Зменшує маскування (витік неповних ПІБ) — лише з попередженням.
 

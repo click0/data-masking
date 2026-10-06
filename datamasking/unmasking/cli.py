@@ -14,7 +14,7 @@ import os
 import time
 from pathlib import Path
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from datamasking.unmasking.helpers import (
     validate_file_size, auto_find_latest_pair, check_mapping_version,
@@ -35,7 +35,7 @@ from datamasking.unmasking.io import (
 
 CONFIG_AVAILABLE = False
 try:
-    from datamasking.extras.config import ConfigLoader, format_ignored_keys_warning
+    from datamasking.extras.config import ConfigLoader, format_ignored_keys_warning, is_strict
     CONFIG_AVAILABLE = True
 except ImportError:
     import logging as _logging
@@ -59,6 +59,7 @@ except ImportError:
 # МЕТАДАНІ
 # ============================================================================
 from datamasking._version import __version__  # єдине джерело версії
+from datamasking._textio import read_text, check_encoding_settings
 
 
 EXIT_OK = 0
@@ -74,6 +75,19 @@ def _config_password(config) -> Optional[str]:
         return config.get('password') or None
     security = getattr(config, 'security', None)
     return getattr(security, 'password', None) or getattr(config, 'password', None) or None
+
+
+def _unmask_encoding(config, masking_map) -> Tuple[str, List[str]]:
+    """(кодування, дозволені) для читання замаскованого файлу."""
+    system = getattr(config, 'system', None) if not isinstance(config, dict) else None
+    validation = getattr(config, 'validation', None) if not isinstance(config, dict) else None
+    configured = str(getattr(system, 'encoding', 'utf-8') or 'utf-8')
+    allowed_cfg = getattr(validation, 'allowed_encodings', None) or ("utf-8", "cp1251", "latin-1")
+    from_map = masking_map.get("input_encoding") if isinstance(masking_map, dict) else None
+    if configured.lower() in ("utf-8", "utf8") and from_map:
+        configured = str(from_map)
+    return check_encoding_settings(configured, allowed_cfg) if configured.lower() == "auto" else (
+        check_encoding_settings(configured, list(allowed_cfg) + [configured]))
 
 
 def main(argv=None) -> int:
@@ -182,8 +196,11 @@ Examples:
             if source:
                 log_info(f"Конфігурацію завантажено з {source}")
             if loader.ignored_keys:
-                print(format_ignored_keys_warning(loader.ignored_source or str(config_path),
-                                                  loader.ignored_keys), file=sys.stderr)
+                warning = format_ignored_keys_warning(loader.ignored_source or str(config_path),
+                                                      loader.ignored_keys)
+                if is_strict(config):
+                    raise ValueError("strict_mode: " + warning.replace("Warning: ", "", 1))
+                print(warning, file=sys.stderr)
         except (FileNotFoundError, PermissionError, ValueError, OSError) as e:
             print(f"❌ Помилка завантаження конфігурації: {e}")
             log_error(f"Помилка завантаження конфігурації: {e}")
@@ -284,11 +301,14 @@ Examples:
                 return EXIT_ERROR
 
         validate_file_size(masked_path)
-        with open(masked_path, 'r', encoding='utf-8', newline='') as f:
-            if masked_path.suffix.lower() == '.json':
-                masked_data = json.load(f)
-            else:
-                masked_data = f.read()
+        # Кодування: з mapping (mask записує його, якщо вхід був не в utf-8);
+        # system.encoding у конфігурації, якщо задано явно, має пріоритет
+        file_encoding, allowed = _unmask_encoding(config, masking_map)
+        masked_text, file_encoding = read_text(masked_path, file_encoding, allowed)
+        if masked_path.suffix.lower() == '.json':
+            masked_data = json.loads(masked_text)
+        else:
+            masked_data = masked_text
 
         log_debug(f"Замасковані дані завантажено: {masked_path.name}")
 
@@ -336,7 +356,7 @@ Examples:
     # ========================================================================
 
     try:
-        with open(output_path, 'w', encoding='utf-8', newline='') as f:
+        with open(output_path, 'w', encoding=file_encoding, newline='') as f:
             if masked_path.suffix.lower() == '.json':
                 json.dump(restored_data, f, ensure_ascii=False, indent=2)
             else:
@@ -348,6 +368,19 @@ Examples:
         log_info(f"Збережено у: {output_path} ({elapsed:.2f} сек)")
         log_info(f"Статистика: відновлено={stats.get('restored_count', 0)}, "
                  f"пропущено={stats.get('skipped_count', 0)}")
+        # strict_mode: файл записано, але не все відновлено — код виходу 1.
+        # Не відновлено = зайві входження масок (skipped) + входження з
+        # mapping, яких у тексті вже немає (лише для звичайного mapping)
+        if CONFIG_AVAILABLE and not isinstance(config, dict) and is_strict(config):
+            unrestored = stats.get('skipped_count', 0)
+            if not is_chain_mapping(masking_map):
+                expected = sum(len(info.get("instances", [])) for cat in masking_map.get("mappings", {}).values()
+                               if isinstance(cat, dict) for info in cat.values() if isinstance(info, dict))
+                unrestored += max(0, expected - stats.get('restored_count', 0))
+            if unrestored:
+                print(f"❌ strict_mode: {unrestored} masked value(s) were not restored")
+                log_error(f"strict_mode: {unrestored} masked value(s) were not restored")
+                return EXIT_ERROR
         return EXIT_OK
 
     except (OSError, PermissionError, UnicodeEncodeError) as e:

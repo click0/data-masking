@@ -120,7 +120,9 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
     перекриттів, у порядку документа) пише mapping — інакше instance
     tracking розійдеться з порядком входжень і unmask поверне не те.
     """
-    if not _cfg.MASK_NAMES:
+    mask_surnames = _cfg.MASK_SURNAMES
+    mask_initials = _cfg.MASK_NAMES or _cfg.MASK_PATRONYMICS
+    if not (mask_surnames or mask_initials):
         return text
 
     # Фаза 1: збір кандидатів (start, end, surname, [ініціали], has_space, ini_first)
@@ -162,14 +164,17 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
     segments = []
     prev_end = 0
     for start, end, surname, initials, has_space, ini_first in kept:
-        ms = mask_surname(surname, masking_dict, instance_counters)
+        ms = mask_surname(surname, masking_dict, instance_counters) if mask_surnames else surname
         sep = '. ' if has_space else '.'
         orig_ini = sep.join(initials) + '.'
-        masked_letters = [_mask_initial(i, surname) for i in initials]
-        masked_ini = sep.join(masked_letters) + '.'
-        # Зберігаємо у mapping — інакше unmask не зможе відновити ініціали
-        masked_ini = add_to_mapping(masking_dict, instance_counters,
-                                    "initials", orig_ini, masked_ini)
+        if mask_initials:
+            masked_letters = [_mask_initial(i, surname) for i in initials]
+            masked_ini = sep.join(masked_letters) + '.'
+            # Зберігаємо у mapping — інакше unmask не зможе відновити ініціали
+            masked_ini = add_to_mapping(masking_dict, instance_counters,
+                                        "initials", orig_ini, masked_ini)
+        else:
+            masked_ini = orig_ini
         new_text = f"{masked_ini} {ms}" if ini_first else f"{ms} {masked_ini}"
         segments.append(text[prev_end:start])
         segments.append(new_text)
@@ -255,6 +260,21 @@ def _mask_quoted_ranks(text: str, masking_dict: Dict, instance_counters: Dict) -
     return text
 
 
+_ORDER_CONTEXT = re.compile(
+    r"(?:наказ|розпорядженн|розпорядж|директив)\w*(?:[^.;\n№]|(?<=\d)\.(?=\d)){0,80}$", re.IGNORECASE)
+
+
+def _number_sign_enabled(text: str, start: int, item_type: str) -> bool:
+    """Чи маскувати «№ …» цього типу: БР — MASK_BR_NUMBERS; після слова
+    «наказ…/розпорядження…/директива…» у тому ж реченні — MASK_ORDERS;
+    інші (довідка, рапорт, протокол …) — MASK_DOCUMENT_NUMBERS."""
+    if item_type.startswith('br_'):
+        return _cfg.MASK_BR_NUMBERS
+    if _ORDER_CONTEXT.search(text[max(0, start - 120):start]):
+        return _cfg.MASK_ORDERS
+    return _cfg.MASK_DOCUMENT_NUMBERS
+
+
 def mask_text_context_aware(text: str, masking_dict: Dict, instance_counters: Dict) -> str:
     """
     Головна функція маскування тексту з контекстним аналізом.
@@ -278,7 +298,8 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
 
     # === ШАГ 0.5: ПІБ з ініціалами (Іванов П.А., П. Іванов тощо)
     # Запускаємо ДО основного парсера, щоб ініціали не плутали looks_like_pib_line
-    text = _mask_initials_pib(text, masking_dict, instance_counters)
+    if _cfg.ALLOW_ABBREVIATED_PATRONYMIC:
+        text = _mask_initials_pib(text, masking_dict, instance_counters)
 
     items_to_mask = []
     items_to_skip = []
@@ -324,10 +345,13 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
             for num_match in re.finditer(r'\d+', numbers_text):
                 _add_skip({'start': base_pos + num_match.start(), 'end': base_pos + num_match.end(), 'text': num_match.group(0), 'reason': 'legal', 'type': 'legal_number', 'context': term})
 
-    if _cfg.MASK_ORDERS or _cfg.MASK_BR_NUMBERS:
+    if _cfg.MASK_ORDERS or _cfg.MASK_BR_NUMBERS or _cfg.MASK_DOCUMENT_NUMBERS:
         for match in re.finditer(r'№', text):
             result = analyze_number_sign_context(text, match)
-            if result: _add_mask(result)
+            # Кожен тип — за своїм прапорцем (до 3.0.28 тип не перевірявся:
+            # з увімкненими БР маскувались і номери наказів, і навпаки)
+            if result and _number_sign_enabled(text, match.start(), result['type']):
+                _add_mask(result)
 
     if _cfg.MASK_BR_NUMBERS:
         for match in re.finditer(r'\bБР\b', text, re.IGNORECASE):
@@ -455,7 +479,7 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
                 masked_rank_val = mask_rank_preserve_case(rank, masking_dict, instance_counters)
                 current_line_for_parsing = current_line_for_parsing.replace(rank, _hold("RANK", masked_rank_val), 1)
 
-            if pib and _cfg.MASK_NAMES:
+            if pib and (_cfg.MASK_NAMES or _cfg.MASK_SURNAMES or _cfg.MASK_PATRONYMICS):
                 parts = pib.split()
                 # Не маскуємо повторно те, що вже є маскою (наприклад,
                 # прізвище, замасковане фазою ініціалів: «сержант Коваль П.П.»
@@ -476,6 +500,11 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
                     current_line_for_parsing = current_line_for_parsing.replace(pib, _hold("PIB", pib), 1)
                     iteration += 1
                     continue
+                # validation.strict_pib_format: лише повне «Прізвище Ім'я По батькові»
+                if _cfg.STRICT_PIB_FORMAT and len(parts) < 3:
+                    current_line_for_parsing = current_line_for_parsing.replace(pib, _hold("PIB", pib), 1)
+                    iteration += 1
+                    continue
                 if len(parts) >= 2:
                     # «Іван ПЕТРЕНКО» (прізвище виділене капсом) → ім'я перше.
                     # Але якщо ВЕСЬ ПІБ капсом — порядок стандартний
@@ -483,14 +512,14 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
                     if is_likely_surname_by_case(parts[1]) and not is_likely_surname_by_case(parts[0]):
                         name, surname = parts[0], parts[1]
                         patronymic = parts[2] if len(parts) >= 3 else ""
-                        masked_surname = mask_surname(surname, masking_dict, instance_counters)
-                        masked_name = mask_name(name, masking_dict, instance_counters, gender_hint=detect_gender_by_patronymic(patronymic) if patronymic else None, patronymic_hint=patronymic)
+                        masked_surname = mask_surname(surname, masking_dict, instance_counters) if _cfg.MASK_SURNAMES else surname
+                        masked_name = mask_name(name, masking_dict, instance_counters, gender_hint=detect_gender_by_patronymic(patronymic) if patronymic else None, patronymic_hint=patronymic) if _cfg.MASK_NAMES else name
                         masked_pib_str = f"{masked_name} {masked_surname}"
                     else:
                         surname, name = parts[0], parts[1]
                         patronymic = parts[2] if len(parts) >= 3 else ""
-                        masked_surname = mask_surname(surname, masking_dict, instance_counters)
-                        masked_name = mask_name(name, masking_dict, instance_counters, gender_hint=detect_gender_by_patronymic(patronymic) if patronymic else None, patronymic_hint=patronymic)
+                        masked_surname = mask_surname(surname, masking_dict, instance_counters) if _cfg.MASK_SURNAMES else surname
+                        masked_name = mask_name(name, masking_dict, instance_counters, gender_hint=detect_gender_by_patronymic(patronymic) if patronymic else None, patronymic_hint=patronymic) if _cfg.MASK_NAMES else name
                         masked_pib_str = f"{masked_surname} {masked_name}"
 
                     if patronymic:
@@ -502,7 +531,7 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
                 elif len(parts) == 1 and rank:
                     # Звання + лише прізвище («рядовий Іванов прибув») —
                     # раніше такий ПІБ узагалі не маскувався
-                    masked_surname = mask_surname(parts[0], masking_dict, instance_counters)
+                    masked_surname = mask_surname(parts[0], masking_dict, instance_counters) if _cfg.MASK_SURNAMES else parts[0]
                     current_line_for_parsing = current_line_for_parsing.replace(pib, _hold("PIB", masked_surname), 1)
             iteration += 1
 

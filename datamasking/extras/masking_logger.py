@@ -16,6 +16,7 @@ Year: 2025-2026
 import copy
 import json
 import logging
+import logging.handlers
 import sys
 import traceback
 from datetime import datetime, timezone
@@ -116,6 +117,9 @@ class MaskingLogger:
         log_file: Optional[str] = None,
         console: bool = True,
         replace_handlers: bool = False,
+        file_format: Optional[str] = None,
+        max_bytes: int = 0,
+        backup_count: int = 5,
     ) -> None:
         """Initialize the masking logger.
 
@@ -148,10 +152,11 @@ class MaskingLogger:
                 handler.close()
         # Avoid adding duplicate handlers
         if not self.logger.handlers:
-            self._setup_handlers(format_type, log_file, console)
+            self._setup_handlers(format_type, log_file, console, file_format, max_bytes, backup_count)
 
     def _setup_handlers(
-        self, format_type: str, log_file: Optional[str], console: bool = True
+        self, format_type: str, log_file: Optional[str], console: bool = True,
+        file_format: Optional[str] = None, max_bytes: int = 0, backup_count: int = 5,
     ) -> None:
         """Configure logging handlers based on format type.
 
@@ -180,9 +185,15 @@ class MaskingLogger:
                 file_formatter = JsonFormatter()
             else:
                 file_formatter = logging.Formatter(
-                    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+                    file_format or "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
                 )
-            file_handler = logging.FileHandler(log_file, encoding="utf-8")
+            file_handler: logging.Handler
+            if max_bytes > 0:
+                # logging.max_log_size_mb / log_rotation_count
+                file_handler = logging.handlers.RotatingFileHandler(
+                    log_file, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8")
+            else:
+                file_handler = logging.FileHandler(log_file, encoding="utf-8")
             file_handler.setFormatter(file_formatter)
             self.logger.addHandler(file_handler)
 
@@ -378,6 +389,9 @@ def get_logger(
     log_file: Optional[str] = None,
     reinit: bool = False,
     console: bool = True,
+    file_format: Optional[str] = None,
+    max_bytes: int = 0,
+    backup_count: int = 5,
 ) -> MaskingLogger:
     """Get or create the global MaskingLogger instance.
 
@@ -399,6 +413,9 @@ def get_logger(
             log_file=log_file,
             console=console,
             replace_handlers=reinit,
+            file_format=file_format,
+            max_bytes=max_bytes,
+            backup_count=backup_count,
         )
     return _logger
 
@@ -408,6 +425,9 @@ def setup_logging(
     format_type: str = "console",
     log_file: Optional[str] = None,
     console: bool = True,
+    file_format: Optional[str] = None,
+    max_bytes: int = 0,
+    backup_count: int = 5,
 ) -> MaskingLogger:
     """Set up and return a configured MaskingLogger.
 
@@ -427,4 +447,7 @@ def setup_logging(
         log_file=log_file,
         reinit=True,
         console=console,
+        file_format=file_format,
+        max_bytes=max_bytes,
+        backup_count=backup_count,
     )

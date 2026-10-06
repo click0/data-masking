@@ -201,7 +201,9 @@ def mask_date(original: str, masking_dict: Dict, instance_counters: Dict) -> str
             masked = new_date.strftime("%d.%m.%Y")
         except (ValueError, OverflowError, TypeError, AttributeError) as e:
             if _cfg.DEBUG_MODE:
-                print(f"Warning: error parsing date '{original}': {e}")
+                # Оригінал — лише з logging.log_sensitive_data: true
+                shown = f"'{original}'" if _cfg.LOG_SENSITIVE_DATA else f"of {len(original)} characters"
+                print(f"Warning: error parsing a date {shown}: {type(e).__name__}")
             return original
 
     return add_to_mapping(masking_dict, instance_counters, "date", original, masked)

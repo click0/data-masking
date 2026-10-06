@@ -129,7 +129,7 @@ def get_deterministic_seed(original: str) -> int:
     if algo == 'md5': hasher = hashlib.md5()
     elif algo == 'sha1': hasher = hashlib.sha1()
     elif algo == 'sha256': hasher = hashlib.sha256()
-    elif algo == 'blake2b': hasher = hashlib.blake2b()
+    elif algo == 'blake2b': hasher = hashlib.blake2b(digest_size=_cfg.HASH_DIGEST_SIZE)
     elif algo == 'sha512': hasher = hashlib.sha512()
     else: raise ValueError(f"Unknown hash algorithm: {algo}")
     hasher.update(original.encode('utf-8'))

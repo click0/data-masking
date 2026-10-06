@@ -70,6 +70,13 @@ def set_faker_locale(locale: str) -> None:
 # НАЛАШТУВАННЯ МАСКУВАННЯ
 # ============================================================================
 MASK_NAMES = True
+# Окремо прізвища і по батькові (config: masking_rules.enable_surnames /
+# enable_patronymics; за замовчуванням — як enable_names). MASK_NAMES — імена.
+MASK_SURNAMES = True
+MASK_PATRONYMICS = True
+# Номери документів «№ N» не після слова «наказ…» (довідка, рапорт, протокол);
+# config: masking_rules.enable_document_numbers (за замовчуванням — як MASK_ORDERS)
+MASK_DOCUMENT_NUMBERS = True
 MASK_IPN = True
 MASK_PASSPORT = True
 MASK_MILITARY_ID = True
@@ -86,6 +93,28 @@ MASK_DATE_TEXT = True
 RANK_LINE_BREAK_FIX = True
 # Верхня межа --re-mask; config: remask.max_passes (не більше 10)
 REMASK_MAX_PASSES = 10
+# Оригінали у виводі налагодження (logging.log_sensitive_data); за замовчуванням ні
+LOG_SENSITIVE_DATA = False
+# Час етапів у лог (logging.log_performance)
+LOG_PERFORMANCE = False
+# Розмір дайджесту blake2b, байт (system.hash_digest_size). 64 — стандартний;
+# будь-яке інше значення змінює ВСІ маски
+HASH_DIGEST_SIZE = 64
+# Маска ІПН з коректною контрольною цифрою (validation.validate_ipn_checksum).
+# Змінює маски ІПН, тому за замовчуванням вимкнено
+VALIDATE_IPN_CHECKSUM = False
+# Довжина слова-кандидата в ПІБ (validation.min_name_length / max_name_length);
+# 0 у максимумі — без обмеження
+NAME_MIN_LENGTH = 3
+NAME_MAX_LENGTH = 0
+# ПІБ з ініціалами («Іванов І.І.») — validation.allow_abbreviated_patronymic
+ALLOW_ABBREVIATED_PATRONYMIC = True
+# Лише повний ПІБ із трьох слів — validation.strict_pib_format
+STRICT_PIB_FORMAT = False
+# Кодування вхідного файлу (system.encoding) і кандидати для "auto"
+# (validation.allowed_encodings); вихід пишеться тим самим кодуванням
+INPUT_ENCODING = "utf-8"
+ALLOWED_ENCODINGS: "tuple[str, ...]" = ("utf-8", "cp1251", "latin-1")
 
 # Rank masking: allowed shift values for rank position offset
 RANK_SHIFT_OPTIONS = [-2, -1, 1, 2]

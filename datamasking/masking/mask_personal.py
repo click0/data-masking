@@ -23,6 +23,18 @@ from datamasking.masking.language import (
 from datamasking.masking.surname import synthesize_surname, known_surname_forms
 
 
+_IPN_WEIGHTS = (-1, 5, 7, 9, 4, 6, 10, 5, 7)
+
+
+def ipn_checksum(first9: str) -> int:
+    """Контрольна цифра РНОКПП (ІПН) за першими 9 цифрами."""
+    return (sum(w * int(d) for w, d in zip(_IPN_WEIGHTS, first9)) % 11) % 10
+
+
+def is_valid_ipn(value: str) -> bool:
+    return len(value) == 10 and value.isdigit() and ipn_checksum(value[:9]) == int(value[9])
+
+
 def mask_ipn(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
     """
     Маскує ІПН (Індивідуальний податковий номер).
@@ -38,6 +50,11 @@ def mask_ipn(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
         random.seed(seed)
         middle = ''.join([str(random.randint(0, 9)) for _ in range(6)])
         masked = original[:3] + middle + original[-1]
+        # validation.validate_ipn_checksum: валідний ІПН → валідна маска
+        # (контрольна цифра перераховується); невалідний — як і раніше
+        if _cfg.VALIDATE_IPN_CHECKSUM and is_valid_ipn(original):
+            first9 = original[:3] + middle
+            masked = first9 + str(ipn_checksum(first9))
     return add_to_mapping(masking_dict, instance_counters, "ipn", original, masked)
 
 def mask_passport_id(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
@@ -117,7 +134,7 @@ def mask_patronymic(patronymic: str, gender: str, masking_dict: Dict, instance_c
     """
     Маскує по батькові з урахуванням роду.
     """
-    if not _cfg.MASK_NAMES or not patronymic: return patronymic
+    if not _cfg.MASK_PATRONYMICS or not patronymic: return patronymic
     is_upper = patronymic.isupper()
     is_capitalize = patronymic[0].isupper() and patronymic[1:].islower() if len(patronymic) > 1 else False
     patronymic_lower = patronymic.lower()

@@ -18,6 +18,28 @@ from typing import Union
 
 PRIVATE_MODE = 0o600
 
+# security.secure_delete_temp: тимчасовий файл невдалого запису (у ньому
+# може бути частина mapping) перед видаленням перезаписується нулями.
+# На SSD/журнальованих ФС це не гарантує знищення даних — лише зменшує
+# шанс, що вони лишаться у вільних блоках того самого файлу.
+SECURE_DELETE_TEMP = True
+
+
+def _discard_temp(tmp_name: str) -> None:
+    try:
+        if SECURE_DELETE_TEMP:
+            size = os.path.getsize(tmp_name)
+            with open(tmp_name, "r+b") as fp:
+                fp.write(b"\0" * size)
+                fp.flush()
+                os.fsync(fp.fileno())
+    except OSError:
+        pass
+    try:
+        os.unlink(tmp_name)
+    except OSError:
+        pass
+
 
 def atomic_write_private(path: Union[str, Path], data: bytes) -> Path:
     """Атомарно записує *data* у *path* з правами 0600.
@@ -43,9 +65,6 @@ def atomic_write_private(path: Union[str, Path], data: bytes) -> Path:
             os.fsync(fp.fileno())
         os.replace(tmp_name, path)
     except BaseException:
-        try:
-            os.unlink(tmp_name)
-        except OSError:
-            pass
+        _discard_temp(tmp_name)
         raise
     return path.resolve()

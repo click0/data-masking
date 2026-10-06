@@ -50,7 +50,6 @@ TYPE_ALIASES: Dict[str, str] = {
     "passports": "passport",
     "military_ids": "military_id",
     "surnames": "surname",
-    "names": "name",
     "patronymics": "patronymic",
     "ranks": "rank",
     "military_units": "military_unit",
@@ -66,7 +65,6 @@ TYPE_ALIASES: Dict[str, str] = {
     "прізвище": "surname",
     "прізвища": "surname",
     "імя": "name",
-    "імена": "name",
     "по_батькові": "patronymic",
     "звання": "rank",
     "військова_частина": "military_unit",
@@ -96,6 +94,10 @@ TYPE_ALIASES: Dict[str, str] = {
 # ============================================================================
 TYPE_GROUPS: Dict[str, Set[str]] = {
     "personal": {"surname", "name", "patronymic"},
+    # «names» / «імена» — усе ПІБ, як до 3.0.28 (тоді прізвище, ім'я й по
+    # батькові були одним перемикачем). Лише ім'я — «name» / «імя»
+    "names": {"surname", "name", "patronymic"},
+    "імена": {"surname", "name", "patronymic"},
     "ids": {"ipn", "passport", "military_id"},
     "military": {"rank", "military_unit", "brigade"},
     "documents": {"order_number", "br_number"},
@@ -109,9 +111,9 @@ _TYPE_TO_GLOBAL: Dict[str, str] = {
     "ipn": "MASK_IPN",
     "passport": "MASK_PASSPORT",
     "military_id": "MASK_MILITARY_ID",
-    "surname": "MASK_NAMES",
+    "surname": "MASK_SURNAMES",
     "name": "MASK_NAMES",
-    "patronymic": "MASK_NAMES",
+    "patronymic": "MASK_PATRONYMICS",
     "rank": "MASK_RANKS",
     "military_unit": "MASK_UNITS",
     "order_number": "MASK_ORDERS",

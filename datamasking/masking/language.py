@@ -25,7 +25,9 @@ def is_likely_surname_by_case(word: str) -> bool:
 def looks_like_name(word: str) -> bool:
     if word.startswith("___") and word.endswith("___"): return False
     clean_word = word.strip(_cfg.QUOTE_CHARS).rstrip(',.!?;:')
-    if len(clean_word) < 3: return False
+    # validation.min_name_length / max_name_length (за замовчуванням 3 / без меж)
+    if len(clean_word) < _cfg.NAME_MIN_LENGTH: return False
+    if _cfg.NAME_MAX_LENGTH and len(clean_word) > _cfg.NAME_MAX_LENGTH: return False
     if '.' in clean_word: return False
     # Дієслова 1-2 особи множини (Повідомляємо, Просимо, Надаєте) —
     # ніколи не імена/прізвища

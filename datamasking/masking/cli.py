@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from datamasking._fsutil import atomic_write_private
+from datamasking._textio import read_text, check_encoding_settings
 from datamasking.masking import constants as _cfg
 from datamasking.masking.helpers import validate_file_size
 
@@ -66,7 +67,7 @@ except ImportError:
     _opt_logger.debug("datamasking.extras.security not available — encryption disabled")
 
 try:
-    from datamasking.extras.config import ConfigLoader, format_ignored_keys_warning
+    from datamasking.extras.config import ConfigLoader, format_ignored_keys_warning, is_strict
     CONFIG_AVAILABLE = True
 except ImportError:
     CONFIG_AVAILABLE = False
@@ -178,15 +179,51 @@ def _password_settings(config) -> Tuple[str, bool, int]:
     return env_name, allowed, length
 
 
+_PASSWORD_SPECIALS = "!@#$%^&*"
+
+
+def _password_policy(config) -> Dict[str, Any]:
+    """Склад згенерованого пароля з конфігурації.
+
+    use_special_chars: false у будь-якій із секцій (security.password_generation
+    або верхньорівнева password_generation) — без спецсимволів.
+    min_*: мінімальна кількість символів класу (лише security.password_generation).
+    Raises ValueError, якщо вимоги несумісні.
+    """
+    import string
+    sec_gen = getattr(getattr(config, 'security', None), 'password_generation', None)
+    top_gen = getattr(config, 'password_generation', None)
+    length = _password_settings(config)[2] if config is not None else 24
+    specials = all(getattr(g, 'use_special_chars', True) is not False for g in (sec_gen, top_gen))
+
+    mins = {}
+    for key in ("min_uppercase", "min_lowercase", "min_digits", "min_special"):
+        mins[key] = _int_setting(getattr(sec_gen, key, 0) or 0,
+                                 f"security.password_generation.{key}", 0, 1024)
+    if mins["min_special"] and not specials:
+        raise ValueError("security.password_generation.min_special needs use_special_chars: true")
+    if sum(mins.values()) > length:
+        raise ValueError(f"password_generation minimums ({sum(mins.values())} characters) "
+                         f"exceed the password length ({length})")
+    classes = [
+        (string.ascii_uppercase, mins["min_uppercase"]),
+        (string.ascii_lowercase, mins["min_lowercase"]),
+        (string.digits, mins["min_digits"]),
+    ]
+    if specials:
+        classes.append((_PASSWORD_SPECIALS, mins["min_special"]))
+    return {"length": length, "classes": classes}
+
+
 def generate_password_from_config(config) -> str:
     """Generate a secure password, optionally using config settings."""
     import secrets
-    import string
-    length = 24
-    if config is not None:
-        length = _password_settings(config)[2]
-    alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
-    return ''.join(secrets.choice(alphabet) for _ in range(length))
+    policy = _password_policy(config)
+    alphabet = "".join(chars for chars, _ in policy["classes"])
+    chars = [secrets.choice(c) for c, n in policy["classes"] for _ in range(n)]
+    chars += [secrets.choice(alphabet) for _ in range(policy["length"] - len(chars))]
+    secrets.SystemRandom().shuffle(chars)
+    return "".join(chars)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -268,8 +305,10 @@ def _load_config(args) -> Tuple[Optional[Any], Optional[str]]:
     if source:
         print(f"Loaded config from {source}")
     if loader.ignored_keys:
-        print(format_ignored_keys_warning(loader.ignored_source or "config", loader.ignored_keys),
-              file=sys.stderr)
+        warning = format_ignored_keys_warning(loader.ignored_source or "config", loader.ignored_keys)
+        if is_strict(config):
+            return None, "strict_mode: " + warning.replace("Warning: ", "", 1)
+        print(warning, file=sys.stderr)
     try:
         setattr(config, "_source", source)  # для звіту; dataclass дозволяє атрибут
     except AttributeError:
@@ -301,15 +340,37 @@ def _setup_logger(args, config) -> Optional[Any]:
             if to_file is not False:
                 log_file = cfg_file
             if to_file is True and not cfg_file:
-                print("Warning: logging.log_to_file is true but logging.file is not set — "
-                      "logging to the console only", file=sys.stderr)
+                _config_warning(args, "logging.log_to_file is true but logging.file is not set — "
+                                      "logging to the console only")
 
     if log_level is None:
         log_level = "INFO"
     console = getattr(log_cfg, 'log_to_console', True) is not False
 
+    # logging.format (рядок у файлі логу), max_log_size_mb + log_rotation_count
+    file_format = getattr(log_cfg, 'format', None) or None
+    if file_format:
+        import logging as _std_logging
+        try:
+            _std_logging.Formatter(file_format, validate=True)
+        except (ValueError, TypeError) as e:
+            _config_warning(args, f"logging.format is invalid ({e}) — using the default format")
+            file_format = None
+    max_bytes, backup_count = 0, 5
+    size_mb = getattr(log_cfg, 'max_log_size_mb', None)
+    if size_mb is not None:
+        try:
+            max_bytes = _int_setting(size_mb, "logging.max_log_size_mb", 1, 100_000) * 1024 * 1024
+            backup_count = _int_setting(getattr(log_cfg, 'log_rotation_count', 5),
+                                        "logging.log_rotation_count", 0, 1000)
+        except ValueError as e:
+            _config_warning(args, f"{e} — log rotation disabled")
+            max_bytes = 0
+
     try:
-        logger = setup_logging(level=log_level, log_file=log_file, console=console)
+        logger = setup_logging(level=log_level, log_file=log_file, console=console,
+                               file_format=file_format, max_bytes=max_bytes,
+                               backup_count=backup_count)
         logger.info(f"Data Masking Script v{_cfg.__version__} started")
         return logger
     except (ValueError, OSError, TypeError) as e:
@@ -364,6 +425,15 @@ def _apply_selective_filters(args, logger) -> Optional[str]:
     if logger:
         logger.info(f"Selective masking: {mode} {only_str or exclude_str} → enabled: {enabled}")
     return None
+
+
+def _config_warning(args, message: str) -> None:
+    """Попередження конфігурації; у суворому режимі — помилка (main
+    завершує роботу з кодом 1 до запису файлів)."""
+    if getattr(args, '_strict', False):
+        args._strict_errors = getattr(args, '_strict_errors', []) + [message]
+    else:
+        print(f"Warning: {message}", file=sys.stderr)
 
 
 def _selective_from_config(args, config) -> Optional[str]:
@@ -439,8 +509,8 @@ def _apply_level1_settings_impl(args, config, logger) -> Optional[str]:
     cfg_version = getattr(system, 'version', '')
     cfg_major, prog_major = _major(cfg_version), _major(_cfg.__version__)
     if cfg_major is not None and prog_major is not None and cfg_major > prog_major:
-        print(f"Warning: config is for version {cfg_version}, this program is "
-              f"{_cfg.__version__}; some options may not be understood", file=sys.stderr)
+        _config_warning(args, f"config is for version {cfg_version}, this program is "
+                              f"{_cfg.__version__}; some options may not be understood")
 
     # Ключі з єдиним підтримуваним значенням
     checks = [
@@ -480,16 +550,75 @@ def _apply_level1_settings_impl(args, config, logger) -> Optional[str]:
     if line_fix is not None:
         _cfg.RANK_LINE_BREAK_FIX = bool(line_fix)
 
-    # Текстові дати: окремо або «як enable_dates»
+    # Текстові дати, прізвища, по батькові, номери документів: окремо або
+    # «як відповідний загальний прапорець»
     if not getattr(args, 'only', None) and not getattr(args, 'exclude', None):
-        date_text = getattr(rules, 'enable_date_text', None)
-        _cfg.MASK_DATE_TEXT = _cfg.MASK_DATES if date_text is None else bool(date_text)
+        def follow(key: str, base: bool) -> bool:
+            value = getattr(rules, key, None)
+            return base if value is None else bool(value)
+        _cfg.MASK_DATE_TEXT = follow('enable_date_text', _cfg.MASK_DATES)
+        _cfg.MASK_SURNAMES = follow('enable_surnames', _cfg.MASK_NAMES)
+        _cfg.MASK_PATRONYMICS = follow('enable_patronymics', _cfg.MASK_NAMES)
+        _cfg.MASK_DOCUMENT_NUMBERS = follow('enable_document_numbers', _cfg.MASK_ORDERS)
 
     # Перемаскування
     if remask is not None:
         if getattr(remask, 'enabled', True) is False and getattr(args, 're_mask', None):
             return "--re-mask is disabled by the configuration (remask.enabled: false)"
         _cfg.REMASK_MAX_PASSES = _int_setting(getattr(remask, 'max_passes', 10), "remask.max_passes", 2, 10)
+
+    # Склад пароля — перевірити ДО запису файлів (сам пароль генерується пізніше)
+    _password_policy(config)
+
+    # Кодування вхідного файлу
+    enc, allowed_list = check_encoding_settings(
+        getattr(system, 'encoding', 'utf-8'),
+        getattr(validation, 'allowed_encodings', None))
+    _cfg.INPUT_ENCODING, _cfg.ALLOWED_ENCODINGS = enc, tuple(allowed_list)
+
+    # Дайджест хешу (лише blake2b) і контрольна сума ІПН
+    digest = getattr(system, 'hash_digest_size', None)
+    if digest is not None:
+        digest = _int_setting(digest, "system.hash_digest_size", 1, 64)
+        if digest != 64 and str(_cfg.HASH_ALGORITHM).lower() != "blake2b":
+            raise ValueError(f"system.hash_digest_size applies to blake2b only "
+                             f"(hash_algorithm is {_cfg.HASH_ALGORITHM})")
+        _cfg.HASH_DIGEST_SIZE = digest
+    _cfg.VALIDATE_IPN_CHECKSUM = getattr(validation, 'validate_ipn_checksum', False) is True
+
+    # Розпізнавання ПІБ
+    min_len = getattr(validation, 'min_name_length', None)
+    if min_len is not None:
+        _cfg.NAME_MIN_LENGTH = _int_setting(min_len, "validation.min_name_length", 1, 100)
+    max_len = getattr(validation, 'max_name_length', None)
+    if max_len is not None:
+        _cfg.NAME_MAX_LENGTH = _int_setting(max_len, "validation.max_name_length", 1, 1000)
+        if _cfg.NAME_MAX_LENGTH < _cfg.NAME_MIN_LENGTH:
+            raise ValueError(f"validation.max_name_length ({_cfg.NAME_MAX_LENGTH}) is less than "
+                             f"min_name_length ({_cfg.NAME_MIN_LENGTH})")
+    if getattr(validation, 'allow_abbreviated_patronymic', True) is False:
+        _cfg.ALLOW_ABBREVIATED_PATRONYMIC = False
+        print("Warning: validation.allow_abbreviated_patronymic is false — initials "
+              "(\"Іванов І.І.\") are NOT masked; the surname only when it follows a rank",
+              file=sys.stderr)
+    if getattr(validation, 'strict_pib_format', False) is True:
+        _cfg.STRICT_PIB_FORMAT = True
+        print("Warning: validation.strict_pib_format is true — only full three-word names "
+              "are masked; a surname alone or two words stay open", file=sys.stderr)
+
+    # Тимчасові файли
+    temp_dir = str(getattr(system, 'temp_dir', '') or '')
+    if temp_dir:
+        if not Path(temp_dir).is_dir():
+            raise ValueError(f"system.temp_dir {temp_dir!r} is not an existing directory")
+        import tempfile
+        tempfile.tempdir = temp_dir
+    from datamasking import _fsutil
+    _fsutil.SECURE_DELETE_TEMP = getattr(security, 'secure_delete_temp', True) is not False
+
+    log_cfg = getattr(config, 'logging', None)
+    _cfg.LOG_SENSITIVE_DATA = getattr(log_cfg, 'log_sensitive_data', False) is True
+    _cfg.LOG_PERFORMANCE = getattr(log_cfg, 'log_performance', False) is True
     return None
 
 
@@ -666,15 +795,22 @@ def _resolve_password(args, config, logger) -> Tuple[Optional[str], Optional[str
     return password, None
 
 
-def _read_input(input_path: Path, is_json: bool, logger):
-    """Read input file (JSON or text)."""
+def _read_input(input_path: Path, is_json: bool, logger, masking_dict: Optional[Dict] = None):
+    """Read input file (JSON or text) in system.encoding (or detected: auto).
+
+    Використане кодування запам'ятовується в masking_dict["input_encoding"]
+    (якщо не utf-8): вихід пишеться ним же, а unmask читає й пише ним же.
+    """
     try:
         validate_file_size(input_path, _cfg.MAX_INPUT_FILE_SIZE)
-        with open(input_path, 'r', encoding='utf-8', newline='') as f:
-            if is_json:
-                return json.load(f)
-            else:
-                return f.read()
+        text, used = read_text(input_path, _cfg.INPUT_ENCODING, _cfg.ALLOWED_ENCODINGS)
+        if used != "utf-8":
+            print(f"Input encoding: {used}" + (" (auto)" if _cfg.INPUT_ENCODING == "auto" else ""))
+            if masking_dict is not None:
+                masking_dict["input_encoding"] = used
+        if logger:
+            logger.info(f"Input encoding: {used}")
+        return json.loads(text) if is_json else text
     except (FileNotFoundError, PermissionError, OSError, json.JSONDecodeError,
             UnicodeDecodeError, ValueError) as e:
         print(f"Error reading file: {e}")
@@ -834,7 +970,9 @@ def _write_report(report_path: Path, masking_dict: Dict, input_path: Path,
         f.write("\n" + "-" * 60 + "\n")
         f.write("КОНФІГУРАЦІЯ МАСКУВАННЯ\n")
         f.write("-" * 60 + "\n\n")
+        f.write(f"  Прізвища (MASK_SURNAMES): {_cfg.MASK_SURNAMES}\n")
         f.write(f"  Імена (MASK_NAMES): {_cfg.MASK_NAMES}\n")
+        f.write(f"  По батькові (MASK_PATRONYMICS): {_cfg.MASK_PATRONYMICS}\n")
         f.write(f"  ІПН (MASK_IPN): {_cfg.MASK_IPN}\n")
         f.write(f"  Паспорти (MASK_PASSPORT): {_cfg.MASK_PASSPORT}\n")
         f.write(f"  Військові ID (MASK_MILITARY_ID): {_cfg.MASK_MILITARY_ID}\n")
@@ -842,6 +980,7 @@ def _write_report(report_path: Path, masking_dict: Dict, input_path: Path,
         f.write(f"  Бригади (MASK_BRIGADES): {_cfg.MASK_BRIGADES}\n")
         f.write(f"  Частини (MASK_UNITS): {_cfg.MASK_UNITS}\n")
         f.write(f"  Накази (MASK_ORDERS): {_cfg.MASK_ORDERS}\n")
+        f.write(f"  Номери документів (MASK_DOCUMENT_NUMBERS): {_cfg.MASK_DOCUMENT_NUMBERS}\n")
         f.write(f"  БР номери (MASK_BR_NUMBERS): {_cfg.MASK_BR_NUMBERS}\n")
         f.write(f"  Дати (MASK_DATES): {_cfg.MASK_DATES}\n")
         f.write(f"  Збереження регістру (PRESERVE_CASE): {_cfg.PRESERVE_CASE}\n")
@@ -939,7 +1078,8 @@ def _save_results(masked_data, is_json: bool, masking_dict: Dict,
             print(f"  Backup of the previous output: {backup_path}")
             if logger:
                 logger.info(f"Backup of existing output: {backup_path}")
-        with open(output_path, 'w', encoding='utf-8', newline='') as f:
+        out_encoding = masking_dict.get("input_encoding", "utf-8")
+        with open(output_path, 'w', encoding=out_encoding, newline='') as f:
             if is_json:
                 json.dump(masked_data, f, ensure_ascii=False, indent=2)
             else:
@@ -947,7 +1087,10 @@ def _save_results(masked_data, is_json: bool, masking_dict: Dict,
 
         if chain is not None:
             chain_json = map_path.with_name(map_path.name.replace("masking_map_", "masking_chain_", 1))
-            written_map = _write_mapping(chain.to_dict(), chain_json, password, logger)
+            chain_dict = chain.to_dict()
+            if "input_encoding" in masking_dict:
+                chain_dict["input_encoding"] = masking_dict["input_encoding"]
+            written_map = _write_mapping(chain_dict, chain_json, password, logger)
             print(f"  Chain mapping ({len(chain.passes)} passes): {written_map}")
         else:
             written_map = _write_mapping(masking_dict, map_path, password, logger)
@@ -1018,6 +1161,7 @@ def main(argv=None) -> int:
     if config_error:
         print(f"Error: {config_error}")
         return EXIT_ERROR
+    args._strict = bool(CONFIG_AVAILABLE and config is not None and is_strict(config))
     logger = _setup_logger(args, config)
 
     if args.debug:
@@ -1035,12 +1179,18 @@ def main(argv=None) -> int:
     if settings_error:
         print(f"Error: {settings_error}")
         return EXIT_ERROR
+    for strict_error in getattr(args, '_strict_errors', []):
+        print(f"Error: strict_mode: {strict_error}")
+    if getattr(args, '_strict_errors', []):
+        return EXIT_ERROR
 
     if logger:
-        logger.info(f"Masking flags: NAMES={_cfg.MASK_NAMES}, IPN={_cfg.MASK_IPN}, "
+        logger.info(f"Masking flags: SURNAMES={_cfg.MASK_SURNAMES}, NAMES={_cfg.MASK_NAMES}, "
+                    f"PATRONYMICS={_cfg.MASK_PATRONYMICS}, IPN={_cfg.MASK_IPN}, "
                      f"PASSPORT={_cfg.MASK_PASSPORT}, MILITARY_ID={_cfg.MASK_MILITARY_ID}, "
                      f"RANKS={_cfg.MASK_RANKS}, BRIGADES={_cfg.MASK_BRIGADES}, "
                      f"UNITS={_cfg.MASK_UNITS}, ORDERS={_cfg.MASK_ORDERS}, "
+                     f"DOCUMENT_NUMBERS={_cfg.MASK_DOCUMENT_NUMBERS}, "
                      f"BR_NUMBERS={_cfg.MASK_BR_NUMBERS}, DATES={_cfg.MASK_DATES}")
 
     # ================================================================
@@ -1109,9 +1259,12 @@ def main(argv=None) -> int:
     if logger:
         logger.info(f"Processing {input_path}")
 
-    input_data = _read_input(input_path, is_json, logger)
+    import time as _time
+    t_start = _time.perf_counter()
+    input_data = _read_input(input_path, is_json, logger, masking_dict)
     if input_data is None:
         return EXIT_ERROR
+    t_read = _time.perf_counter()
 
     # ================================================================
     # Run masking pipeline
@@ -1120,13 +1273,20 @@ def main(argv=None) -> int:
         input_data, is_json, masking_dict, instance_counters,
         args, logger, timestamp, random_suffix
     )
+    t_mask = _time.perf_counter()
 
     # ================================================================
     # Save results
     # ================================================================
-    return _save_results(
+    rc = _save_results(
         masked_data, is_json, masking_dict,
         output_path, map_path, report_path,
         total_unique, args, config, logger,
         chain=chain, password=password,
     )
+    # logging.log_performance — час етапів
+    if _cfg.LOG_PERFORMANCE and logger:
+        t_save = _time.perf_counter()
+        logger.info(f"Performance: read {t_read - t_start:.3f}s, mask {t_mask - t_read:.3f}s, "
+                    f"save {t_save - t_mask:.3f}s, total {t_save - t_start:.3f}s")
+    return rc
