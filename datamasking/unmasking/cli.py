@@ -35,7 +35,7 @@ from datamasking.unmasking.io import (
 
 CONFIG_AVAILABLE = False
 try:
-    from datamasking.extras.config import load_config, ConfigLoader
+    from datamasking.extras.config import ConfigLoader, format_ignored_keys_warning
     CONFIG_AVAILABLE = True
 except ImportError:
     import logging as _logging
@@ -170,8 +170,12 @@ Examples:
     config: Any = {}
     if CONFIG_AVAILABLE and getattr(args, 'config', None):
         try:
-            config = load_config(args.config)
+            loader = ConfigLoader(args.config)
+            config = loader.load()
             log_info(f"Конфігурацію завантажено з {args.config}")
+            if loader.ignored_keys:
+                print(format_ignored_keys_warning(loader.ignored_source or args.config,
+                                                  loader.ignored_keys), file=sys.stderr)
         except (FileNotFoundError, PermissionError, ValueError, OSError) as e:
             print(f"❌ Помилка завантаження конфігурації: {e}")
             log_error(f"Помилка завантаження конфігурації: {e}")

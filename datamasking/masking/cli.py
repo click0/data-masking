@@ -64,7 +64,7 @@ except ImportError:
     _opt_logger.debug("datamasking.extras.security not available — encryption disabled")
 
 try:
-    from datamasking.extras.config import ConfigLoader
+    from datamasking.extras.config import ConfigLoader, format_ignored_keys_warning
     CONFIG_AVAILABLE = True
 except ImportError:
     CONFIG_AVAILABLE = False
@@ -226,6 +226,9 @@ def _load_config(args) -> Tuple[Optional[Any], Optional[str]]:
     source = loader.loaded_from
     if source:
         print(f"Loaded config from {source}")
+    if loader.ignored_keys:
+        print(format_ignored_keys_warning(loader.ignored_source or "config", loader.ignored_keys),
+              file=sys.stderr)
     try:
         setattr(config, "_source", source)  # для звіту; dataclass дозволяє атрибут
     except AttributeError:

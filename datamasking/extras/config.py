@@ -140,6 +140,44 @@ EFFECTIVE_KEYS: Dict[str, frozenset] = {
 }
 
 
+def ignored_config_keys(data: Any) -> List[str]:
+    """Ключі файлу конфігурації, які ні на що не впливають (не в EFFECTIVE_KEYS).
+
+    Повертає «section.key» у порядку файлу; невідома секція-словник
+    розгортається до своїх ключів (``remask.enabled`` …).
+    """
+    out: List[str] = []
+    if not isinstance(data, dict):
+        return out
+
+    def leaves(value: Any, prefix: str) -> List[str]:
+        if isinstance(value, dict) and value:
+            res: List[str] = []
+            for k, v in value.items():
+                res += leaves(v, f"{prefix}.{k}")
+            return res
+        return [prefix]
+
+    for section, values in data.items():
+        allowed = EFFECTIVE_KEYS.get(str(section))
+        if allowed is None or not isinstance(values, dict):
+            out += leaves(values, str(section))
+            continue
+        for key, value in values.items():
+            if key not in allowed:
+                out += leaves(value, f"{section}.{key}")
+    return out
+
+
+def format_ignored_keys_warning(source: str, keys: List[str], limit: int = 10) -> str:
+    """Одне попередження на файл (а не рядок на кожен ключ)."""
+    shown = ", ".join(keys[:limit])
+    more = f" (+{len(keys) - limit} more)" if len(keys) > limit else ""
+    return (f"Warning: {source}: {len(keys)} key(s) have no effect and were ignored: "
+            f"{shown}{more}. The file may come from an older version — compare with "
+            f"config_example.yaml or regenerate it: data-mask --init-config")
+
+
 @dataclass
 class Config:
     """Top-level application configuration.
@@ -261,6 +299,11 @@ class ConfigLoader:
         self._config_path = config_path
         self._cli_args = cli_args or {}
         self.loaded_from: Optional[str] = None  # шлях YAML, якщо реально прочитано
+        # Ключі прочитаного файлу, які ні на що не впливають (для попередження
+        # в CLI): раніше вони мовчки ігнорувались, і застарілий config_example
+        # на 81 ключ «працював», хоча діяли лише 16 (v3.0.22)
+        self.ignored_keys: List[str] = []
+        self.ignored_source: Optional[str] = None
 
     @property
     def config(self) -> Config:
@@ -438,12 +481,17 @@ class ConfigLoader:
         py_data = self._load_python_config()
         if py_data:
             self._config = Config.from_dict(py_data)
+            self.ignored_keys = ignored_config_keys(py_data)
+            self.ignored_source = "config.py"
 
         # Step 3: YAML config file
         yaml_path = self._config_path or "config.yaml"
         yaml_data = self._load_yaml(yaml_path)
         if yaml_data:
             self._config = Config.from_dict(yaml_data)
+            # YAML замінює config.py цілком — і попередження теж
+            self.ignored_keys = ignored_config_keys(yaml_data)
+            self.ignored_source = self.loaded_from or yaml_path
 
         # Step 2: ENV variable overrides
         self._apply_env()

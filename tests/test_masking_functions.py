@@ -345,9 +345,17 @@ class TestMaskDate:
         # Feb 31 is invalid
         assert mask_date("31.02.2024", full_masking_dict, counters) == "31.02.2024"
 
-    def test_out_of_range_year_returns_original(self, full_masking_dict, counters):
-        assert mask_date("15.03.1990", full_masking_dict, counters) == "15.03.1990"
-        assert mask_date("15.03.2050", full_masking_dict, counters) == "15.03.2050"
+    def test_birth_dates_and_far_dates_are_masked(self, full_masking_dict, counters):
+        # До 3.0.22 роки поза 2015–2035 не маскувались — дати народження
+        # лишались відкритими. Тепер маскуються, без «підтягування» до 2015
+        for original in ("15.03.1990", "15.03.2050"):
+            result = mask_date(original, full_masking_dict, counters)
+            assert result != original
+            assert result[-4:] in {original[-4:], str(int(original[-4:]) - 1), str(int(original[-4:]) + 1)}
+
+    def test_outside_detection_range_returns_original(self, full_masking_dict, counters):
+        assert mask_date("15.03.1850", full_masking_dict, counters) == "15.03.1850"
+        assert mask_date("15.03.2150", full_masking_dict, counters) == "15.03.2150"
 
     def test_non_date_returns_original(self, full_masking_dict, counters):
         assert mask_date("not-a-date", full_masking_dict, counters) == "not-a-date"
