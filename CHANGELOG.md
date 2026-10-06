@@ -4,6 +4,47 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.23] - 2026-10
+
+### Reverted — full configuration example restored
+- 3.0.21 rewrote `config_example.yaml`, `config_example.py` and the
+  `--init-config` template down to the keys the program currently reads,
+  dropping every other option. That was not what was asked: the full example
+  is restored exactly as in 3.0.20 (all options and defaults), and so is the
+  `--init-config` template. The scenario sets in `docs/config-examples/`
+  (`share`, `strict`, `pii`) stay as additional examples.
+- The 3.0.22 warning still lists options that have no effect yet when such a
+  file is loaded; copying the full example therefore prints it.
+- Tests: the template and example tests are back to their 3.0.20 form; the
+  "effective keys only" check now covers the scenario sets only.
+
+## [3.0.22] - 2026-10
+
+### Fixed — dates of birth were never masked
+- `DD.MM.YYYY` dates were recognised only for the years 2015–2035 — the
+  range meant for *shifting* document dates was also used for *detecting*
+  them. Dates of birth (`12.05.1985 р.н.`) and any other date before 2015
+  stayed visible next to the masked name. Dates are now recognised for
+  1900–2100. Dates of birth are shifted without being pulled into the
+  2015–2035 window (a 1985 birth date stays in the 1980s).
+- The ±30-day shift could be zero, leaving ≈1 date in 61 unchanged; the shift
+  is now never zero. Masks of 2015–2035 dates are otherwise unchanged
+  (verified against 3.0.21 on 383 dates: only the 5 former zero-shift ones
+  differ), so existing mappings and documents stay consistent.
+- Dates that belong to a legal act reference are left as they are — a date
+  right after `Закону …`, `Кодексу …`, `Конституції …`, `Указу Президента …`
+  or `постанови Кабінету Міністрів / Верховної Ради …` followed by `від`
+  (`Закону України від 06.12.1991`). They are not personal data, and
+  shifting them broke the references now that pre-2015 dates are detected.
+
+### Added — warning about configuration keys that do nothing
+- Keys in `config.yaml` / `config.py` that the program does not read used to
+  be ignored silently, so an outdated file (the old 81-key example) seemed to
+  work while only 16 keys applied. Both `data-mask` and `data-unmask` now
+  print one warning per file to stderr: how many keys were ignored, the first
+  ten, and how to get a current template. Loading still succeeds.
+- Tests: `tests/test_dates_and_config_warnings.py`.
+
 ## [3.0.21] - 2026-10
 
 ### Changed — configuration examples

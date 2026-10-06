@@ -62,7 +62,7 @@ Since v3.0 all code lives in a single top-level package **`datamasking`**
 | `password_generator.py` | Password generator (ASCII, Cyrillic, custom symbols) |
 
 ### Supporting Files
-- **`config_example.yaml`** / **`config_example.py`** — every configuration key the program reads, with defaults (the `.py` variant works without pyyaml)
+- **`config_example.yaml`** / **`config_example.py`** — full configuration example with all options and their defaults
 - **`docs/config-examples/`** — ready-made sets for typical scenarios: `share`, `strict`, `pii`
 
 ---

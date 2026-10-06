@@ -151,7 +151,13 @@ def mask_brigade_number(original: str, masking_dict: Dict, instance_counters: Di
     return add_to_mapping(masking_dict, instance_counters, "brigade_number", original, masked)
 
 def is_valid_date(day: int, month: int, year: int) -> bool:
-    if year < 2015 or year > 2035: return False
+    """Чи є ДД.ММ.РРРР датою, яку треба маскувати.
+
+    До 3.0.22 тут стояли межі ЗСУВУ (2015–2035), і все поза ними не вважалось
+    датою: дати народження («12.05.1985 р.н.») лишались відкритими поруч із
+    замаскованим ПІБ. Розпізнаються роки DATE_DETECT_YEAR_MIN..MAX.
+    """
+    if year < _cfg.DATE_DETECT_YEAR_MIN or year > _cfg.DATE_DETECT_YEAR_MAX: return False
     try:
         datetime(year, month, day)
         return True
@@ -161,7 +167,9 @@ def mask_date(original: str, masking_dict: Dict, instance_counters: Dict) -> str
     """
     Маскує дату у форматі DD.MM.YYYY.
 
-    Логіка: Зміщує дату на +-30 днів, обмежує роки 2015-2035.
+    Логіка: зсув на ±1..30 днів (ніколи 0 — інакше дата лишалась би
+    відкритою). Дати документів (2015–2035) після зсуву лишаються в цих
+    межах, як і раніше; давніші (дати народження) просто зсуваються.
     """
     if original in masking_dict["mappings"]["date"]:
         masked = masking_dict["mappings"]["date"][original]["masked_as"]
@@ -177,13 +185,18 @@ def mask_date(original: str, masking_dict: Dict, instance_counters: Dict) -> str
             date_obj = datetime(year, month, day)
             seed = get_deterministic_seed(original)
             random.seed(seed)
-            new_date = date_obj + timedelta(days=random.randint(-30, 30))
+            shift = random.randint(-30, 30) or random.choice((-1, 1))
+            new_date = date_obj + timedelta(days=shift)
 
-            # Обмежуємо діапазон років 2015-2035
-            if new_date.year < 2015:
-                new_date = datetime(2015, 1, 1) + timedelta(days=random.randint(0, 365))
-            elif new_date.year > 2035:
-                new_date = datetime(2035, 12, 31) - timedelta(days=random.randint(0, 365))
+            # Дати документів лишаються в межах 2015–2035 (як до 3.0.22 —
+            # маски наявних дат не змінюються); дату народження 1985 року
+            # «підтягувати» до 2015-го не можна — це вже не дата народження
+            lo, hi = _cfg.DATE_SHIFT_YEAR_MIN, _cfg.DATE_SHIFT_YEAR_MAX
+            if lo <= year <= hi:
+                if new_date.year < lo:
+                    new_date = datetime(lo, 1, 1) + timedelta(days=random.randint(0, 365))
+                elif new_date.year > hi:
+                    new_date = datetime(hi, 12, 31) - timedelta(days=random.randint(0, 365))
 
             masked = new_date.strftime("%d.%m.%Y")
         except (ValueError, OverflowError, TypeError, AttributeError) as e:

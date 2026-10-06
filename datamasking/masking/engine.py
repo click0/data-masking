@@ -352,7 +352,12 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
             if not skip: _add_mask({'type': 'brigade_number', 'full_text': match.group(0), 'number_part': match.group(1), 'start': match.start(), 'end': match.end()})
 
     if _cfg.MASK_DATES:
+        def _legal_act_date(start: int) -> bool:
+            return _cfg.LEGAL_ACT_DATE_PREFIX.search(text[max(0, start - 160):start]) is not None
+
         for match in _cfg.COMPILED_PATTERNS["date"].finditer(text):
+            if _legal_act_date(match.start()):
+                continue
             if is_valid_date(int(match.group(1)), int(match.group(2)), int(match.group(3))):
                 skip = _inside_skip(match.start(), match.end()) or _overlaps_mask(match.start(), match.end())
                 if not skip: _add_mask({'type': 'date', 'full_text': match.group(0), 'number_part': match.group(0), 'start': match.start(), 'end': match.end()})
@@ -361,6 +366,8 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
         if "date_text" not in masking_dict["mappings"]:
             masking_dict["mappings"]["date_text"] = {}
         for match in _cfg.DATE_TEXT_PATTERN.finditer(text):
+            if _legal_act_date(match.start()):
+                continue
             skip = _inside_skip(match.start(), match.end()) or _overlaps_mask(match.start(), match.end())
             if not skip:
                 _add_mask({'type': 'date_text', 'full_text': match.group(0), 'number_part': match.group(0), 'start': match.start(), 'end': match.end()})
