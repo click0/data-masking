@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.21] - 2026-10
+
+### Changed — configuration examples
+- `config_example.yaml` and `config_example.py` were still the v2.6.0
+  template: 57 of their keys were silently ignored by the program
+  (`strict_mode`, `backup_enabled`, `router_rules`, `scrypt_n`,
+  `enable_date_text`, `enable_document_numbers`, …) and they described the
+  mapping encryption as AES-128-CBC/Fernet with scrypt, while it is
+  AES-256-GCM with PBKDF2. Both now list exactly the keys the program reads,
+  with their defaults, the matching environment variables and correct
+  command examples. `config_example.py` is a plain `CONFIG` dict that works
+  when copied as `./config.py`.
+- New ready-made sets in `docs/config-examples/`:
+  - `share.yaml` — people, IDs and military details masked; dates and
+    order / BR numbers kept (chronology and document references), mapping
+    encrypted;
+  - `strict.yaml` — everything masked, fully synthetic surnames
+    (`surname_prefix_length: 0`), encrypted mapping only;
+  - `pii.yaml` — personal data and IDs only; ranks, units, dates and
+    document numbers kept (internal use).
+- `--init-config` writes the same set of keys; keys that are never read
+  (`password_generation`, `router_rules`, `validation.strict_mode`,
+  `allowed_encodings`, `logging.format`, `security.password_env_var`) are no
+  longer offered. Old files that contain them still load.
+- README: the configuration sections show YAML instead of editing
+  variables in `data_masking.py`, and `--config` instead of the
+  non-existent `-c` for masking.
+- Tests: `tests/test_config_examples.py` checks every example and the
+  template against the list of keys the program reads
+  (`datamasking.extras.config.EFFECTIVE_KEYS`), and masks a sample with
+  each scenario set to confirm what stays open.
+
 ## [3.0.20] - 2026-10
 
 ### Fixed — CI
