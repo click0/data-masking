@@ -6,10 +6,6 @@ Configuration example for data_masking.py v2.6.0
 Demonstrates all available configuration options using dataclasses.
 No external dependencies required — uses only Python standard library.
 
-Options marked [не реалізовано] are planned but have no effect yet: the
-program accepts them (without a warning) and ignores them. List and order of
-implementation: docs/TODO-config-options.md.
-
 Author: Vladyslav V. Prodan
 Contact: github.com/click0
 Phone: +38(099)6053340
@@ -87,9 +83,10 @@ class MaskingRulesConfig:
     enable_document_numbers: bool = True
     preserve_case: bool = True
     preserve_gender: bool = True
-    consistent_mapping: bool = True  # [не реалізовано]
-    instance_tracking: bool = True  # [не реалізовано]
-    context_aware: bool = True  # [не реалізовано]
+    # Незмінна поведінка програми: приймається лише True
+    consistent_mapping: bool = True
+    instance_tracking: bool = True
+    context_aware: bool = True
     rank_line_break_fix: bool = True
     custom_patterns: List[str] = field(default_factory=list)
 
@@ -101,7 +98,7 @@ class ValidationConfig:
     validate_date_range: bool = True
     min_date_year: int = 1900
     max_date_year: int = 2100
-    validate_rank_dictionary: bool = True  # [не реалізовано]
+    validate_rank_dictionary: bool = True  # лише True
     strict_pib_format: bool = False
     allow_abbreviated_patronymic: bool = True
     max_name_length: int = 50

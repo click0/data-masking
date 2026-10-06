@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.30] - 2026-10
+
+### Added — level 4 of the configuration options: all options now implemented
+The last six options from the full example describe behaviour that cannot be
+switched off without breaking unmasking. They are no longer ignored: each one
+accepts only `true` (the default), and any other value is a configuration
+error (exit code 1, nothing written) that explains why it cannot be turned
+off and what to use instead.
+
+- `masking_rules.consistent_mapping` — the same value always gets the same
+  mask; otherwise unmasking could not restore the original.
+- `masking_rules.instance_tracking` — unmasking restores every occurrence by
+  its number in the mapping.
+- `masking_rules.context_aware` — names and ranks are recognised only by
+  context; to stop masking them use `enable_names` / `enable_ranks`.
+- `validation.validate_rank_dictionary` — ranks are recognised only by the
+  built-in dictionary; to stop masking them use `enable_ranks: false`.
+- `remask.save_chain` — in `--re-mask` mode the chain file is the mapping.
+- `remask.auto_numbering` — re-mask passes are always numbered;
+  `--to-version` relies on it.
+
+With this, no option in `config_example.yaml`, `config_example.py` or the
+`--init-config` template is ignored any more: the `[не реалізовано]` marks and
+the header notes about them are removed. Configurations that already set
+these keys to `true` behave exactly as before.
+
 ## [3.0.29] - 2026-10
 
 ### Added — level 3 of the planned configuration options
