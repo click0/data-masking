@@ -62,7 +62,8 @@ Since v3.0 all code lives in a single top-level package **`datamasking`**
 | `password_generator.py` | Password generator (ASCII, Cyrillic, custom symbols) |
 
 ### Supporting Files
-- **`config_example.py`** — configuration example (dataclasses, no external dependencies)
+- **`config_example.yaml`** / **`config_example.py`** — every configuration key the program reads, with defaults (the `.py` variant works without pyyaml)
+- **`docs/config-examples/`** — ready-made sets for typical scenarios: `share`, `strict`, `pii`
 
 ---
 
@@ -237,14 +238,18 @@ python unmask_data.py masked.txt --map mapping.enc --password mypassword
 
 ### Configuration (`datamasking/extras/config.py`)
 
-Priority: CLI > ENV > config.yaml > Default
+Priority: CLI > ENV > config.yaml > Default. Keys left out of the file keep their defaults.
 
 ```bash
-# Використання YAML конфігурації
-python data_masking.py -i input.txt -c config.yaml
-
-# Генерація прикладу конфігурації — див. config_example.py
+data-mask --init-config                                  # write config.yaml with every key
+data-mask -i input.txt --config config.yaml              # ./config.yaml is also picked up automatically
+data-mask -i input.txt --config docs/config-examples/share.yaml
+data-unmask output.txt -c config.yaml
 ```
+
+All keys with explanations: [`config_example.yaml`](../config_example.yaml).
+Ready-made sets: [`docs/config-examples/`](config-examples/README.md)
+(`share` — keep dates and document numbers, `strict` — mask everything, fully synthetic surnames, `pii` — personal data only).
 
 ### Selective Masking (`datamasking/extras/selective.py`)
 
@@ -307,23 +312,28 @@ setup_logging(level="DEBUG", json_output=True)
 
 ## ⚙️ Configuration
 
-In `data_masking.py` you can enable/disable categories:
+Categories are switched in the YAML configuration (or for one run with `--only` / `--exclude`); no code changes are needed:
 
-```python
-# Алгоритм хешування для детермінованої генерації
-HASH_ALGORITHM = 'blake2b'  # blake2b (рекомендовано), md5 (швидкий), sha256 (популярний)
-
-MASK_IPN = True              # ІПН (10 цифр)
-MASK_PASSPORT = True         # Паспорти (АА123456) та ID-паспорти (9 цифр)
-MASK_MILITARY_ID = True      # Військові квитки
-MASK_NAMES = True            # Імена та прізвища
-MASK_RANKS = True            # Звання
-MASK_BRIGADES = True         # Бригади
-MASK_MILITARY_UNITS = True   # Військові частини
-MASK_ORDER_NUMBERS = True    # Номери наказів
-MASK_BR_NUMBERS = True       # БР номери
-MASK_DATES = True            # Дати
+```yaml
+masking_rules:
+  enable_names: true        # ПІБ (прізвища, імена, по батькові, ініціали)
+  enable_ipn: true          # ІПН (10 цифр)
+  enable_passport: true     # паспорти та ID-картки
+  enable_military_id: true  # військові квитки
+  enable_ranks: true        # звання
+  enable_units: true        # військові частини
+  enable_brigades: true     # бригади
+  enable_orders: true       # номери наказів
+  enable_br_numbers: true   # БР номери
+  enable_dates: true        # дати
+  surname_prefix_length: 3  # літер оригінального прізвища в масці (0 = жодної)
+system:
+  hash_algorithm: "blake2b"
+security:
+  encrypt_output: false     # true = те саме, що --encrypt
 ```
+
+See [`config_example.yaml`](../config_example.yaml) for every key and [`docs/config-examples/`](config-examples/README.md) for ready-made scenarios.
 
 **Hash algorithm comparison:**
 

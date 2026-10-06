@@ -1,0 +1,46 @@
+# ==========================================================================
+# strict — передача назовні, зокрема в ШІ-сервіси та сторонні системи
+#
+# Маскується все, що вміє програма. Маски прізвищ повністю синтетичні
+# (жодної літери оригіналу), mapping — лише зашифрований.
+#
+#   export DATA_MASKING_PASSWORD='…'      # задайте пароль заздалегідь
+#   data-mask -i input.txt -o output.txt --config docs/config-examples/strict.yaml
+#
+# Не комбінуйте з --only / --exclude: вони на час запуску замінюють
+# прапорці нижче і можуть залишити дані відкритими.
+#
+# Тут лише відмінності від значень за замовчуванням; повний перелік
+# ключів з поясненнями — config_example.yaml.
+# ==========================================================================
+
+masking_rules:
+  # Жодної літери оригінального прізвища в масці
+  surname_prefix_length: 0
+
+  # Усе увімкнено (так і за замовчуванням — тут явно, щоб чужий
+  # config.yaml чи змінна оточення не вимкнули щось непомітно)
+  enable_names: true
+  enable_ipn: true
+  enable_passport: true
+  enable_military_id: true
+  enable_ranks: true
+  enable_units: true
+  enable_brigades: true
+  enable_orders: true
+  enable_br_numbers: true
+  enable_dates: true
+
+system:
+  # Налагоджувальний вивід може показати фрагменти оригіналу
+  debug_mode: false
+
+security:
+  # Лише .enc; відкритий mapping не створюється
+  encrypt_output: true
+  # Довший згенерований пароль (якщо $DATA_MASKING_PASSWORD не задано)
+  password_length: 32
+
+logging:
+  # Без зайвих подробиць у консолі й логах
+  level: "WARNING"

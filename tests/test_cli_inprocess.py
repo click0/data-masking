@@ -354,7 +354,7 @@ class TestConfigAndEnv:
         from datamasking.extras.config import ConfigLoader, PasswordGenerationConfig
         assert mask_cli.main(["--init-config"]) == 0
         cfg = ConfigLoader("config.yaml").load()
-        # password_generation — секція (dataclass), а не bool
+        # Схема сумісна: секція password_generation лишається dataclass-ом
         assert isinstance(cfg.security.password_generation, PasswordGenerationConfig)
         assert "Fernet" not in (tmp_path / "config.yaml").read_text(encoding="utf-8")
 

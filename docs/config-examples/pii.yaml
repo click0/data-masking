@@ -1,0 +1,33 @@
+# ==========================================================================
+# pii — лише персональні дані (кадрова робота всередині підрозділу)
+#
+# Маскуються ПІБ і особисті ідентифікатори (ІПН, паспорт, військовий
+# квиток). Звання, військові частини, бригади, дати й номери документів
+# лишаються відкритими — структура й хронологія потрібні для аналізу.
+#
+# УВАГА: номери в/ч і бригад відкриті — використовуйте лише всередині.
+# Для передачі назовні — share.yaml або strict.yaml.
+#
+#   data-mask -i input.txt -o output.txt --config docs/config-examples/pii.yaml
+#
+# Тут лише відмінності від значень за замовчуванням; повний перелік
+# ключів з поясненнями — config_example.yaml.
+# ==========================================================================
+
+masking_rules:
+  # Маскується
+  enable_names: true
+  enable_ipn: true
+  enable_passport: true
+  enable_military_id: true
+
+  # Відкрито
+  enable_ranks: false
+  enable_units: false
+  enable_brigades: false
+  enable_dates: false
+  enable_orders: false
+  enable_br_numbers: false
+
+security:
+  encrypt_output: true

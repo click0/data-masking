@@ -515,9 +515,10 @@ class TestInitConfig:
         assert "security:" in content
         assert "masking_rules:" in content
         assert "logging:" in content
-        assert "router_rules:" in content
-        assert "password_generation:" in content
         assert "validation:" in content
+        # Ключі, які ні на що не впливають, шаблон не пропонує (v3.0.21)
+        assert "router_rules:" not in content
+        assert "password_generation:" not in content
 
         # Key fields should be present
         assert "hash_algorithm" in content
@@ -565,14 +566,14 @@ class TestInitConfig:
         assert cfg.logging.level == "INFO"
 
     def test_generate_default_config_password_generation(self, temp_dir):
-        """Generated config should include password generation settings."""
+        """Generated config offers only the password setting that is used
+        (length of a generated password); the old password_generation
+        section was never read."""
         output = temp_dir / "init_config.yaml"
         ConfigLoader.generate_default_config(str(output))
 
         content = output.read_text(encoding="utf-8")
 
-        assert "password_generation:" in content
-        assert "enabled:" in content
-        assert "length:" in content
-        assert "use_special_chars:" in content
-        assert "env_var:" in content
+        assert "password_length:" in content
+        assert "password_generation:" not in content
+        assert "use_special_chars:" not in content
