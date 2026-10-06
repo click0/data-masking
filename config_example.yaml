@@ -57,7 +57,7 @@ system:
 # Налаштування безпеки та шифрування
 # --------------------------------------------------------------------------
 security:
-  # Шифрувати файл маппінгу (AES-128-CBC через Fernet)
+  # Шифрувати файл маппінгу (AES-256-GCM)
   encrypt_output: false
 
   # Змінна оточення для зчитування пароля (альтернатива --password)
@@ -83,7 +83,7 @@ security:
     min_special: 2
 
   # Алгоритм шифрування
-  encryption_algorithm: "AES-128-CBC"
+  encryption_algorithm: "AES-256-GCM"
 
   # Деривація ключа
   key_derivation: "scrypt"
