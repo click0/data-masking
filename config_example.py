@@ -53,7 +53,7 @@ class SecurityConfig:
         "min_digits": 2,
         "min_special": 2,
     })
-    encryption_algorithm: str = "AES-128-CBC"
+    encryption_algorithm: str = "AES-256-GCM"
     key_derivation: str = "scrypt"
     scrypt_n: int = 2**14
     scrypt_r: int = 8
