@@ -115,6 +115,7 @@ def is_pib_anchor(word: str) -> bool:
     if re.search(r'[\d=]', word): return False
     word_lower = word.lower()
     if word_lower in _cfg.EXCLUDE_WORDS_LOWER: return False
+    if word_lower in _cfg.ABBREVIATION_WHITELIST: return False
     if word_lower in _cfg.RANKS_LIST_LOWER: return False
     return word[0].isupper()
 

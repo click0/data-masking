@@ -155,7 +155,7 @@ class TestLoader:
 
 @needs_yaml
 class TestCli:
-    TEXT = "Доповідаю: ТРО Петренко Іван Іванович прибув.\n"
+    TEXT = "Доповідаю: ДШВ Петренко Іван Іванович прибув.\n"
 
     def _mask(self, tmp_path, capsys, *extra):
         (tmp_path / "in.txt").write_text(self.TEXT, encoding="utf-8")
@@ -166,12 +166,12 @@ class TestCli:
 
     def test_mask_uses_local_exclusions(self, tmp_path, monkeypatch, capsys):
         monkeypatch.chdir(tmp_path)
-        _write(tmp_path / "config_local.yaml", "exclusions:\n  abbreviations: [ТРО]\n")
+        _write(tmp_path / "config_local.yaml", "exclusions:\n  abbreviations: [ДШВ]\n")
         rc, out, stdout, _ = self._mask(tmp_path, capsys)
-        assert rc == 0 and "ТРО" in out and "Петренко" not in out
+        assert rc == 0 and "ДШВ" in out and "Петренко" not in out
         assert "Loaded local config from config_local.yaml" in stdout
         rc, out, stdout, _ = self._mask(tmp_path, capsys, "--no-local-config")
-        assert rc == 0 and "ТРО" not in out and "Loaded local config" not in stdout
+        assert rc == 0 and "ДШВ" not in out and "Loaded local config" not in stdout
 
     def test_mask_missing_explicit_local(self, tmp_path, monkeypatch, capsys):
         monkeypatch.chdir(tmp_path)

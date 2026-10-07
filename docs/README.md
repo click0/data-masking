@@ -144,7 +144,7 @@ python diagnose_mapping.py --verify input.txt recovered.txt  # verify recovery
 - **Dates** — DD.MM.YYYY (±30 days)
 
 ### Exceptions
-- **Abbreviations** (never masked as a surname) — ЗСУ, МОУ, ВСУ, ДПСУ, НГУ, ДСНС, СБУ, ГУР, ТЦК, СП, КМУ, ОТЦКСП
+- **Abbreviations** (never masked as a surname) — ЗСУ, МОУ, ВСУ, ДПСУ, НГУ, ДСНС, СБУ, ГУР, ТЦК, СП, КМУ, ОТЦКСП, ТВО, ТРО
 - **Words that are never part of a name** — legal and service terms (Згідно, Відповідно, Закону, Статуту …), positions (Командир, Начальник …), labels (ПІБ, ІПН, РНОКПП …), "Кабінет Міністрів" in every case
 - **Dates of legal acts** — a date after "Закону / Кодексу / Конституції / Указу Президента / постанови Кабінету Міністрів, Верховної Ради, КМУ … від" is not shifted
 
