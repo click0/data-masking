@@ -18,7 +18,7 @@ from datamasking.masking.helpers import (
 )
 from datamasking.masking.language import (
     detect_gender_by_patronymic, detect_name_case_and_gender,
-    generate_easy_name, apply_case_to_name,
+    generate_easy_name, apply_case_to_name, same_name_forms,
 )
 from datamasking.masking.surname import synthesize_surname, known_surname_forms
 
@@ -164,6 +164,12 @@ def mask_patronymic(patronymic: str, gender: str, masking_dict: Dict, instance_c
     if provider is not _cfg.fake_uk:
         provider.seed_instance(seed)
     fake_patronymic = provider.middle_name_male() if gender == 'male' else provider.middle_name_female()
+    # Не те саме по батькові в іншому відмінку («Петровича» → «Петрович»)
+    for attempt in range(10):
+        if not same_name_forms(fake_patronymic, patronymic_lower):
+            break
+        provider.seed_instance(seed + attempt + 1)
+        fake_patronymic = provider.middle_name_male() if gender == 'male' else provider.middle_name_female()
 
     # Застосовуємо регістр
     if is_upper: fake_patronymic = fake_patronymic.upper()
@@ -212,9 +218,10 @@ def mask_name(original: str, masking_dict: Dict, instance_counters: Dict,
                                       exclude=nominative_guess)
         masked = apply_case_to_name(new_name, case, gender)
 
-        # Страховка: маска ніколи не дорівнює оригіналу (у будь-якому відмінку)
+        # Страховка: маска ніколи не є тим самим ім'ям (у будь-якому відмінку)
         attempts = 0
-        while masked.lower() == original.lower() and attempts < 10:
+        while (same_name_forms(masked, original) or same_name_forms(new_name, original)) \
+                and attempts < 10:
             seed = get_deterministic_seed(original + str(attempts))
             new_name = generate_easy_name(gender, first_letter, seed, max_attempts=50,
                                           exclude=new_name.lower())

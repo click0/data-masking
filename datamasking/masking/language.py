@@ -34,6 +34,10 @@ def looks_like_name(word: str) -> bool:
     if clean_word.lower().endswith(('ємо', 'имо', 'емо', 'єте', 'ите', 'ете')):
         return False
     if clean_word.lower() in _cfg.EXCLUDE_WORDS_LOWER: return False
+    # Абревіатури (ЗСУ, ТВО, ТРО …) — не частина ПІБ: інакше «ТРО Петренко
+    # Іван Іванович» розбиралось як прізвище «ТРО» + ім'я «Петренко» + по
+    # батькові «Іван», і справжнє по батькові лишалось відкритим (v3.1.6)
+    if clean_word.lower() in _cfg.ABBREVIATION_WHITELIST: return False
     if re.search(r'\d', clean_word): return False
     if clean_word.lower() in _cfg.RANKS_LIST_LOWER: return False
     if clean_word.lower() in ['по', 'про', 'від', 'до', 'за', 'на', 'у', 'в', 'з', 'із']: return False
@@ -143,6 +147,26 @@ def apply_case_to_name(name: str, case: str, gender: str) -> str:
 
     return name
 
+def same_name_forms(candidate: str, original: str) -> bool:
+    """Чи може *candidate* бути тим самим ім'ям, що й *original*, в іншому
+    відмінку: «Олег» / «Олега», «Петро» / «Петра», «Юрій» / «Юрія»,
+    «Марія» / «Марії». Спільний початок ≥ 3 літер і різниця — лише
+    закінчення (≤ 1 літери від коротшого слова). До 3.1.6 порівнювалась
+    лише точна форма, і «Олега» маскувалось як «Олег» — справжнє ім'я
+    (7 із 15 поширених імен у родовому відмінку)."""
+    a, b = (candidate or "").lower(), (original or "").lower()
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    common = 0
+    for x, y in zip(a, b):
+        if x != y:
+            break
+        common += 1
+    return common >= 3 and common >= min(len(a), len(b)) - 1
+
+
 def generate_easy_name(gender: str, first_letter: str, seed: int, max_attempts: int = 50,
                        exclude: Optional[str] = None) -> str:
     """Синтетичне ім'я на ту саму літеру, що легко відмінюється.
@@ -157,7 +181,8 @@ def generate_easy_name(gender: str, first_letter: str, seed: int, max_attempts: 
     _cfg.fake_uk.seed_instance(seed)
     whitelist = _cfg.GOOD_UKRAINIAN_NAMES_MALE if gender == 'male' else _cfg.GOOD_UKRAINIAN_NAMES_FEMALE
     exclude = (exclude or "").lower()
-    available = [n for n in whitelist if n[0].lower() == first_letter.lower() and n != exclude]
+    available = [n for n in whitelist if n[0].lower() == first_letter.lower()
+                 and not same_name_forms(n, exclude)]
     if available:
         name = random.choice(available).capitalize()
         return name
@@ -168,9 +193,9 @@ def generate_easy_name(gender: str, first_letter: str, seed: int, max_attempts: 
         else: name = _cfg.fake_uk.first_name_male()
         last_name = name
         if name[0].lower() != first_letter: continue
-        if name.lower() == exclude: continue
+        if same_name_forms(name, exclude): continue
         if is_easy_to_decline(name, gender): return name
 
-    fallback = [n for n in whitelist if n != exclude]
+    fallback = [n for n in whitelist if not same_name_forms(n, exclude)]
     if fallback: return random.choice(fallback).capitalize()
     return last_name if last_name else (_cfg.fake_uk.first_name_female() if gender == 'female' else _cfg.fake_uk.first_name_male())

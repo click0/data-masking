@@ -98,11 +98,12 @@ class TestBuiltin:
 # ---------------------------------------------------------------------------
 class TestConfig:
     def test_abbreviations(self, run):
-        text = "Доповідаю: ТРО Петренко Іван Іванович прибув.\n"
+        text = "Доповідаю: ДШВ Петренко Іван Іванович прибув.\n"
         _, out, _, _ = run(text)
-        assert "ТРО" not in out
-        _, out, _, _ = run(text, {"abbreviations": ["ТРО"]})
-        assert "ТРО" in out and "Петренко" not in out
+        assert "ДШВ" not in out
+        _, out, _, _ = run(text, {"abbreviations": ["ДШВ"]})
+        assert "ДШВ" in out and "Петренко" not in out
+        assert "Іван" not in out  # ні ім'я, ні по батькові не лишаються відкритими
 
     def test_words(self, run):
         text = "Рада Петренко Іван Іванович\n"

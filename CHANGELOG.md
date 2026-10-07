@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.6] - 2026-10
+
+### Added
+- ТВО (тимчасово виконуючий обов'язки) and ТРО (територіальна оборона) are
+  added to the built-in abbreviations, which are never masked as a surname.
+  They are in `config.yaml` (`dictionaries.abbreviations`), the examples
+  and the README.
+
+### Fixed — names leaking next to abbreviations and in oblique cases
+- An abbreviation in front of a name was parsed as the surname, which
+  shifted the whole name. In "ТРО Петренко Іван Іванович", "Петренко" was
+  masked as a first name, "Іван" as a patronymic, and the real patronymic
+  "Іванович" **stayed in the clear**. Adding the abbreviation to
+  `exclusions.abbreviations` did not help. Abbreviations from the list (ЗСУ,
+  ТВО, ТРО …) are now never part of a name, so the whole name is masked and
+  the abbreviation is kept.
+- A first name in an oblique case could be masked as the same name in
+  another case, which revealed it: "Олега" → "Олег", "Петра" → "Петро",
+  "Романа" → "Роман" (7 of 15 common names in the genitive). Only the exact
+  form used to be excluded. Masks of first names and patronymics are now
+  never a case form of the original. This changes the masks of the affected
+  names; existing mappings still unmask as before.
+- Tests: `tests/test_abbreviations_and_name_forms.py`.
+
 ## [3.1.5] - 2026-10
 
 ### Changed — surname masks keep at least the first 2 letters

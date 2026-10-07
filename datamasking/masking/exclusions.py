@@ -36,6 +36,8 @@ from typing import Any, FrozenSet, Iterable, List, Pattern, Tuple
 
 BUILTIN_ABBREVIATIONS: Tuple[str, ...] = (
     "зсу", "моу", "всу", "дпсу", "нгу", "дснс", "сбу", "гур", "тцк", "сп", "кму", "отцксп",
+    "тво",  # тимчасово виконуючий обов'язки
+    "тро",  # територіальна оборона
 )
 
 BUILTIN_WORDS: Tuple[str, ...] = (
