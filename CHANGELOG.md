@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.2] - 2026-10
+
+### Fixed — unmasking statistics and strict mode
+- When ranks were not masked (`--exclude rank`, `--only …`,
+  `enable_ranks: false`), every rank in the document was counted as
+  "пропущено" (skipped) by `data-unmask`, although the text was restored
+  exactly. With `strict_mode` this made `data-unmask` exit with code 1.
+  "Skipped" now counts only masks from the mapping that could not be matched
+  to an original; ranks that were never masked are not counted.
+- Tests: `tests/test_unmask_stats.py`.
+
 ## [3.1.1] - 2026-10
 
 ### Added — private configuration file `config_local.yaml`
