@@ -62,6 +62,8 @@ Since v3.0 all code lives in a single top-level package **`datamasking`**
 | `password_generator.py` | Password generator (ASCII, Cyrillic, custom symbols) |
 
 ### Supporting Files
+- **`config.yaml`** — the shared configuration in the repository root, read automatically: every key with its default and the full exclusion lists (`dictionaries`)
+- **`config_local.example.yaml`** — template for your private `config_local.yaml` (not committed)
 - **`config_example.yaml`** / **`config_example.py`** — full configuration example with all options and their defaults
 - **`docs/config-examples/`** — ready-made sets for typical scenarios: `share`, `strict`, `pii`
 
@@ -146,7 +148,7 @@ python diagnose_mapping.py --verify input.txt recovered.txt  # verify recovery
 - **Words that are never part of a name** — legal and service terms (Згідно, Відповідно, Закону, Статуту …), positions (Командир, Начальник …), labels (ПІБ, ІПН, РНОКПП …), "Кабінет Міністрів" in every case
 - **Dates of legal acts** — a date after "Закону / Кодексу / Конституції / Указу Президента / постанови Кабінету Міністрів, Верховної Ради, КМУ … від" is not shifted
 
-The built-in lists live in `datamasking/masking/exclusions.py`; the `exclusions` section of the configuration adds to them (abbreviations, words, phrases, legal acts, words that are always masked) or removes entries. `data-mask --list-exclusions` prints what is in effect.
+The full lists are in [`config.yaml`](../config.yaml) (section `dictionaries`, editable; the program keeps a built-in copy for when the key is missing); the `exclusions` section of the configuration adds to them (abbreviations, words, phrases, legal acts, words that are always masked) or removes entries. `data-mask --list-exclusions` prints what is in effect.
 
 ---
 
@@ -244,7 +246,9 @@ python unmask_data.py masked.txt --map mapping.enc --password mypassword
 
 Priority: CLI > ENV > config_local.yaml > config.yaml > config.py > Default. Keys left out of the file keep their defaults.
 
-**Private overrides — `config_local.yaml`.** Keep shared settings in `config.yaml` and private ones (call signs, local abbreviations, your own paths) in `config_local.yaml`. It is looked up in the user config directory (`~/.config/data-masking/`, `$XDG_CONFIG_HOME/data-masking/`, `%APPDATA%\data-masking\` on Windows) and next to `config.yaml` (or in the current directory); the one next to `config.yaml` is applied last. Every key set to a non-null value replaces the shared value (sections merge key by key, lists are replaced as a whole); `null` keeps the shared value. The file is in `.gitignore`; keep it `chmod 600` (the program warns otherwise). `--config-local FILE` uses a specific file instead, `--no-local-config` ignores them; both work for `data-mask` and `data-unmask`.
+**Shared configuration — [`config.yaml`](../config.yaml)** in the repository root (and next to the `.exe` in the Windows release) is read automatically when the program runs from that directory. It lists every key with its default and the full exclusion lists (`dictionaries`), so nothing has to be looked up in the code.
+
+**Private overrides — `config_local.yaml`.** Keep shared settings in `config.yaml` and private ones (call signs, local abbreviations, your own paths) in `config_local.yaml`. It is looked up in the user config directory (`~/.config/data-masking/`, `$XDG_CONFIG_HOME/data-masking/`, `%APPDATA%\data-masking\` on Windows) and next to `config.yaml` (or in the current directory); the one next to `config.yaml` is applied last. Every key set to a non-null value replaces the shared value (sections merge key by key, lists are replaced as a whole); `null` keeps the shared value. Start from [`config_local.example.yaml`](../config_local.example.yaml): `cp config_local.example.yaml config_local.yaml`. The file is in `.gitignore`; keep it `chmod 600` (the program warns otherwise). `--config-local FILE` uses a specific file instead, `--no-local-config` ignores them; both work for `data-mask` and `data-unmask`.
 
 ```bash
 data-mask --init-config                                  # write config.yaml with every key

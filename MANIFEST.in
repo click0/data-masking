@@ -5,6 +5,7 @@ include LICENSE CHANGELOG.md README.md pyproject.toml pytest.ini mypy.ini
 include requirements.txt requirements-dev.txt
 include data_masking.py unmask_data.py diagnose_mapping.py rank_data.py __main__.py
 include pyinstaller_utf8_hook.py config_example.py config_example.yaml
+include config.yaml config_local.example.yaml
 include input_example.txt input_example.2.txt
 recursive-include docs *.md *.yaml
 recursive-include masking *.py

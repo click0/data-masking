@@ -4,6 +4,46 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.3] - 2026-10
+
+### Added — `config.yaml` in the repository root
+- `config.yaml` is now part of the repository: the shared configuration,
+  read automatically when the program runs from that directory. It lists
+  every key with its default (the same data as `config_example.yaml`), so
+  running with it masks exactly like running without a configuration.
+- New section `dictionaries` holds the full exclusion lists that used to be
+  visible only in the code, and they can be edited there:
+  - `abbreviations` — never masked as a surname;
+  - `non_name_words` — never part of a name, including every case of
+    "Кабінет Міністрів";
+  - `legal_acts` — a date after "<act> … від" is kept.
+
+  A missing key or `null` uses the copy built into the program, which is
+  used without PyYAML or with another configuration file. A test keeps that
+  copy identical to `config.yaml`. The `exclusions` section still adds to
+  these lists.
+- `config_local.example.yaml` — template for the private
+  `config_local.yaml`: `cp config_local.example.yaml config_local.yaml`.
+  Only `config_local.yaml` is in `.gitignore` now.
+- `--init-config`, `config_example.yaml` and `config_example.py` include the
+  `dictionaries` section.
+- Both files are included in the source archives and in the Windows release
+  zip, next to the `.exe` files.
+- Tests: `tests/test_root_config.py`. `conftest.py` now fails a test that
+  changes the root `config.yaml` (and restores it) or leaves a
+  `config_local.yaml` behind.
+
+## [3.1.2] - 2026-10
+
+### Fixed — unmasking statistics and strict mode
+- When ranks were not masked (`--exclude rank`, `--only …`,
+  `enable_ranks: false`), every rank in the document was counted as
+  "пропущено" (skipped) by `data-unmask`, although the text was restored
+  exactly. With `strict_mode` this made `data-unmask` exit with code 1.
+  "Skipped" now counts only masks from the mapping that could not be matched
+  to an original; ranks that were never masked are not counted.
+- Tests: `tests/test_unmask_stats.py`.
+
 ## [3.1.1] - 2026-10
 
 ### Added — private configuration file `config_local.yaml`

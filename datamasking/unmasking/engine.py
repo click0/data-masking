@@ -164,8 +164,11 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
 
             replacements_to_do.append((found["start"], found["end"], restored_full_rank))
             stats["restored_count"] += 1
-        else:
+        elif base_masked_form in rank_instance_map:
+            # Маска є в mapping, але для цього входження оригіналу немає
             stats["skipped_count"] += 1
+        # інакше — справжнє звання, яке не маскувалось (--exclude rank,
+        # enable_ranks: false): це не пропуск, і строгий режим не має падати
 
     # КРОК 3: ВИКОНАННЯ ЗАМІН
     # Сегментами в порядку документа — O(n) замість квадратичної

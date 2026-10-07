@@ -159,6 +159,15 @@ class ExclusionsConfig:
 
 
 @dataclass
+class DictionariesConfig:
+    """Повні переліки виключень (у config.yaml / config_example.yaml — самі
+    списки); None — вбудована копія з програми."""
+    abbreviations: Optional[List[str]] = None   # не маскуються як прізвище
+    non_name_words: Optional[List[str]] = None  # не частина ПІБ
+    legal_acts: Optional[List[str]] = None      # дата після «<акт> … від» без змін
+
+
+@dataclass
 class Config:
     """Головна конфігурація системи маскування даних.
 
@@ -171,6 +180,7 @@ class Config:
     router_rules: RouterRulesConfig = field(default_factory=RouterRulesConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     exclusions: ExclusionsConfig = field(default_factory=ExclusionsConfig)
+    dictionaries: DictionariesConfig = field(default_factory=DictionariesConfig)
 
     def to_dict(self) -> dict:
         """Конвертує конфігурацію у словник.

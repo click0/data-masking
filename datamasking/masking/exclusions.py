@@ -9,6 +9,11 @@
   BUILTIN_LEGAL_ACTS    — назви нормативних актів: дата після «… від» не
                           зсувається («Закону України від 06.12.1991»).
 
+Повні переліки лежать у ``config.yaml`` (секція ``dictionaries``, v3.1.3):
+``abbreviations``, ``non_name_words``, ``legal_acts``. Тут — їх запасна
+копія: вона діє, коли ключа немає (або він null), напр. без PyYAML чи з
+іншим файлом конфігурації. Тест звіряє її з config.yaml.
+
 Секція конфігурації ``exclusions`` (v3.1.1) їх доповнює:
 
     exclusions:
@@ -100,9 +105,12 @@ def legal_act_regex(acts: Iterable[str]) -> Pattern[str]:
     return re.compile(r"(?:" + alternatives + r")[^\n.;]{0,80}?\bвід\s*$", re.IGNORECASE)
 
 
-def _items(section: Any, key: str) -> List[str]:
+DICTIONARY_KEYS = ("abbreviations", "non_name_words", "legal_acts")
+
+
+def _items(section: Any, key: str, where_section: str = "exclusions") -> List[str]:
     value = getattr(section, key, None) if not isinstance(section, dict) else section.get(key)
-    where = f"exclusions.{key}"
+    where = f"{where_section}.{key}"
     if value is None:
         return []
     if not isinstance(value, list):
@@ -122,7 +130,7 @@ def _items(section: Any, key: str) -> List[str]:
                 raise ValueError(f"{where}[{i}]: '*' is allowed only at the end of a word")
             if len(stem) < 2:
                 raise ValueError(f"{where}[{i}]: word {word!r} is too short")
-        if key in ("abbreviations", "words") and (" " in item or "*" in item):
+        if key in ("abbreviations", "words", "non_name_words") and (" " in item or "*" in item):
             raise ValueError(f"{where}[{i}] must be a single word without '*'; "
                              f"use exclusions.phrases for {item!r}")
         out.append(item)
@@ -153,16 +161,29 @@ def _patterns(items: List[str], name: str, action: str) -> tuple:
         for item in items)
 
 
-def build(section: Any = None) -> Exclusions:
-    """Вбудовані переліки + секція exclusions конфігурації. Raises ValueError."""
+def _base(dictionaries: Any, key: str, builtin: Tuple[str, ...]) -> Tuple[str, ...]:
+    """Перелік із dictionaries.<key> (config.yaml) або вбудований, якщо ключа немає."""
+    value = getattr(dictionaries, key, None) if not isinstance(dictionaries, dict) \
+        else dictionaries.get(key)
+    if value is None:
+        return builtin
+    return tuple(_items(dictionaries, key, "dictionaries"))
+
+
+def build(section: Any = None, dictionaries: Any = None) -> Exclusions:
+    """Переліки (dictionaries з config.yaml або вбудовані) + секція
+    exclusions конфігурації. Raises ValueError."""
     lists = {key: _items(section, key) for key in KEYS}
     remove = {r.lower() for r in lists["remove"]}
+    base_abbreviations = _base(dictionaries, "abbreviations", BUILTIN_ABBREVIATIONS)
+    base_words = _base(dictionaries, "non_name_words", BUILTIN_WORDS)
+    base_acts = _base(dictionaries, "legal_acts", BUILTIN_LEGAL_ACTS)
 
-    abbreviations = frozenset(a for a in BUILTIN_ABBREVIATIONS if a not in remove) \
+    abbreviations = frozenset(a.lower() for a in base_abbreviations if a.lower() not in remove) \
         | frozenset(a.lower() for a in lists["abbreviations"])
-    words = frozenset(w.lower() for w in BUILTIN_WORDS if w.lower() not in remove) \
+    words = frozenset(w.lower() for w in base_words if w.lower() not in remove) \
         | frozenset(w.lower() for w in lists["words"])
-    acts = tuple(a for a in BUILTIN_LEGAL_ACTS if a.lower() not in remove) \
+    acts = tuple(a for a in base_acts if a.lower() not in remove) \
         + tuple(lists["legal_acts"])
     if acts:
         legal = legal_act_regex(acts)
@@ -197,3 +218,18 @@ def describe(ex: Exclusions) -> str:
     lines += block("Phrases never masked", ex.phrases)
     lines += block("Always masked", ex.always_mask)
     return "\n".join(lines).rstrip() + "\n"
+
+
+def dictionaries_yaml(indent: str = "  ") -> str:
+    """Секція dictionaries для config.yaml / --init-config із вбудованих переліків."""
+    import json
+
+    def flow(items: Iterable[str], per_line: int) -> str:
+        quoted = [json.dumps(i, ensure_ascii=False) for i in items]
+        rows = [", ".join(quoted[k:k + per_line]) for k in range(0, len(quoted), per_line)]
+        inner = (",\n" + indent * 2).join(rows)
+        return "[\n" + indent * 2 + inner + "\n" + indent + "]"
+
+    return (f"{indent}abbreviations: {flow(BUILTIN_ABBREVIATIONS, 12)}\n"
+            f"{indent}non_name_words: {flow(BUILTIN_WORDS, 6)}\n"
+            f"{indent}legal_acts: {flow(BUILTIN_LEGAL_ACTS, 4)}\n")
