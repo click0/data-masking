@@ -333,13 +333,14 @@ def _letters(n: int) -> str:
 
 def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counters: Dict) -> str:
     text, kept = _protect_custom(text)
-    text = _mask_text_core(text, masking_dict, instance_counters)
+    text = _mask_text_core(text, masking_dict, instance_counters, kept)
     for token, original in kept:
         text = text.replace(token, original, 1)
     return text
 
 
-def _mask_text_core(text: str, masking_dict: Dict, instance_counters: Dict) -> str:
+def _mask_text_core(text: str, masking_dict: Dict, instance_counters: Dict,
+                    kept: Optional[List[Tuple[str, str]]] = None) -> str:
     # === ШАГ 0: Нормалізація розірваних звань
     if _cfg.RANK_LINE_BREAK_FIX:
         text = normalize_broken_ranks(text)
@@ -439,7 +440,13 @@ def _mask_text_core(text: str, masking_dict: Dict, instance_counters: Dict) -> s
             if not skip: _add_mask({'type': 'brigade_number', 'full_text': match.group(0), 'number_part': match.group(1), 'start': match.start(), 'end': match.end()})
 
     def _legal_act_date(start: int) -> bool:
-        return _cfg.LEGAL_ACT_DATE_PREFIX.search(text[max(0, start - 160):start]) is not None
+        window = text[max(0, start - 160):start]
+        # Захищені фрази (exclusions.phrases, custom skip) тут — токени
+        # ___KEEP…___; для пошуку назви акта повертаємо оригінал
+        for token, original in kept or ():
+            if token in window:
+                window = window.replace(token, original)
+        return _cfg.LEGAL_ACT_DATE_PREFIX.search(window) is not None
 
     def _phase_date() -> None:
         if not _cfg.MASK_DATES:

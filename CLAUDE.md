@@ -98,6 +98,14 @@ pip install -e '.[full]' && pip install -r requirements-dev.txt
   З v3.0.30 `PLANNED_KEYS` порожній. Ключі, що описують незмінну поведінку
   (`ALWAYS_ON_KEYS`: `consistent_mapping`, `save_chain` тощо), приймають лише
   `true`; інше значення — помилка конфігурації з поясненням.
+- Шари конфігурації: `config.yaml` (або `config.py`) → `config_local.yaml`
+  (тека користувача, потім поруч із `config.yaml`) → ENV → CLI. Значення
+  не-null з локального файлу перекриває спільне, секції зливаються, списки
+  замінюються. Тести не мають читати справжню теку користувача —
+  `conftest.isolate_user_config_dir` підміняє `XDG_CONFIG_HOME`/`APPDATA`.
+- Вбудовані виключення (абревіатури, слова не-ПІБ, нормативні акти) — у
+  `masking/exclusions.py`; секція `exclusions` їх доповнює. Без неї маски
+  мають лишатися незмінними.
 - `--encrypt` пише лише `.enc` (plaintext mapping не створюється), mapping —
   атомарно з правами 0600.
 - Формат `.enc` 1 (PBKDF2, сіль 16) — за замовчуванням, його читають усі версії;
@@ -110,6 +118,6 @@ pip install -e '.[full]' && pip install -r requirements-dev.txt
 
 ## Файли, яких не має бути в репо
 
-`config.yaml` у корені, `output_*`, `masking_map_*`, `masking_report_*`,
+`config.yaml` і `config_local.yaml` у корені, `output_*`, `masking_map_*`, `masking_report_*`,
 `input_recovery_*`, `input.txt` (усе в `.gitignore`; фікстури тестів названі
 інакше — `source.txt`). `conftest.py` падає, якщо тест лишає `config.yaml`.

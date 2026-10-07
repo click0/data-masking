@@ -3,6 +3,7 @@
 Pytest configuration and fixtures for data-masking tests
 """
 import os
+import re
 import subprocess
 import tempfile
 import pytest
@@ -50,12 +51,31 @@ def restore_engine_settings():
     from datamasking import _fsutil
     from datamasking.masking import constants as _cfg
     saved = {k: v for k, v in vars(_cfg).items()
-             if k.isupper() and isinstance(v, (bool, int, float, str, tuple))}
+             if k.isupper() and isinstance(v, (bool, int, float, str, tuple, frozenset, re.Pattern))}
     saved_tempdir, saved_secure = tempfile.tempdir, _fsutil.SECURE_DELETE_TEMP
     yield
     for k, v in saved.items():
         setattr(_cfg, k, v)
     tempfile.tempdir, _fsutil.SECURE_DELETE_TEMP = saved_tempdir, saved_secure
+
+
+@pytest.fixture(autouse=True)
+def isolate_user_config_dir(tmp_path_factory):
+    """config_local.yaml шукається і в теці користувача — тести не мають
+    підхоплювати справжній файл розробника.
+
+    Без monkeypatch: autouse-фікстура з monkeypatch створює його раніше за
+    фікстури тесту, і monkeypatch.chdir тесту відкочувався б уже після
+    видалення тимчасової теки (Windows не видаляє поточну директорію)."""
+    home_cfg = str(tmp_path_factory.mktemp("user_config"))
+    saved = {k: os.environ.get(k) for k in ("XDG_CONFIG_HOME", "APPDATA")}
+    os.environ["XDG_CONFIG_HOME"] = os.environ["APPDATA"] = home_cfg
+    yield
+    for key, value in saved.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
 
 
 @pytest.fixture(autouse=True)

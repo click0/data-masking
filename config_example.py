@@ -145,6 +145,20 @@ class LoggingConfig:
 
 
 @dataclass
+class ExclusionsConfig:
+    """Виключення — доповнюють вбудовані переліки (--list-exclusions).
+
+    «*» у кінці слова — будь-яке закінчення; регістр не враховується.
+    """
+    abbreviations: List[str] = field(default_factory=list)  # не маскувати як прізвище
+    words: List[str] = field(default_factory=list)          # не частина ПІБ
+    phrases: List[str] = field(default_factory=list)        # не маскувати взагалі
+    legal_acts: List[str] = field(default_factory=list)     # назва + дата «… від» без змін
+    always_mask: List[str] = field(default_factory=list)    # маскувати завжди
+    remove: List[str] = field(default_factory=list)         # прибрати вбудовані
+
+
+@dataclass
 class Config:
     """Головна конфігурація системи маскування даних.
 
@@ -156,6 +170,7 @@ class Config:
     validation: ValidationConfig = field(default_factory=ValidationConfig)
     router_rules: RouterRulesConfig = field(default_factory=RouterRulesConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    exclusions: ExclusionsConfig = field(default_factory=ExclusionsConfig)
 
     def to_dict(self) -> dict:
         """Конвертує конфігурацію у словник.

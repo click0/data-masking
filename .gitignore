@@ -234,6 +234,9 @@ data_masking_*.log
 # Конфігурація (генерується --init-config, містить паролі)
 config.yaml
 config.yml
+# Приватні перекриття конфігурації (v3.1.1)
+config_local.yaml
+config_local.yml
 !config/config_example.yaml
 
 # Re-mask chain файли

@@ -191,7 +191,8 @@ class TestPlannedOptionsInExamples:
         # [не реалізовано] тоді й лише тоді, коли його шлях — у PLANNED_KEYS
         sections = {"SystemConfig": "system", "SecurityConfig": "security",
                     "MaskingRulesConfig": "masking_rules", "ValidationConfig": "validation",
-                    "RouterRulesConfig": "router_rules", "LoggingConfig": "logging"}
+                    "RouterRulesConfig": "router_rules", "LoggingConfig": "logging",
+                    "ExclusionsConfig": "exclusions"}
         sec = indict = None
         tagged, planned, seen = set(), set(), set()
         for line in (ROOT / "config_example.py").read_text(encoding="utf-8").split("\n"):
