@@ -142,7 +142,11 @@ python diagnose_mapping.py --verify input.txt recovered.txt  # верифіка�
 - **Дати** — DD.MM.YYYY (±30 днів)
 
 ### Винятки
-- **Абревіатури** — ЗСУ, МОУ, ВСУ, ДПСУ, НГУ, ДСНС, СБУ, ГУР, ТЦК, СП
+- **Абревіатури** (не маскуються як прізвище) — ЗСУ, МОУ, ВСУ, ДПСУ, НГУ, ДСНС, СБУ, ГУР, ТЦК, СП, КМУ, ОТЦКСП
+- **Слова, які не є частиною ПІБ** — юридичні й службові терміни (Згідно, Відповідно, Закону, Статуту …), посади (Командир, Начальник …), мітки (ПІБ, ІПН, РНОКПП …), «Кабінет Міністрів» у всіх відмінках
+- **Дати нормативних актів** — дата після «Закону / Кодексу / Конституції / Указу Президента / постанови Кабінету Міністрів, Верховної Ради, КМУ … від» не зсувається
+
+Вбудовані переліки — у `datamasking/masking/exclusions.py`; секція `exclusions` конфігурації їх доповнює (абревіатури, слова, фрази, нормативні акти, слова, які маскуються завжди) або прибирає записи. `data-mask --list-exclusions` показує, що діє.
 
 ---
 
@@ -238,16 +242,20 @@ python unmask_data.py masked.txt --map mapping.enc --password mypassword
 
 ### Конфігурація (`datamasking/extras/config.py`)
 
-Пріоритет: CLI > ENV > config.yaml > Default. Ключі, яких немає у файлі, беруться за замовчуванням.
+Пріоритет: CLI > ENV > config_local.yaml > config.yaml > config.py > Default. Ключі, яких немає у файлі, беруться за замовчуванням.
+
+**Приватні перекриття — `config_local.yaml`.** Спільні налаштування — у `config.yaml`, приватні (позивні, місцеві абревіатури, власні шляхи) — у `config_local.yaml`. Він шукається в теці користувача (`~/.config/data-masking/`, `$XDG_CONFIG_HOME/data-masking/`, `%APPDATA%\data-masking\` у Windows) і поруч із `config.yaml` (або в поточній директорії); файл поруч із `config.yaml` застосовується останнім. Кожен ключ зі значенням, відмінним від null, замінює спільне значення (секції зливаються по ключах, списки замінюються цілком); `null` лишає спільне. Файл є в `.gitignore`; тримайте його з правами `chmod 600` (інакше програма попереджає). `--config-local FILE` — інший файл, `--no-local-config` — без них; працює для `data-mask` і `data-unmask`.
 
 ```bash
 data-mask --init-config                                  # config.yaml з усіма ключами
 data-mask -i input.txt --config config.yaml              # ./config.yaml підхоплюється й автоматично
 data-mask -i input.txt --config docs/config-examples/share.yaml
 data-unmask output.txt -c config.yaml
+data-mask -i input.txt --config-local private.yaml       # приватні перекриття з іншого файлу
+data-mask --list-exclusions                              # діючі виключення
 ```
 
-Усі ключі з поясненнями: [`config_example.yaml`](../config_example.yaml). Опції з позначкою `[не реалізовано]` заплановані й поки не діють — див. [`TODO-config-options.md`](TODO-config-options.md).
+Усі ключі з поясненнями: [`config_example.yaml`](../config_example.yaml).
 Готові набори: [`docs/config-examples/`](config-examples/README.md)
 (`share` — дати й номери документів лишаються, `strict` — маскується все, прізвища повністю синтетичні, `pii` — лише персональні дані).
 

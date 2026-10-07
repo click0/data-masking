@@ -5,7 +5,13 @@
 Configuration Module v2.6.0 for data_masking.py
 
 Provides YAML + ENV + CLI configuration loading with priority resolution:
-    CLI > ENV > config.yaml > config.py > Default
+    CLI > ENV > config_local.yaml > config.yaml > config.py > Default
+
+config_local.yaml (v3.1.1) — приватні перекриття поверх спільного
+config.yaml: лежить поруч із ним (або в поточній директорії) і/або в
+теці користувача (~/.config/data-masking/, %APPDATA%\\data-masking\\).
+Ключ зі значенням, відмінним від null, перекриває спільний; вкладені
+секції зливаються, списки замінюються цілком.
 
 Supports dataclass-based structured configuration with automatic
 type coercion and validation.
@@ -21,7 +27,7 @@ from datamasking._version import __version__  # єдине джерело вер
 import os
 import logging
 from dataclasses import dataclass, field, asdict
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -229,6 +235,23 @@ class RemaskConfig:
     auto_numbering: bool = True
 
 
+@dataclass
+class ExclusionsConfig:
+    """Доповнення вбудованих виключень (masking/exclusions.py)."""
+    # Абревіатури, які не маскуються як прізвище (ЗСУ, МОУ …)
+    abbreviations: List[str] = field(default_factory=list)
+    # Слова, які не вважаються частиною ПІБ
+    words: List[str] = field(default_factory=list)
+    # Фрази, які не маскуються взагалі; «*» у кінці слова — будь-яке закінчення
+    phrases: List[str] = field(default_factory=list)
+    # Нормативні акти: дата після «<акт> … від» не зсувається
+    legal_acts: List[str] = field(default_factory=list)
+    # Слова/фрази, які маскуються завжди (маска тієї ж форми, unmask відновлює)
+    always_mask: List[str] = field(default_factory=list)
+    # Прибрати вбудовані слова / абревіатури / акти
+    remove: List[str] = field(default_factory=list)
+
+
 # Ключі, які програма справді читає (masking/cli.py, unmasking/cli.py).
 # Решта полів dataclass-ів лишається лише для сумісності зі старими
 # файлами й ні на що не впливає. Шаблон --init-config і приклади
@@ -273,6 +296,8 @@ EFFECTIVE_KEYS: Dict[str, frozenset] = {
         "format", "max_log_size_mb", "log_rotation_count", "log_performance", "log_sensitive_data",
     }),
     "remask": frozenset({"enabled", "max_passes", "chain_format", "save_chain", "auto_numbering"}),
+    "exclusions": frozenset({"abbreviations", "words", "phrases", "legal_acts",
+                             "always_mask", "remove"}),
 }
 
 
@@ -354,6 +379,35 @@ def _unknown_leaf_keys(data: Any) -> List[str]:
     return out
 
 
+LOCAL_CONFIG_NAME = "config_local.yaml"
+
+
+def user_config_dir() -> Path:
+    """Тека налаштувань користувача: %APPDATA%\\data-masking (Windows),
+    $XDG_CONFIG_HOME/data-masking або ~/.config/data-masking."""
+    if os.name == "nt" and os.environ.get("APPDATA"):
+        return Path(os.environ["APPDATA"]) / "data-masking"
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    return (Path(xdg) if xdg else Path.home() / ".config") / "data-masking"
+
+
+def merge_config_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """override поверх base (новий словник; вхідні не змінюються).
+
+    null (None) не перекриває значення з base; секції-словники зливаються
+    рекурсивно; решта (числа, рядки, списки — навіть порожні) замінюється.
+    """
+    out = dict(base)
+    for key, value in override.items():
+        if value is None:
+            continue
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = merge_config_dicts(out[key], value)
+        else:
+            out[key] = value
+    return out
+
+
 def is_strict(config: Any) -> bool:
     """system.strict_mode або validation.strict_mode."""
     return any(getattr(getattr(config, section, None), "strict_mode", False) is True
@@ -386,6 +440,7 @@ class Config:
     router_rules: RouterRulesConfig = field(default_factory=RouterRulesConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     remask: RemaskConfig = field(default_factory=RemaskConfig)
+    exclusions: ExclusionsConfig = field(default_factory=ExclusionsConfig)
 
     # ----- serialisation helpers -----
 
@@ -447,6 +502,11 @@ class Config:
                 if hasattr(cfg.remask, k):
                     setattr(cfg.remask, k, v)
 
+        if "exclusions" in data and isinstance(data["exclusions"], dict):
+            for k, v in data["exclusions"].items():
+                if hasattr(cfg.exclusions, k):
+                    setattr(cfg.exclusions, k, v)
+
         return cfg
 
     def to_dict(self) -> Dict[str, Any]:
@@ -463,9 +523,11 @@ class ConfigLoader:
 
         1. CLI arguments   (--hash-algorithm, --debug, etc.)
         2. ENV variables   (DATA_MASKING_HASH_ALGORITHM, etc.)
-        3. config.yaml     (YAML file)
-        4. config.py       (Python config module)
-        5. Defaults        (dataclass defaults)
+        3. config_local.yaml (private overrides: user config directory, then
+                              next to config.yaml; non-null values win)
+        4. config.yaml     (YAML file)
+        5. config.py       (Python config module)
+        6. Defaults        (dataclass defaults)
     """
 
     # Mapping: ENV variable name -> (config section, attribute name, type)
@@ -491,10 +553,20 @@ class ConfigLoader:
         self,
         config_path: Optional[str] = None,
         cli_args: Optional[Dict[str, Any]] = None,
+        local_path: Optional[str] = None,
+        use_local: bool = True,
     ):
         self._config = Config()
         self._config_path = config_path
         self._cli_args = cli_args or {}
+        # config_local.yaml: явний шлях (--config-local) або автопошук
+        self._local_path = local_path
+        self._use_local = use_local
+        self.local_loaded: List[str] = []
+        # (файл, ключі без дії) — по одному попередженню на файл
+        self.ignored_by_source: List[Tuple[str, List[str]]] = []
+        # Інші попередження для stderr (права доступу, немає PyYAML)
+        self.notices: List[str] = []
         self.loaded_from: Optional[str] = None  # шлях YAML, якщо реально прочитано
         # Ключі прочитаного файлу, які ні на що не впливають (для попередження
         # в CLI): раніше вони мовчки ігнорувались, і застарілий config_example
@@ -523,7 +595,15 @@ class ConfigLoader:
         if not filepath.exists():
             logger.debug("Config file not found: %s", filepath)
             return None
+        data = self._read_yaml(filepath)
+        if data is not None:
+            logger.info("Loaded YAML config from %s", filepath)
+            self.loaded_from = str(filepath)
+        return data
 
+    @staticmethod
+    def _read_yaml(filepath: Path) -> Optional[Dict[str, Any]]:
+        """Прочитати YAML-словник (None — порожній файл). Raises ValueError."""
         try:
             with open(filepath, "r", encoding="utf-8") as fh:
                 data = yaml.safe_load(fh)  # type: ignore[union-attr]
@@ -538,8 +618,46 @@ class ConfigLoader:
             return None  # порожній файл — дефолти
         if not isinstance(data, dict):
             raise ValueError(f"YAML config {filepath} must be a mapping, got {type(data).__name__}")
-        logger.info("Loaded YAML config from %s", filepath)
-        self.loaded_from = str(filepath)
+        return data
+
+    # ----- config_local.yaml -----
+
+    def local_config_paths(self) -> List[Path]:
+        """Наявні config_local.yaml у порядку застосування (останній важить
+        найбільше): тека користувача, потім поруч із config.yaml (або
+        поточна директорія). Явний --config-local замінює автопошук."""
+        if not self._use_local:
+            return []
+        if self._local_path:
+            path = Path(self._local_path)
+            if not path.is_file():
+                raise ValueError(f"Local config file not found: {path}")
+            return [path]
+        base_dir = Path(self._config_path).parent if self._config_path else Path(".")
+        found: List[Path] = []
+        seen = set()
+        for cand in (user_config_dir() / LOCAL_CONFIG_NAME, base_dir / LOCAL_CONFIG_NAME):
+            if not cand.is_file():
+                continue
+            key = os.path.normcase(str(cand.resolve()))
+            if key not in seen:
+                seen.add(key)
+                found.append(cand)
+        return found
+
+    def _load_local(self, path: Path) -> Optional[Dict[str, Any]]:
+        if not YAML_AVAILABLE:
+            self.notices.append(f"Warning: {path}: PyYAML is not installed — "
+                                f"the local configuration was ignored (pip install pyyaml)")
+            return None
+        data = self._read_yaml(path)
+        if os.name != "nt":
+            try:
+                if path.stat().st_mode & 0o077:
+                    self.notices.append(f"Warning: {path} is accessible to other users; it may hold "
+                                        f"private settings — chmod 600 {path}")
+            except OSError:
+                pass
         return data
 
     # ----- Python config module loading -----
@@ -673,11 +791,12 @@ class ConfigLoader:
             5. Dataclass defaults
         """
         # Step 5: defaults are already set via dataclass __init__
+        base: Dict[str, Any] = {}
 
         # Step 4: Python config module
         py_data = self._load_python_config()
         if py_data:
-            self._config = Config.from_dict(py_data)
+            base = py_data
             self.ignored_keys = ignored_config_keys(py_data)
             self.ignored_source = "config.py"
 
@@ -685,10 +804,27 @@ class ConfigLoader:
         yaml_path = self._config_path or "config.yaml"
         yaml_data = self._load_yaml(yaml_path)
         if yaml_data:
-            self._config = Config.from_dict(yaml_data)
             # YAML замінює config.py цілком — і попередження теж
+            base = yaml_data
             self.ignored_keys = ignored_config_keys(yaml_data)
             self.ignored_source = self.loaded_from or yaml_path
+        if self.ignored_keys:
+            self.ignored_by_source.append((self.ignored_source or "config", self.ignored_keys))
+
+        # Step 2.5: config_local.yaml — значення не-null перекривають спільні
+        merged = base
+        for path in self.local_config_paths():
+            local = self._load_local(path)
+            if not local:
+                continue
+            merged = merge_config_dicts(merged, local)
+            self.local_loaded.append(str(path))
+            logger.info("Loaded local config from %s", path)
+            keys = ignored_config_keys(local)
+            if keys:
+                self.ignored_by_source.append((str(path), keys))
+        if merged:
+            self._config = Config.from_dict(merged)
 
         # Step 2: ENV variable overrides
         self._apply_env()
@@ -713,7 +849,10 @@ class ConfigLoader:
 # Auto-generated default configuration.
 # Adjust values as needed for your environment.
 #
-# Priority: CLI > ENV > config.yaml > config.py > Default
+# Priority: CLI > ENV > config_local.yaml > config.yaml > config.py > Default
+# config_local.yaml (next to this file and/or in ~/.config/data-masking/ or
+# %APPDATA%\\data-masking\\) holds private overrides: every key set there to
+# a non-null value replaces the value from this file (lists as a whole).
 #
 # Author: Vladyslav V. Prodan
 # Contact: github.com/click0
@@ -846,6 +985,25 @@ logging:
 
   # Log message format (Python logging format string)
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# --------------------------------------------------------------------------
+# Exclusions (added to the built-in lists; see data-mask --list-exclusions).
+# A trailing * matches any ending: "Верховн* Рад*". Case-insensitive.
+# Private entries belong in config_local.yaml, not in this shared file.
+# --------------------------------------------------------------------------
+exclusions:
+  # Abbreviations never masked as a surname
+  abbreviations: []
+  # Words that are never part of a name
+  words: []
+  # Phrases never masked at all
+  phrases: []
+  # Legal acts: the name is not masked, a date after "<act> ... від" is kept
+  legal_acts: []
+  # Words/phrases always masked (same-shape mask, restored by unmask)
+  always_mask: []
+  # Remove built-in words, abbreviations or legal acts
+  remove: []
 """.format(version=__version__)
 
         output = Path(output_path)

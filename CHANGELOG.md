@@ -4,6 +4,55 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.1] - 2026-10
+
+### Added — private configuration file `config_local.yaml`
+- Shared settings stay in `config.yaml`; private ones go to
+  `config_local.yaml`, which is applied on top of it. It is looked up in the
+  user configuration directory (`~/.config/data-masking/`,
+  `$XDG_CONFIG_HOME/data-masking/`, `%APPDATA%\data-masking\` on Windows)
+  and next to `config.yaml` (or in the current directory); the one next to
+  `config.yaml` is applied last.
+- Every key set to a non-null value replaces the shared value. Sections merge
+  key by key, lists are replaced as a whole, `null` keeps the shared value.
+  Priority: CLI > ENV > `config_local.yaml` > `config.yaml` > `config.py` >
+  defaults.
+- `--config-local FILE` uses a specific file instead, `--no-local-config`
+  ignores local files; both work for `data-mask` and `data-unmask`.
+- Unknown keys are reported per file, and strict mode applies to local files
+  too. A warning is printed when a local file is readable by other users, or
+  when it cannot be read because PyYAML is not installed.
+- `config_local.yaml` is in `.gitignore`.
+
+### Added — configurable exclusions
+- The built-in exclusion lists moved from `masking/constants.py` to
+  `datamasking/masking/exclusions.py`, unchanged. Masks without a
+  configuration are identical to 3.1.0 (verified on 152 documents).
+- The new `exclusions` section adds to the built-in lists:
+  - `abbreviations` — never masked as a surname;
+  - `words` — never taken as part of a name;
+  - `phrases` — never masked at all, e.g. `"Верховн* Рад*"`;
+  - `legal_acts` — the act name is not masked, and a date after
+    "<act> … від" is not shifted;
+  - `always_mask` — always masked with a same-shape mask, restored by
+    unmask (e.g. call signs);
+  - `remove` — drops built-in entries.
+
+  A trailing `*` matches any ending, and matching is case-insensitive.
+  Invalid entries are configuration errors.
+- `data-mask --list-exclusions` prints the lists in effect.
+- README: the "Exceptions" section now lists every built-in abbreviation (КМУ
+  and ОТЦКСП were missing), the words that are never part of a name
+  (including "Кабінет Міністрів") and the legal-act date rule.
+
+### Fixed
+- A date after a legal act whose name was protected by a `skip` custom
+  pattern or a phrase (`постановою <protected> від 12.03.2020`) was shifted:
+  the legal-act check now sees the original text.
+- Tests: `tests/test_exclusions_config.py`, `tests/test_config_local.py`.
+  `conftest.py` points the user configuration directory to a temporary one,
+  so a developer's own `config_local.yaml` never affects the tests.
+
 ## [3.1.0] - 2026-10
 
 Minor release: the configuration file is now fully functional. Every option

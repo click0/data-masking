@@ -143,6 +143,11 @@ Examples:
         config_group = parser.add_argument_group('config options')
         config_group.add_argument('-c', '--config', metavar='FILE',
                                   help='Configuration file (.yaml or .json)')
+        config_group.add_argument('--config-local', metavar='FILE',
+                                  help='Private overrides on top of the configuration (default: '
+                                       'config_local.yaml next to it and in the user config directory)')
+        config_group.add_argument('--no-local-config', action='store_true',
+                                  help='Ignore config_local.yaml files')
 
     if LOGGING_AVAILABLE:
         log_group = parser.add_argument_group('logging options')
@@ -190,14 +195,18 @@ Examples:
             config_path = getattr(args, 'config', None)
             if config_path and not Path(config_path).exists():
                 raise FileNotFoundError(f"Config file not found: {config_path}")
-            loader = ConfigLoader(config_path)
+            loader = ConfigLoader(config_path, local_path=getattr(args, 'config_local', None),
+                                  use_local=not getattr(args, 'no_local_config', False))
             config = loader.load()
             source = loader.loaded_from or loader.ignored_source
             if source:
                 log_info(f"Конфігурацію завантажено з {source}")
-            if loader.ignored_keys:
-                warning = format_ignored_keys_warning(loader.ignored_source or str(config_path),
-                                                      loader.ignored_keys)
+            for local in loader.local_loaded:
+                log_info(f"Локальну конфігурацію завантажено з {local}")
+            for notice in loader.notices:
+                print(notice, file=sys.stderr)
+            for ignored_source, keys in loader.ignored_by_source:
+                warning = format_ignored_keys_warning(ignored_source, keys)
                 if is_strict(config):
                     raise ValueError("strict_mode: " + warning.replace("Warning: ", "", 1))
                 print(warning, file=sys.stderr)

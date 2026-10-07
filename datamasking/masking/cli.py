@@ -244,6 +244,14 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="Generate default config.yaml and exit")
     parser.add_argument("--config", type=str, default=None,
                         help="Path to YAML configuration file")
+    parser.add_argument("--config-local", type=str, default=None, metavar="FILE",
+                        help="Private overrides on top of the configuration (default: "
+                             "config_local.yaml next to it and in the user config directory)")
+    parser.add_argument("--no-local-config", action="store_true",
+                        help="Ignore config_local.yaml files")
+    parser.add_argument("--list-exclusions", action="store_true",
+                        help="Show the words, phrases and legal acts excluded from masking "
+                             "(built-in + configuration), then exit")
     parser.add_argument("--log-level", type=str, default=None,
                         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
                         help="Logging level")
@@ -296,7 +304,8 @@ def _load_config(args) -> Tuple[Optional[Any], Optional[str]]:
         return None, f"Config file not found: {config_path}"
 
     try:
-        loader = ConfigLoader(config_path)
+        loader = ConfigLoader(config_path, local_path=getattr(args, 'config_local', None),
+                              use_local=not getattr(args, 'no_local_config', False))
         config = loader.load()
     except (FileNotFoundError, PermissionError, ValueError, OSError) as e:
         return None, f"Could not load config: {e}"
@@ -304,11 +313,17 @@ def _load_config(args) -> Tuple[Optional[Any], Optional[str]]:
     source = loader.loaded_from
     if source:
         print(f"Loaded config from {source}")
-    if loader.ignored_keys:
-        warning = format_ignored_keys_warning(loader.ignored_source or "config", loader.ignored_keys)
+    for local in loader.local_loaded:
+        print(f"Loaded local config from {local}")
+    for notice in loader.notices:
+        print(notice, file=sys.stderr)
+    for ignored_source, keys in loader.ignored_by_source:
+        warning = format_ignored_keys_warning(ignored_source, keys)
         if is_strict(config):
             return None, "strict_mode: " + warning.replace("Warning: ", "", 1)
         print(warning, file=sys.stderr)
+    if loader.local_loaded:
+        source = ", ".join(([source] if source else []) + loader.local_loaded)
     try:
         setattr(config, "_source", source)  # для звіту; dataclass дозволяє атрибут
     except AttributeError:
@@ -626,6 +641,16 @@ def _apply_level1_settings_impl(args, config, logger) -> Optional[str]:
     router = getattr(config, 'router_rules', None)
     _cfg.CUSTOM_PATTERNS = _custom.compile_patterns(getattr(rules, 'custom_patterns', None),
                                                     getattr(router, 'default_action', 'mask'))
+
+    # Виключення: вбудовані переліки + exclusions (фрази — як custom skip,
+    # always_mask — як custom mask, після власних шаблонів)
+    from datamasking.masking import exclusions as _exclusions
+    excl = _exclusions.build(getattr(config, 'exclusions', None))
+    _cfg.ABBREVIATION_WHITELIST = excl.abbreviations
+    _cfg.EXCLUDE_WORDS_LOWER = excl.words_lower
+    _cfg.LEGAL_ACT_DATE_PREFIX = excl.legal_act_prefix
+    _cfg.CUSTOM_PATTERNS = excl.skip_patterns + _cfg.CUSTOM_PATTERNS + excl.mask_patterns
+    args._exclusions = excl
     _cfg.PROCESSING_ORDER = _custom.build_processing_order(
         getattr(router, 'processing_order', None), getattr(router, 'priority_overrides', None),
         _cfg.DEFAULT_PROCESSING_ORDER)
@@ -1220,6 +1245,12 @@ def main(argv=None) -> int:
         print(f"Error: strict_mode: {strict_error}")
     if getattr(args, '_strict_errors', []):
         return EXIT_ERROR
+
+    if getattr(args, 'list_exclusions', False):
+        from datamasking.masking import exclusions as _exclusions
+        excl = getattr(args, '_exclusions', None) or _exclusions.build(None)
+        print(_exclusions.describe(excl), end="")
+        return EXIT_OK
 
     if logger:
         logger.info(f"Masking flags: SURNAMES={_cfg.MASK_SURNAMES}, NAMES={_cfg.MASK_NAMES}, "

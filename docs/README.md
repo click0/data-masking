@@ -142,7 +142,11 @@ python diagnose_mapping.py --verify input.txt recovered.txt  # verify recovery
 - **Dates** — DD.MM.YYYY (±30 days)
 
 ### Exceptions
-- **Abbreviations** — ЗСУ, МОУ, ВСУ, ДПСУ, НГУ, ДСНС, СБУ, ГУР, ТЦК, СП
+- **Abbreviations** (never masked as a surname) — ЗСУ, МОУ, ВСУ, ДПСУ, НГУ, ДСНС, СБУ, ГУР, ТЦК, СП, КМУ, ОТЦКСП
+- **Words that are never part of a name** — legal and service terms (Згідно, Відповідно, Закону, Статуту …), positions (Командир, Начальник …), labels (ПІБ, ІПН, РНОКПП …), "Кабінет Міністрів" in every case
+- **Dates of legal acts** — a date after "Закону / Кодексу / Конституції / Указу Президента / постанови Кабінету Міністрів, Верховної Ради, КМУ … від" is not shifted
+
+The built-in lists live in `datamasking/masking/exclusions.py`; the `exclusions` section of the configuration adds to them (abbreviations, words, phrases, legal acts, words that are always masked) or removes entries. `data-mask --list-exclusions` prints what is in effect.
 
 ---
 
@@ -238,16 +242,20 @@ python unmask_data.py masked.txt --map mapping.enc --password mypassword
 
 ### Configuration (`datamasking/extras/config.py`)
 
-Priority: CLI > ENV > config.yaml > Default. Keys left out of the file keep their defaults.
+Priority: CLI > ENV > config_local.yaml > config.yaml > config.py > Default. Keys left out of the file keep their defaults.
+
+**Private overrides — `config_local.yaml`.** Keep shared settings in `config.yaml` and private ones (call signs, local abbreviations, your own paths) in `config_local.yaml`. It is looked up in the user config directory (`~/.config/data-masking/`, `$XDG_CONFIG_HOME/data-masking/`, `%APPDATA%\data-masking\` on Windows) and next to `config.yaml` (or in the current directory); the one next to `config.yaml` is applied last. Every key set to a non-null value replaces the shared value (sections merge key by key, lists are replaced as a whole); `null` keeps the shared value. The file is in `.gitignore`; keep it `chmod 600` (the program warns otherwise). `--config-local FILE` uses a specific file instead, `--no-local-config` ignores them; both work for `data-mask` and `data-unmask`.
 
 ```bash
 data-mask --init-config                                  # write config.yaml with every key
 data-mask -i input.txt --config config.yaml              # ./config.yaml is also picked up automatically
 data-mask -i input.txt --config docs/config-examples/share.yaml
 data-unmask output.txt -c config.yaml
+data-mask -i input.txt --config-local private.yaml       # private overrides from a specific file
+data-mask --list-exclusions                              # exclusions in effect
 ```
 
-All keys with explanations: [`config_example.yaml`](../config_example.yaml). Options marked `[не реалізовано]` are planned and have no effect yet — see [`TODO-config-options.md`](TODO-config-options.md).
+All keys with explanations: [`config_example.yaml`](../config_example.yaml).
 Ready-made sets: [`docs/config-examples/`](config-examples/README.md)
 (`share` — keep dates and document numbers, `strict` — mask everything, fully synthetic surnames, `pii` — personal data only).
 
