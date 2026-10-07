@@ -231,10 +231,9 @@ masking_*.log
 data_masking_*.log
 *.masking.log
 
-# Конфігурація (генерується --init-config, містить паролі)
-config.yaml
+# Конфігурація: config.yaml у корені — спільний, комітиться (v3.1.3);
+# приватні перекриття (паролі, позивні, шляхи) — лише в config_local.yaml
 config.yml
-# Приватні перекриття конфігурації (v3.1.1)
 config_local.yaml
 config_local.yml
 !config/config_example.yaml

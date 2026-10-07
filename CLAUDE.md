@@ -103,9 +103,13 @@ pip install -e '.[full]' && pip install -r requirements-dev.txt
   не-null з локального файлу перекриває спільне, секції зливаються, списки
   замінюються. Тести не мають читати справжню теку користувача —
   `conftest.isolate_user_config_dir` підміняє `XDG_CONFIG_HOME`/`APPDATA`.
-- Вбудовані виключення (абревіатури, слова не-ПІБ, нормативні акти) — у
-  `masking/exclusions.py`; секція `exclusions` їх доповнює. Без неї маски
-  мають лишатися незмінними.
+- `config.yaml` у корені — **спільний конфіг, комітиться**: усі ключі зі
+  значеннями за замовчуванням (дані = `config_example.yaml`) і повні переліки
+  виключень (`dictionaries`). З ним маски мають бути такими самими, як без
+  конфігу. `masking/exclusions.py` (`BUILTIN_*`) — запасна копія переліків
+  (без PyYAML / інший конфіг); тест звіряє її з `config.yaml`, тож змінюючи
+  перелік — міняти обидва місця. Секція `exclusions` переліки доповнює.
+  Приватне — лише в `config_local.yaml` (шаблон `config_local.example.yaml`).
 - `--encrypt` пише лише `.enc` (plaintext mapping не створюється), mapping —
   атомарно з правами 0600.
 - Формат `.enc` 1 (PBKDF2, сіль 16) — за замовчуванням, його читають усі версії;
@@ -118,6 +122,7 @@ pip install -e '.[full]' && pip install -r requirements-dev.txt
 
 ## Файли, яких не має бути в репо
 
-`config.yaml` і `config_local.yaml` у корені, `output_*`, `masking_map_*`, `masking_report_*`,
+`config_local.yaml` (будь-де), `output_*`, `masking_map_*`, `masking_report_*`,
 `input_recovery_*`, `input.txt` (усе в `.gitignore`; фікстури тестів названі
-інакше — `source.txt`). `conftest.py` падає, якщо тест лишає `config.yaml`.
+інакше — `source.txt`). `conftest.py` падає, якщо тест змінює кореневий `config.yaml` або лишає
+`config_local.yaml`.

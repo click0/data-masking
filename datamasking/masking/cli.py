@@ -645,7 +645,8 @@ def _apply_level1_settings_impl(args, config, logger) -> Optional[str]:
     # Виключення: вбудовані переліки + exclusions (фрази — як custom skip,
     # always_mask — як custom mask, після власних шаблонів)
     from datamasking.masking import exclusions as _exclusions
-    excl = _exclusions.build(getattr(config, 'exclusions', None))
+    excl = _exclusions.build(getattr(config, 'exclusions', None),
+                             getattr(config, 'dictionaries', None))
     _cfg.ABBREVIATION_WHITELIST = excl.abbreviations
     _cfg.EXCLUDE_WORDS_LOWER = excl.words_lower
     _cfg.LEGAL_ACT_DATE_PREFIX = excl.legal_act_prefix

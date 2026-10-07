@@ -107,7 +107,7 @@ jobs:
           ARCHIVE="data-masking-${{ steps.version.outputs.version }}"
           FILES="data_masking.py unmask_data.py diagnose_mapping.py rank_data.py \
             __main__.py pyproject.toml MANIFEST.in pyinstaller_utf8_hook.py \
-            config_example.py config_example.yaml \
+            config_example.py config_example.yaml config.yaml config_local.example.yaml \
             datamasking masking unmasking modules docs tests \
             requirements.txt requirements-dev.txt \
             LICENSE CHANGELOG.md pytest.ini mypy.ini .gitignore \
@@ -263,9 +263,13 @@ jobs:
       - name: Package Windows binaries
         shell: bash
         run: |
+          # Спільний config.yaml (усі ключі + переліки виключень) і шаблон
+          # приватного config_local.yaml — поруч з exe
+          cp config.yaml config_local.example.yaml dist/
           cd dist
           7z a "data-masking-${VERSION}-windows-x64.zip" \
-            data_masking.exe unmask_data.exe diagnose_mapping.exe
+            data_masking.exe unmask_data.exe diagnose_mapping.exe \
+            config.yaml config_local.example.yaml
 
       - uses: actions/upload-artifact@v4
         with:

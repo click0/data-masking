@@ -1,0 +1,36 @@
+# ==========================================================================
+# Шаблон приватної конфігурації — скопіюйте як config_local.yaml:
+#   cp config_local.example.yaml config_local.yaml && chmod 600 config_local.yaml
+#
+# config_local.yaml не комітиться (.gitignore). Він читається поверх
+# config.yaml: кожен ключ зі значенням, відмінним від null, перекриває
+# спільне значення; секції зливаються по ключах; списки замінюються цілком
+# (порожній список [] — теж). null або відсутній ключ — лишається значення
+# з config.yaml. Пишіть сюди лише те, що відрізняється.
+#
+# Де шукається (останній важить найбільше):
+#   1. тека користувача: ~/.config/data-masking/config_local.yaml
+#      ($XDG_CONFIG_HOME/data-masking/, у Windows %APPDATA%\data-masking\)
+#   2. поруч із config.yaml (або в поточній директорії)
+# Інший файл: --config-local FILE; без локальних файлів: --no-local-config.
+# ==========================================================================
+
+# Приклад: власні позивні маскуються завжди, місцеві абревіатури й назви —
+# ніколи. Списки exclusions ДОДАЮТЬСЯ до переліків dictionaries з config.yaml.
+exclusions:
+  abbreviations: []          # напр. [ТРО, ОК]
+  words: []                  # напр. [Рада, Раді]
+  phrases: []                # напр. ["Верховн* Рад*"]
+  legal_acts: []             # напр. ["розпорядженн* президента"]
+  always_mask: []            # напр. ["Грім", "Сокіл"]
+  remove: []                 # прибрати запис із dictionaries
+
+# Приклад: інші значення спільних ключів (розкоментуйте потрібне)
+# system:
+#   encoding: "cp1251"
+# security:
+#   password_env_var: "MY_MASKING_PASSWORD"
+#   password_file: "/home/user/.masking_password"
+# logging:
+#   file: "/home/user/logs/masking.log"
+#   log_to_file: true

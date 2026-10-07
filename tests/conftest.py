@@ -27,18 +27,27 @@ if sys.platform == "win32":
 
 @pytest.fixture(autouse=True)
 def guard_repo_root_config_yaml():
-    """Тести НЕ мають лишати config.yaml у корені репозиторію.
+    """Тести НЕ мають змінювати config.yaml у корені репозиторію (це
+    спільний конфіг, v3.1.3) і лишати там config_local.yaml.
 
-    Раніше фікстура мовчки ВИДАЛЯЛА config.yaml розробника після кожного
-    тесту. Тепер: файл, що існував до тесту, не чіпаємо; файл, який
-    створив тест, — це помилка тесту (він має працювати у tmp_path).
+    Вміст порівнюється до й після тесту; змінений файл відновлюється, а
+    тест падає (він має працювати у tmp_path).
     """
     config_path = PROJECT_ROOT / "config.yaml"
-    existed_before = config_path.exists()
+    local_path = PROJECT_ROOT / "config_local.yaml"
+    before = config_path.read_bytes() if config_path.exists() else None
+    local_existed = local_path.exists()
     yield
-    if not existed_before and config_path.exists():
-        config_path.unlink()
-        pytest.fail("test left config.yaml in the repository root — use tmp_path/monkeypatch.chdir")
+    after = config_path.read_bytes() if config_path.exists() else None
+    if after != before:
+        if before is None:
+            config_path.unlink()
+        else:
+            config_path.write_bytes(before)
+        pytest.fail("test changed config.yaml in the repository root — use tmp_path/monkeypatch.chdir")
+    if not local_existed and local_path.exists():
+        local_path.unlink()
+        pytest.fail("test left config_local.yaml in the repository root — use tmp_path")
 
 
 @pytest.fixture(autouse=True)

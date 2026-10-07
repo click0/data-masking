@@ -236,6 +236,15 @@ class RemaskConfig:
 
 
 @dataclass
+class DictionariesConfig:
+    """Повні переліки виключень (config.yaml); None — вбудована копія
+    з masking/exclusions.py."""
+    abbreviations: Optional[List[str]] = None
+    non_name_words: Optional[List[str]] = None
+    legal_acts: Optional[List[str]] = None
+
+
+@dataclass
 class ExclusionsConfig:
     """Доповнення вбудованих виключень (masking/exclusions.py)."""
     # Абревіатури, які не маскуються як прізвище (ЗСУ, МОУ …)
@@ -298,6 +307,7 @@ EFFECTIVE_KEYS: Dict[str, frozenset] = {
     "remask": frozenset({"enabled", "max_passes", "chain_format", "save_chain", "auto_numbering"}),
     "exclusions": frozenset({"abbreviations", "words", "phrases", "legal_acts",
                              "always_mask", "remove"}),
+    "dictionaries": frozenset({"abbreviations", "non_name_words", "legal_acts"}),
 }
 
 
@@ -382,6 +392,11 @@ def _unknown_leaf_keys(data: Any) -> List[str]:
 LOCAL_CONFIG_NAME = "config_local.yaml"
 
 
+def _dictionaries_yaml() -> str:
+    from datamasking.masking.exclusions import dictionaries_yaml
+    return dictionaries_yaml()
+
+
 def user_config_dir() -> Path:
     """Тека налаштувань користувача: %APPDATA%\\data-masking (Windows),
     $XDG_CONFIG_HOME/data-masking або ~/.config/data-masking."""
@@ -441,6 +456,7 @@ class Config:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     remask: RemaskConfig = field(default_factory=RemaskConfig)
     exclusions: ExclusionsConfig = field(default_factory=ExclusionsConfig)
+    dictionaries: DictionariesConfig = field(default_factory=DictionariesConfig)
 
     # ----- serialisation helpers -----
 
@@ -506,6 +522,11 @@ class Config:
             for k, v in data["exclusions"].items():
                 if hasattr(cfg.exclusions, k):
                     setattr(cfg.exclusions, k, v)
+
+        if "dictionaries" in data and isinstance(data["dictionaries"], dict):
+            for k, v in data["dictionaries"].items():
+                if hasattr(cfg.dictionaries, k):
+                    setattr(cfg.dictionaries, k, v)
 
         return cfg
 
@@ -1004,7 +1025,14 @@ exclusions:
   always_mask: []
   # Remove built-in words, abbreviations or legal acts
   remove: []
-""".format(version=__version__)
+
+# --------------------------------------------------------------------------
+# Dictionaries: the full built-in lists, editable. A missing key (or null)
+# means the copy built into the program. Legal acts: a trailing * matches
+# any ending ("закон*" = Закону, Законом ...).
+# --------------------------------------------------------------------------
+dictionaries:
+{dictionaries}""".format(version=__version__, dictionaries=_dictionaries_yaml())
 
         output = Path(output_path)
         output.write_text(template, encoding="utf-8")
