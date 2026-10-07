@@ -49,12 +49,12 @@ def sm(word: str) -> str:
 
 class TestPrefixLength:
     @pytest.mark.parametrize("word,expected", [
-        ("Коваль", 3), ("Шамрай", 3), ("Ґудзь", 2), ("Ткач", 2), ("Рак", 1),
-        ("Іванов", 1), ("Іванова", 1), ("Івановим", 1), ("Кравчук", 1), ("Кравчуком", 1),
-        ("Мельник", 1), ("Коломієць", 1), ("Бондаренко", 1),
-        # «половина» дала б 0, але мінімум — 1 (v3.1.4)
-        ("Петренко", 1), ("Петренку", 1), ("Сидоренко", 1), ("Лисенко", 1), ("Ковальського", 1),
-        ("Мазуренка", 1), ("Ткаченко", 1),
+        ("Коваль", 3), ("Шамрай", 3), ("Ґудзь", 2), ("Ткач", 2),
+        # «половина» дала б 1 або 0, але мінімум — 2 (v3.1.5)
+        ("Рак", 2), ("Іванов", 2), ("Іванова", 2), ("Івановим", 2), ("Кравчук", 2),
+        ("Кравчуком", 2), ("Мельник", 2), ("Коломієць", 2), ("Бондаренко", 2),
+        ("Петренко", 2), ("Петренку", 2), ("Сидоренко", 2), ("Лисенко", 2), ("Ковальського", 2),
+        ("Мазуренка", 2), ("Ткаченко", 2),
     ])
     def test_default_three_capped_at_half(self, word, expected):
         assert prefix_length_for(word) == expected
@@ -82,8 +82,9 @@ class TestPrefixLength:
     def test_configured_two(self):
         assert prefix_length_for("Коваль", 2) == 2
         assert prefix_length_for("Ткач", 2) == 2
-        assert prefix_length_for("Рак", 2) == 1
-        assert prefix_length_for("Іванов", 2) == 1
+        assert prefix_length_for("Рак", 2) == 2
+        assert prefix_length_for("Іванов", 2) == 2
+        assert prefix_length_for("Іванов", 2, minimum=0) == 1
 
     def test_zero_disables(self):
         assert prefix_length_for("Петренко", 0) == 0
@@ -233,11 +234,11 @@ class TestConfigWiring:
         rc, _ = self._run(tmp_path, monkeypatch, yaml_text="masking_rules:\n  surname_prefix_min: -1\n")
         assert rc == 1
 
-    def test_enko_keeps_first_letter_by_default(self, tmp_path, monkeypatch):
+    def test_enko_keeps_two_letters_by_default(self, tmp_path, monkeypatch):
         rc, out = self._run(tmp_path, monkeypatch)
         assert rc == 0
         masked = next(w for w in out.split() if w.endswith("енко"))  # Бондаренко
-        assert masked.startswith("Б") and masked.endswith("енко") and masked != "Бондаренко"
+        assert masked.startswith("Бо") and masked.endswith("енко") and masked != "Бондаренко"
 
     def test_default_prefix_visible_in_cli_output(self, tmp_path, monkeypatch):
         rc, out = self._run(tmp_path, monkeypatch)

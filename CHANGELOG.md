@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.5] - 2026-10
+
+### Changed — surname masks keep at least the first 2 letters
+- The default of `masking_rules.surname_prefix_min` is now 2 (it was 1 in
+  3.1.4). A surname mask keeps 2 or 3 leading letters of the original;
+  `surname_prefix_length` (3) is still the maximum, and at least one letter
+  of the stem is still replaced. Examples:
+
+  | Surname | Mask |
+  |---|---|
+  | Петренко | Пебоженко |
+  | Мазуренка | Маліженка |
+  | Іванов | Івенов |
+  | Кравчук | Кристук |
+  | Бондаренко | Босиленко |
+  | Коваль | Ковар (unchanged) |
+
+- Masks of surnames that kept fewer than 2 letters differ from 3.1.4.
+  Existing mappings still unmask as before. Set `surname_prefix_min: 1` for
+  the 3.1.4 masks, or `0` for those of 3.1.3 and earlier.
+
 ## [3.1.4] - 2026-10
 
 ### Changed — surname masks keep at least the first letter

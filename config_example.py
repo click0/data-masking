@@ -69,7 +69,7 @@ class SecurityConfig:
 class MaskingRulesConfig:
     """Налаштування правил маскування."""
     surname_prefix_length: int = 3  # перші літери оригіналу в масці прізвища (максимум)
-    surname_prefix_min: int = 1     # і мінімум, навіть понад «половину» (Петренко → П…енко)
+    surname_prefix_min: int = 2     # і мінімум, навіть понад «половину» (Петренко → Пе…енко)
     enable_ranks: bool = True
     enable_names: bool = True
     enable_surnames: bool = True

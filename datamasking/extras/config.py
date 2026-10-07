@@ -135,9 +135,9 @@ class MaskingRulesConfig:
     # (0 = не зберігати; разом зі збереженим закінченням — не більше половини
     # прізвища: Коваль → 3, Іванов → 1, Петренко → 0)
     surname_prefix_length: int = 3
-    # Мінімум символів оригіналу, навіть понад «половину» (Петренко → «П…енко»);
+    # Мінімум символів оригіналу, навіть понад «половину» (Петренко → «Пе…енко»);
     # 0 — як до 3.1.4 (прізвища на «-енко» повністю синтетичні)
-    surname_prefix_min: int = 1
+    surname_prefix_min: int = 2
     # None — як system.preserve_case
     preserve_case: Optional[bool] = None
     # Склеювати звання, розірвані переносом рядка
@@ -942,11 +942,11 @@ masking_rules:
   # How many leading characters of the ORIGINAL surname to keep in its mask
   # (0 = none). Prefix plus the preserved ending stay within half of the
   # surname, but at least surname_prefix_min are kept: Коваль -> Ков…,
-  # Іванов -> І…ов, Петренко -> П…енко.  ENV: DATA_MASKING_SURNAME_PREFIX_LENGTH
+  # Іванов -> Ів…ов, Петренко -> Пе…енко.  ENV: DATA_MASKING_SURNAME_PREFIX_LENGTH
   surname_prefix_length: 3
   # Minimum kept even beyond the half (0 = before 3.1.4: -енко surnames fully
   # synthetic).  ENV: DATA_MASKING_SURNAME_PREFIX_MIN
-  surname_prefix_min: 1
+  surname_prefix_min: 2
 
   # Military ranks (with declension and case preservation)
   enable_ranks: true
