@@ -52,10 +52,23 @@ class TestPrefixLength:
         ("Коваль", 3), ("Шамрай", 3), ("Ґудзь", 2), ("Ткач", 2), ("Рак", 1),
         ("Іванов", 1), ("Іванова", 1), ("Івановим", 1), ("Кравчук", 1), ("Кравчуком", 1),
         ("Мельник", 1), ("Коломієць", 1), ("Бондаренко", 1),
-        ("Петренко", 0), ("Петренку", 0), ("Сидоренко", 0), ("Лисенко", 0), ("Ковальського", 0),
+        # «половина» дала б 0, але мінімум — 1 (v3.1.4)
+        ("Петренко", 1), ("Петренку", 1), ("Сидоренко", 1), ("Лисенко", 1), ("Ковальського", 1),
+        ("Мазуренка", 1), ("Ткаченко", 1),
     ])
     def test_default_three_capped_at_half(self, word, expected):
         assert prefix_length_for(word) == expected
+
+    @pytest.mark.parametrize("word", ["Петренко", "Петренку", "Сидоренко", "Лисенко", "Ковальського"])
+    def test_minimum_zero_restores_half_rule(self, word):
+        assert prefix_length_for(word, minimum=0) == 0
+
+    def test_minimum_bounds(self):
+        assert prefix_length_for("Петренко", 3, minimum=3) == 3      # «Пет…енко»
+        assert prefix_length_for("Петренко", 2, minimum=3) == 2      # не більше максимуму
+        assert prefix_length_for("Лисенко", 3, minimum=3) == 2       # одна літера основи змінюється
+        assert prefix_length_for("Петренко", 0, minimum=3) == 0      # 0 — повністю синтетичне
+        assert prefix_length_for("Коваль", 3, minimum=1) == 3        # мінімум не зменшує
 
     @pytest.mark.parametrize("word", [
         "Коваль", "Шамрай", "Ґудзь", "Ткач", "Рак", "Іванов", "Іванова", "Кравчук",
@@ -63,7 +76,7 @@ class TestPrefixLength:
     ])
     def test_prefix_plus_ending_at_most_half(self, word):
         stem, _ending, family = split_surname(word)
-        p = prefix_length_for(word, 10)
+        p = prefix_length_for(word, 10, minimum=0)
         assert p + len(family) <= (len(stem) + len(family)) // 2 or p == 0
 
     def test_configured_two(self):
@@ -210,6 +223,21 @@ class TestConfigWiring:
     def test_negative_prefix_rejected(self, tmp_path, monkeypatch):
         rc, _ = self._run(tmp_path, monkeypatch, yaml_text="masking_rules:\n  surname_prefix_length: -1\n")
         assert rc == 1
+
+    def test_prefix_min_from_env_and_yaml(self, tmp_path, monkeypatch):
+        rc, out = self._run(tmp_path, monkeypatch, env={"DATA_MASKING_SURNAME_PREFIX_MIN": "0"})
+        assert rc == 0 and _cfg.SURNAME_PREFIX_MIN == 0
+
+    @needs_yaml
+    def test_negative_prefix_min_rejected(self, tmp_path, monkeypatch):
+        rc, _ = self._run(tmp_path, monkeypatch, yaml_text="masking_rules:\n  surname_prefix_min: -1\n")
+        assert rc == 1
+
+    def test_enko_keeps_first_letter_by_default(self, tmp_path, monkeypatch):
+        rc, out = self._run(tmp_path, monkeypatch)
+        assert rc == 0
+        masked = next(w for w in out.split() if w.endswith("енко"))  # Бондаренко
+        assert masked.startswith("Б") and masked.endswith("енко") and masked != "Бондаренко"
 
     def test_default_prefix_visible_in_cli_output(self, tmp_path, monkeypatch):
         rc, out = self._run(tmp_path, monkeypatch)

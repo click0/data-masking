@@ -62,6 +62,25 @@ class TestContent:
         assert tuple(d["non_name_words"]) == _excl.BUILTIN_WORDS
         assert ignored_config_keys(_load(out)) == []
 
+    def test_every_key_the_program_reads(self):
+        # «усі ключі»: кожен ключ із EFFECTIVE_KEYS, крім старих псевдонімів
+        from datamasking.extras.config import EFFECTIVE_KEYS
+        aliases = {"security.password_length", "security.password_generation",
+                   "password_generation.enabled", "password_generation.env_var",
+                   "password_generation.length", "password_generation.use_special_chars"}
+        data = _load(CONFIG)
+
+        def has(path):
+            cur = data
+            for part in path.split("."):
+                if not isinstance(cur, dict) or part not in cur:
+                    return False
+                cur = cur[part]
+            return True
+        missing = sorted(f"{s}.{k}" for s, ks in EFFECTIVE_KEYS.items() for k in ks
+                         if f"{s}.{k}" not in aliases and not has(f"{s}.{k}"))
+        assert missing == []
+
     def test_kabinet_ministriv_listed(self):
         words = {w.lower() for w in _load(CONFIG)["dictionaries"]["non_name_words"]}
         assert {"кабінет", "кабінету", "кабінетом", "міністрів"} <= words

@@ -135,6 +135,9 @@ class MaskingRulesConfig:
     # (0 = не зберігати; разом зі збереженим закінченням — не більше половини
     # прізвища: Коваль → 3, Іванов → 1, Петренко → 0)
     surname_prefix_length: int = 3
+    # Мінімум символів оригіналу, навіть понад «половину» (Петренко → «П…енко»);
+    # 0 — як до 3.1.4 (прізвища на «-енко» повністю синтетичні)
+    surname_prefix_min: int = 1
     # None — як system.preserve_case
     preserve_case: Optional[bool] = None
     # Склеювати звання, розірвані переносом рядка
@@ -270,7 +273,7 @@ EFFECTIVE_KEYS: Dict[str, frozenset] = {
     "masking_rules": frozenset({
         "enable_names", "enable_ipn", "enable_passport", "enable_military_id",
         "enable_ranks", "enable_units", "enable_brigades", "enable_orders",
-        "enable_br_numbers", "enable_dates", "surname_prefix_length",
+        "enable_br_numbers", "enable_dates", "surname_prefix_length", "surname_prefix_min",
         "preserve_case", "rank_line_break_fix", "enable_date_text",
         "enable_surnames", "enable_patronymics", "enable_document_numbers", "custom_patterns",
         "preserve_gender", "consistent_mapping", "instance_tracking", "context_aware",
@@ -558,6 +561,7 @@ class ConfigLoader:
         "DATA_MASKING_DEBUG": ("system", "debug_mode", bool),
         "DATA_MASKING_FAKER_LOCALE": ("system", "faker_locale", str),
         "DATA_MASKING_SURNAME_PREFIX_LENGTH": ("masking_rules", "surname_prefix_length", int),
+        "DATA_MASKING_SURNAME_PREFIX_MIN": ("masking_rules", "surname_prefix_min", int),
         "DATA_MASKING_ENCRYPT_OUTPUT": ("security", "encrypt_output", bool),
         # DATA_MASKING_PASSWORD навмисно ВІДСУТНІЙ: це сам пароль, його читає CLI
         # (до 3.0.4 значення пароля записувалось у security.password_env_var)
@@ -936,10 +940,13 @@ security:
 # --------------------------------------------------------------------------
 masking_rules:
   # How many leading characters of the ORIGINAL surname to keep in its mask
-  # (0 = none). Prefix plus the preserved ending never exceed half of the
-  # surname: Коваль -> Ков…, Іванов -> І…ов, Петренко -> …енко (the ending
-  # alone is half the word).  ENV: DATA_MASKING_SURNAME_PREFIX_LENGTH
+  # (0 = none). Prefix plus the preserved ending stay within half of the
+  # surname, but at least surname_prefix_min are kept: Коваль -> Ков…,
+  # Іванов -> І…ов, Петренко -> П…енко.  ENV: DATA_MASKING_SURNAME_PREFIX_LENGTH
   surname_prefix_length: 3
+  # Minimum kept even beyond the half (0 = before 3.1.4: -енко surnames fully
+  # synthetic).  ENV: DATA_MASKING_SURNAME_PREFIX_MIN
+  surname_prefix_min: 1
 
   # Military ranks (with declension and case preservation)
   enable_ranks: true

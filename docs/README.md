@@ -193,7 +193,7 @@ Unmask правильно відновить обидва входження
 ```
 
 ### Surname masks (v3.0.8, rule refined in v3.0.16)
-A surname mask keeps up to the **first 3 characters** of the original, the rest is synthetic, and the grammatical ending is preserved. The prefix and the preserved ending together never exceed **half of the surname**, so long endings shorten the prefix: `Коваль → Ковар`, `Іванов → Іщенов`, `Ґудзь → Ґубко`, `Петренку → Єрченку` (the `-енко` ending is already half of the word). All letter-case and grammatical-case forms of one surname share one synthetic stem (`МАЗУРЕНКА / Мазуренко → ТЕЛІЖЕНКА / Теліженко`). Configure with `masking_rules.surname_prefix_length` (0 = fully synthetic) and the faker dictionaries with `system.faker_locale` (default `uk_UA`; grammar stays Ukrainian).
+A surname mask keeps up to the **first 3 characters** of the original, the rest is synthetic, and the grammatical ending is preserved. The prefix and the preserved ending together stay within **half of the surname**, so long endings shorten the prefix, but at least the **first letter** is always kept: `Коваль → Ковар`, `Іванов → Іщенов`, `Ґудзь → Ґубко`, `Петренку → Поменку` (the `-енко` ending is already half of the word, so only the minimum is kept). All letter-case and grammatical-case forms of one surname share one synthetic stem (`МАЗУРЕНКА / Мазуренко → МЕЛІЖЕНКА / Меліженко`). Configure with `masking_rules.surname_prefix_length` (maximum, 0 = fully synthetic) and `surname_prefix_min` (minimum, default 1; 0 = the half rule alone, as before 3.1.4) and the faker dictionaries with `system.faker_locale` (default `uk_UA`; grammar stays Ukrainian).
 
 ### Case Preservation
 ```
@@ -339,6 +339,7 @@ masking_rules:
   enable_br_numbers: true   # БР номери
   enable_dates: true        # дати
   surname_prefix_length: 3  # літер оригінального прізвища в масці (0 = жодної)
+  surname_prefix_min: 1     # мінімум, навіть для «-енко» (0 = як до 3.1.4)
 system:
   hash_algorithm: "blake2b"
 security:

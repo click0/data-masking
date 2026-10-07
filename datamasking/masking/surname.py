@@ -209,7 +209,8 @@ def _random_stem(seed: int, target_len: int, prefix: str = "") -> str:
     return prefix + tail
 
 
-def prefix_length_for(original: str, configured: Optional[int] = None) -> int:
+def prefix_length_for(original: str, configured: Optional[int] = None,
+                      minimum: Optional[int] = None) -> int:
     """Скільки перших символів оригіналу лишити в масці.
 
     Правило (ТЗ): N з конфігу (SURNAME_PREFIX_LENGTH, типово 3), але з
@@ -219,18 +220,23 @@ def prefix_length_for(original: str, configured: Optional[int] = None) -> int:
     від базової (називної) форми — основа + родинне закінчення, — щоб
     префікс не залежав від відмінка (Іванов / Іванова / Івановим → 1).
 
+    Але не менше SURNAME_PREFIX_MIN (типово 1, v3.1.4): інакше прізвища на
+    «-енко» лишались без жодної літери оригіналу. *minimum* — для тестів.
+
     Коваль → 3, Ґудзь → 2, Ткач → 2, Іванов → 1, Кравчук → 1,
-    Бондаренко → 1, Петренко → 0 (закінчення «енко» уже половина слова).
+    Бондаренко → 1, Петренко → 1 (за правилом половини було б 0).
     """
     n = _cfg.SURNAME_PREFIX_LENGTH if configured is None else configured
     if n <= 0:
         return 0
+    lo = _cfg.SURNAME_PREFIX_MIN if minimum is None else minimum
     stem, _ending, family = split_surname(original)
     base_len = len(stem) + len(family)
     budget = base_len // 2 - len(family)
+    p = max(min(n, budget), min(lo, n))
     # Хоча б один символ основи має змінитись (Лис-енко: основа «лис» — префікс
     # 2, не 3), інакше маска містить усю основу і no-leak відкидає всі спроби
-    return max(0, min(n, budget, len(stem) - 1))
+    return max(0, min(p, len(stem) - 1))
 
 
 def _leaks(masked: str, original: str, stem: str) -> bool:

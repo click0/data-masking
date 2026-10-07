@@ -753,6 +753,17 @@ def _apply_config_settings(args, config, logger) -> Optional[str]:
             return "masking_rules.surname_prefix_length must be >= 0"
         _cfg.SURNAME_PREFIX_LENGTH = prefix_len
 
+    # masking_rules.surname_prefix_min — мінімум, навіть понад «половину»
+    prefix_min = getattr(masking_rules, 'surname_prefix_min', None)
+    if prefix_min is not None:
+        try:
+            prefix_min = int(prefix_min)
+        except (TypeError, ValueError):
+            return f"masking_rules.surname_prefix_min must be an integer, got {prefix_min!r}"
+        if prefix_min < 0:
+            return "masking_rules.surname_prefix_min must be >= 0"
+        _cfg.SURNAME_PREFIX_MIN = prefix_min
+
     # validation.max_input_size_mb — раніше документований, але мертвий ключ
     validation_cfg = getattr(config, 'validation', None)
     max_mb = getattr(validation_cfg, 'max_input_size_mb', None)

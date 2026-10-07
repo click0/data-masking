@@ -27,6 +27,7 @@ class SystemConfig:
     """Системні налаштування."""
     version: str = "v2.6.0"
     hash_algorithm: str = "blake2b"
+    faker_locale: str = "uk_UA"
     hash_digest_size: int = 64
     encoding: str = "utf-8"
     preserve_case: bool = True
@@ -67,6 +68,8 @@ class SecurityConfig:
 @dataclass
 class MaskingRulesConfig:
     """Налаштування правил маскування."""
+    surname_prefix_length: int = 3  # перші літери оригіналу в масці прізвища (максимум)
+    surname_prefix_min: int = 1     # і мінімум, навіть понад «половину» (Петренко → П…енко)
     enable_ranks: bool = True
     enable_names: bool = True
     enable_surnames: bool = True
@@ -94,6 +97,9 @@ class MaskingRulesConfig:
 @dataclass
 class ValidationConfig:
     """Налаштування валідації."""
+    strict_mode: bool = False
+    max_input_size_mb: int = 100
+    allowed_encodings: List[str] = field(default_factory=lambda: ["utf-8", "cp1251", "latin-1"])
     validate_ipn_checksum: bool = False
     validate_date_range: bool = True
     min_date_year: int = 1900

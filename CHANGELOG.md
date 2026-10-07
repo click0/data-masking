@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.4] - 2026-10
+
+### Changed — surname masks keep at least the first letter
+- Surnames whose preserved ending is already half of the word kept no
+  letter of the original: the "-енко" surnames (Петренко → Єрченко,
+  Мазуренко → Теліженко, Ткаченко → Акименко), and some others such as
+  "-ського". The rule "prefix + preserved ending ≤ half of the surname" gave
+  them a prefix of 0. Now at least the first letter is kept: Петренко →
+  Поменко, Мазуренка → Меліженка, Ткаченко → Тіліпенко. Other surnames are
+  unchanged (Коваль → Ковар, Іванов → Іщенов). At least one letter of the
+  stem is still always replaced.
+- New option `masking_rules.surname_prefix_min` (env
+  `DATA_MASKING_SURNAME_PREFIX_MIN`), default 1. It sets the minimum number
+  of letters kept, even beyond the half rule, and never exceeds
+  `surname_prefix_length` (the maximum, 3). Set it to 0 to get the masks of
+  3.1.3 and earlier; set it to 3 to keep 3 letters everywhere (Пет…енко).
+- **Masks of these surnames differ from 3.1.3.** Existing mappings still
+  unmask as before.
+
+### Fixed — `config.yaml` was missing keys
+- `config.yaml` (and `config_example.yaml` / `.py`) claimed to list every
+  key but lacked `masking_rules.surname_prefix_length`,
+  `system.faker_locale`, `validation.strict_mode`,
+  `validation.max_input_size_mb` and `validation.allowed_encodings`. They are
+  added with their defaults, and a test now checks that `config.yaml`
+  contains every key the program reads.
+
 ## [3.1.3] - 2026-10
 
 ### Added — `config.yaml` in the repository root

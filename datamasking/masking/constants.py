@@ -46,9 +46,16 @@ fake_uk_fallback = fake_uk
 
 # Скільки перших символів оригінального прізвища зберігати в масці
 # (0 = не зберігати). Разом зі збереженим закінченням — не більше половини
-# прізвища (Коваль → 3, Іванов → 1, Петренко → 0; див. surname.prefix_length_for).
+# прізвища, але не менше SURNAME_PREFIX_MIN (Коваль → 3, Іванов → 1,
+# Петренко → 1; див. surname.prefix_length_for).
 # Конфіг: masking_rules.surname_prefix_length / DATA_MASKING_SURNAME_PREFIX_LENGTH
 SURNAME_PREFIX_LENGTH = 3
+# Мінімум символів оригіналу в масці прізвища (v3.1.4): навіть коли правило
+# «префікс + закінчення ≤ половини» дає 0 (Петренко, Мазуренко — «-енко» уже
+# половина слова), лишається стільки (але не більше SURNAME_PREFIX_LENGTH).
+# 0 — як до 3.1.4 (прізвища на «-енко» повністю синтетичні).
+# Конфіг: masking_rules.surname_prefix_min / DATA_MASKING_SURNAME_PREFIX_MIN
+SURNAME_PREFIX_MIN = 1
 
 HASH_ALGORITHM = 'blake2b'
 
