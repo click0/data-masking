@@ -17,11 +17,11 @@ from datamasking.masking import surname as _surname
 from datamasking.masking import custom as _custom
 from datamasking.masking.context import (
     analyze_number_sign_context, analyze_br_keyword,
-    looks_like_pib_line, parse_hybrid_line,
+    looks_like_pib_line, parse_hybrid_line, WORD_SEPARATOR_RE,
 )
 from datamasking.masking.helpers import get_deterministic_seed, add_to_mapping
 from datamasking.masking.language import (
-    is_likely_surname_by_case, detect_gender_by_patronymic,
+    is_likely_surname_by_case, detect_gender_by_patronymic, looks_like_name,
 )
 from datamasking.masking.mask_personal import (
     mask_ipn, mask_passport_id, mask_military_id,
@@ -211,7 +211,10 @@ def normalize_broken_ranks(text: str) -> str:
         return text
 
     def replace_match(match):
-        return re.sub(r'\s+', ' ', match.group(0))
+        # Лише розрив переносом рядка; таб чи подвійний пробіл між словами
+        # звання лишаються (до 3.1.7 стискались безповоротно — unmask не
+        # відновлював оригінальні роздільники)
+        return re.sub(r'\s*\n\s*', ' ', match.group(0))
 
     return pattern.sub(replace_match, text)
 
@@ -339,8 +342,93 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
     return text
 
 
+def locate_words(line: str, phrase: str) -> Optional[Tuple[int, int, List[str]]]:
+    """Знаходить слова *phrase* (розділені пробілом) у *line*, де між ними
+    може стояти будь-який роздільник: кілька пробілів, таб, NBSP, «|»
+    таблиць. Повертає (start, end, роздільники між словами) або None.
+    До 3.1.7 ПІБ шукався дослівно, і «Коваль\tТетяна\tСергіївна» не маскувався."""
+    words = phrase.split()
+    if not words:
+        return None
+    pattern = r"(?<![\w'’ʼ-])" + r"([\s|]+)".join(re.escape(w) for w in words) + r"(?![\w'’ʼ-])"
+    m = re.search(pattern, line)
+    if not m:
+        # Слово могло бути приклеєне до лапок/розділового знака — як раніше, дослівно
+        idx = line.find(phrase)
+        if idx < 0:
+            return None
+        return idx, idx + len(phrase), [" "] * (len(words) - 1)
+    return m.start(), m.end(), list(m.groups())
+
+
+def join_with_separators(words: List[str], separators: List[str]) -> str:
+    """Склеює слова оригінальними роздільниками (їх на 1 менше, ніж слів;
+    якщо кількість слів змінилась — одинарні пробіли)."""
+    if len(separators) != len(words) - 1:
+        return " ".join(words)
+    out = [words[0]]
+    for sep, w in zip(separators, words[1:]):
+        out.append(sep)
+        out.append(w)
+    return "".join(out)
+
+
+def _mask_known_surnames_standalone(text: str, masking_dict: Dict, instance_counters: Dict) -> str:
+    """Прізвище, яке вже замасковано в документі, маскується і там, де воно
+    стоїть само («…Івенов Павло Данилович звільнений. Іванов отримав
+    виплату.») — до 3.1.7 другий «Іванов» лишався відкритим поруч із
+    маскою. Інші відмінки того ж прізвища (Іванова, Іванову) розпізнаються
+    за основою і дістають ту саму синтетичну основу."""
+    if not _cfg.MASK_SURNAMES:
+        return text
+    mappings = masking_dict.get("mappings", {})
+    surnames = mappings.get("surname", {})
+    if not surnames:
+        return text
+    # Відоме прізвище — пара (основа, родове закінчення): «Іванов»/«Іванова»/
+    # «Іванову» → (іван, ов). Лише основи недостатньо: ім'я «Івана» має ту
+    # саму основу «іван», і його маска перемаскувалась би як прізвище
+    known_pairs = set()
+    for original in surnames:
+        stem, _ending, family = _surname.split_surname(original)
+        if len(stem) >= 3:
+            known_pairs.add((stem.lower(), family.lower()))
+    if not known_pairs:
+        return text
+    # Жодну вже вставлену маску (будь-якої категорії) не чіпаємо
+    masks_lower = {
+        info["masked_as"].lower()
+        for category in mappings.values() if isinstance(category, dict)
+        for info in category.values() if isinstance(info, dict) and info.get("masked_as")
+    }
+
+    def _replace(m: "re.Match[str]") -> str:
+        word: str = m.group(0)
+        low = word.lower()
+        if low in masks_lower or low in _cfg.EXCLUDE_WORDS_LOWER or low in _cfg.ABBREVIATION_WHITELIST \
+                or low in _cfg.RANKS_LIST_LOWER or not looks_like_name(word):
+            return word
+        stem, _ending, family = _surname.split_surname(word)
+        if len(stem) < 3 or (stem.lower(), family.lower()) not in known_pairs:
+            return word
+        return mask_surname(word, masking_dict, instance_counters)
+
+    return re.sub(r"(?<![\w'’ʼ-])[А-ЯІЇЄҐ][А-ЯІЇЄҐа-яіїєґ'’ʼ-]{2,}(?![\w'’ʼ-])", _replace, text)
+
+
 def _mask_text_core(text: str, masking_dict: Dict, instance_counters: Dict,
                     kept: Optional[List[Tuple[str, str]]] = None) -> str:
+    # BOM на початку файлу інакше «приклеюється» до першого слова, і перше
+    # прізвище лишається відкритим
+    bom = text.startswith("\ufeff")
+    if bom:
+        text = text[1:]
+    text = _mask_text_core_impl(text, masking_dict, instance_counters, kept)
+    return ("\ufeff" + text) if bom else text
+
+
+def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
+                         kept: Optional[List[Tuple[str, str]]] = None) -> str:
     # === ШАГ 0: Нормалізація розірваних звань
     if _cfg.RANK_LINE_BREAK_FIX:
         text = normalize_broken_ranks(text)
@@ -555,12 +643,19 @@ def _mask_text_core(text: str, masking_dict: Dict, instance_counters: Dict,
             placeholders.append((token, value))
             return token
 
-        while iteration < 10:
+        def _replace_span(line: str, span: Tuple[int, int, List[str]], token: str) -> str:
+            return line[:span[0]] + token + line[span[1]:]
+
+        # Без жорсткого ліміту ПІБ на рядок (до 3.1.7 — 10: у списку з 12
+        # осіб останні дві лишались відкритими); кожна ітерація або замінює
+        # фрагмент плейсхолдером, або завершує цикл
+        while iteration < 500:
             rank, pib, identifier = parse_hybrid_line(current_line_for_parsing)
             if not pib: break
-            # ПІБ має бути дослівно в рядку — інакше заміна не спрацює, а
-            # mask_* уже запишуть сміття в mapping і цикл крутитиметься вхолосту
-            if pib not in current_line_for_parsing:
+            # ПІБ має бути в рядку (слова — з будь-якими роздільниками) —
+            # інакше заміна не спрацює, а mask_* уже запишуть сміття в mapping
+            pib_span = locate_words(current_line_for_parsing, pib)
+            if pib_span is None:
                 break
             # Плейсхолдер уже замаскованого фрагмента ніколи не є званням чи
             # частиною ПІБ (інакше маска загорнулась би в маску, а токен
@@ -569,8 +664,15 @@ def _mask_text_core(text: str, masking_dict: Dict, instance_counters: Dict,
                 break
 
             if rank and _cfg.MASK_RANKS:
-                masked_rank_val = mask_rank_preserve_case(rank, masking_dict, instance_counters)
-                current_line_for_parsing = current_line_for_parsing.replace(rank, _hold("RANK", masked_rank_val), 1)
+                rank_span = locate_words(current_line_for_parsing, rank)
+                if rank_span is not None:
+                    masked_rank_val = mask_rank_preserve_case(rank, masking_dict, instance_counters)
+                    masked_rank_val = join_with_separators(masked_rank_val.split(), rank_span[2])
+                    current_line_for_parsing = _replace_span(current_line_for_parsing, rank_span,
+                                                             _hold("RANK", masked_rank_val))
+                    pib_span = locate_words(current_line_for_parsing, pib)
+                    if pib_span is None:
+                        break
 
             if pib and (_cfg.MASK_NAMES or _cfg.MASK_SURNAMES or _cfg.MASK_PATRONYMICS):
                 parts = pib.split()
@@ -589,13 +691,16 @@ def _mask_text_core(text: str, masking_dict: Dict, instance_counters: Dict,
                     for info in masking_dict["mappings"].get("surname", {}).values()
                     if isinstance(info, dict) and "masked_as" in info
                 }
+                original_pib_text = current_line_for_parsing[pib_span[0]:pib_span[1]]
                 if any(p.lower() in already_masked for p in parts[:2]):
-                    current_line_for_parsing = current_line_for_parsing.replace(pib, _hold("PIB", pib), 1)
+                    current_line_for_parsing = _replace_span(current_line_for_parsing, pib_span,
+                                                             _hold("PIB", original_pib_text))
                     iteration += 1
                     continue
                 # validation.strict_pib_format: лише повне «Прізвище Ім'я По батькові»
                 if _cfg.STRICT_PIB_FORMAT and len(parts) < 3:
-                    current_line_for_parsing = current_line_for_parsing.replace(pib, _hold("PIB", pib), 1)
+                    current_line_for_parsing = _replace_span(current_line_for_parsing, pib_span,
+                                                             _hold("PIB", original_pib_text))
                     iteration += 1
                     continue
                 if len(parts) >= 2:
@@ -607,25 +712,37 @@ def _mask_text_core(text: str, masking_dict: Dict, instance_counters: Dict,
                         patronymic = parts[2] if len(parts) >= 3 else ""
                         masked_surname = mask_surname(surname, masking_dict, instance_counters) if _cfg.MASK_SURNAMES else surname
                         masked_name = mask_name(name, masking_dict, instance_counters, gender_hint=detect_gender_by_patronymic(patronymic) if patronymic else None, patronymic_hint=patronymic) if _cfg.MASK_NAMES else name
-                        masked_pib_str = f"{masked_name} {masked_surname}"
+                        masked_parts = [masked_name, masked_surname]
                     else:
                         surname, name = parts[0], parts[1]
                         patronymic = parts[2] if len(parts) >= 3 else ""
                         masked_surname = mask_surname(surname, masking_dict, instance_counters) if _cfg.MASK_SURNAMES else surname
                         masked_name = mask_name(name, masking_dict, instance_counters, gender_hint=detect_gender_by_patronymic(patronymic) if patronymic else None, patronymic_hint=patronymic) if _cfg.MASK_NAMES else name
-                        masked_pib_str = f"{masked_surname} {masked_name}"
+                        masked_parts = [masked_surname, masked_name]
 
                     if patronymic:
                         gender = detect_gender_by_patronymic(patronymic) if patronymic else 'male'
                         masked_patronymic = mask_patronymic(patronymic, gender, masking_dict, instance_counters)
-                        masked_pib_str += f" {masked_patronymic}"
+                        masked_parts.append(masked_patronymic)
 
-                    current_line_for_parsing = current_line_for_parsing.replace(pib, _hold("PIB", masked_pib_str), 1)
+                    # Роздільники між словами (таб, «|», подвійний пробіл) — як в оригіналі
+                    masked_pib_str = join_with_separators(masked_parts, pib_span[2])
+                    current_line_for_parsing = _replace_span(current_line_for_parsing, pib_span,
+                                                             _hold("PIB", masked_pib_str))
                 elif len(parts) == 1 and rank:
                     # Звання + лише прізвище («рядовий Іванов прибув») —
                     # раніше такий ПІБ узагалі не маскувався
                     masked_surname = mask_surname(parts[0], masking_dict, instance_counters) if _cfg.MASK_SURNAMES else parts[0]
-                    current_line_for_parsing = current_line_for_parsing.replace(pib, _hold("PIB", masked_surname), 1)
+                    current_line_for_parsing = _replace_span(current_line_for_parsing, pib_span,
+                                                             _hold("PIB", masked_surname))
+                else:
+                    # Нічого не замінено (напр. один ПІБ-кандидат без звання) —
+                    # сховати фрагмент, щоб цикл не крутився на тому ж місці
+                    current_line_for_parsing = _replace_span(current_line_for_parsing, pib_span,
+                                                             _hold("PIB", original_pib_text))
+            else:
+                current_line_for_parsing = _replace_span(current_line_for_parsing, pib_span,
+                                                         _hold("PIB", current_line_for_parsing[pib_span[0]:pib_span[1]]))
             iteration += 1
 
         # У зворотному порядку: значення пізнішого плейсхолдера може містити
@@ -636,6 +753,9 @@ def _mask_text_core(text: str, masking_dict: Dict, instance_counters: Dict,
         masked_lines.append(final_line)
 
     text = '\n'.join(masked_lines)
+
+    # Прізвища, вже замасковані в документі, — і там, де стоять самі
+    text = _mask_known_surnames_standalone(text, masking_dict, instance_counters)
 
     # Звання-значення в лапках без ПІБ («молодший сержант») — після
     # основного циклу, з пропуском уже замаскованих форм

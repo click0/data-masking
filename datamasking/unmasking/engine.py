@@ -41,6 +41,20 @@ from datamasking.unmasking.helpers import (
 )
 
 
+def _reapply_separators(raw: str, restored: str) -> str:
+    """Роздільники між словами звання (таб, подвійний пробіл) — як у
+    замаскованому тексті, якщо кількість слів не змінилась."""
+    seps = re.findall(r"\s+", raw.strip())
+    words = restored.split()
+    if len(seps) != len(words) - 1:
+        return restored
+    out = [words[0]]
+    for sep, w in zip(seps, words[1:]):
+        out.append(sep)
+        out.append(w)
+    return "".join(out)
+
+
 def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
     """
     Відновлення звань з урахуванням гендеру та граматичних відмінків.
@@ -67,7 +81,9 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
     all_found_ranks: List[FoundRank] = []
     covered = bytearray(len(restored_text) + 1)
     for rank_form in ALL_RANK_FORMS:
-        pattern = r'\b' + re.escape(rank_form) + r'\b'
+        # Між словами звання — будь-який пробільний роздільник (маскування
+        # зберігає таб/подвійний пробіл оригіналу, v3.1.7)
+        pattern = r'\b' + r'\s+'.join(re.escape(w) for w in rank_form.split()) + r'\b'
         for match in re.finditer(pattern, restored_text, re.IGNORECASE):
             if 1 in covered[match.start():match.end()]:
                 continue
@@ -80,7 +96,7 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
 
     # Fallback: звання-маски, які відсутні у словнику
     for masked_rank in all_masked_ranks:
-        pattern = r'\b' + re.escape(masked_rank) + r'\b'
+        pattern = r'\b' + r'\s+'.join(re.escape(w) for w in masked_rank.split()) + r'\b'
         for match in re.finditer(pattern, restored_text, re.IGNORECASE):
             overlaps = any(
                 match.start() < found["end"] and match.end() > found["start"]
@@ -103,7 +119,7 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
     for found in all_found_ranks:
         # ЛОГІКА A: ПРОСТА ЗАМІНА
         if found.get("simple", False):
-            full_rank_text = found["text"]
+            full_rank_text = " ".join(found["text"].split())
             base_rank, additional_words = extract_base_rank(full_rank_text)
             masked_rank_lower = base_rank.lower()
 
@@ -121,14 +137,15 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
                 original_rank = _apply_original_case(base_rank, original_rank)
                 restored_full_rank = f"{original_rank} {additional_words}" if additional_words else original_rank
 
-                replacements_to_do.append((found["start"], found["end"], restored_full_rank))
+                replacements_to_do.append((found["start"], found["end"],
+                                           _reapply_separators(found["text"], restored_full_rank)))
                 stats["restored_count"] += 1
             else:
                 stats["skipped_count"] += 1
             continue
 
         # ЛОГІКА B: РОЗУМНА ЗАМІНА (з відновленням відмінку та роду)
-        full_rank_text = found["text"]
+        full_rank_text = " ".join(found["text"].split())
         base_rank_text, additional_words = extract_base_rank(full_rank_text)
 
         base_masked_form, case, gender = get_rank_info(base_rank_text)
@@ -162,7 +179,8 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
             reconstructed_form = _apply_original_case(base_rank_text, reconstructed_form)
             restored_full_rank = f"{reconstructed_form} {additional_words}" if additional_words else reconstructed_form
 
-            replacements_to_do.append((found["start"], found["end"], restored_full_rank))
+            replacements_to_do.append((found["start"], found["end"],
+                                       _reapply_separators(found["text"], restored_full_rank)))
             stats["restored_count"] += 1
         elif base_masked_form in rank_instance_map:
             # Маска є в mapping, але для цього входження оригіналу немає
