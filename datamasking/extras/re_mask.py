@@ -77,6 +77,20 @@ def _generate_chain_id() -> str:
 # MappingChain
 # ============================================================================
 
+def _flat_pairs(pairs: Dict[str, Any]) -> Dict[str, str]:
+    """оригінал → маска для категорії mapping: значення v2 — об'єкти з
+    masked_as (до 3.1.11 брались як рядки → TypeError на будь-якому ланцюгу)."""
+    out: Dict[str, str] = {}
+    for orig, info in pairs.items():
+        if isinstance(info, dict):
+            masked = info.get("masked_as")
+            if isinstance(masked, str):
+                out[str(orig)] = masked
+        elif isinstance(info, str):
+            out[str(orig)] = info
+    return out
+
+
 class MappingChain:
     """Tracks mappings across multiple re-mask passes.
 
@@ -191,7 +205,7 @@ class MappingChain:
         if seed_data is not None:
             for _cat, pairs in seed_data.get("mappings", {}).items():
                 if isinstance(pairs, dict):
-                    combined.update(pairs)
+                    combined.update(_flat_pairs(pairs))
         # Chain through subsequent passes
         for step in range(from_pass + 1, to_pass + 1):
             step_data = self.get_pass(step)
@@ -200,7 +214,7 @@ class MappingChain:
             step_flat: Dict[str, str] = {}
             for _cat, pairs in step_data.get("mappings", {}).items():
                 if isinstance(pairs, dict):
-                    step_flat.update(pairs)
+                    step_flat.update(_flat_pairs(pairs))
             new_combined: Dict[str, str] = {}
             for orig, intermediate in combined.items():
                 if intermediate in step_flat:
@@ -226,7 +240,7 @@ class MappingChain:
             step_inv: Dict[str, str] = {}
             for _cat, pairs in step_data.get("mappings", {}).items():
                 if isinstance(pairs, dict):
-                    for orig, masked in pairs.items():
+                    for orig, masked in _flat_pairs(pairs).items():
                         step_inv[masked] = orig
             if not combined:
                 combined = dict(step_inv)
@@ -267,14 +281,14 @@ class MappingChain:
         return chain
 
     def save(self, path: Any) -> None:
-        """Save the chain to a JSON file.
+        """Save the chain to a JSON file (атомарно, права 0600 — як mapping з CLI, v3.1.11).
 
         Args:
             path: Filesystem path (str or Path) for the output file.
         """
+        from datamasking._fsutil import atomic_write_private
         path = Path(path)
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(self.to_dict(), fh, ensure_ascii=False, indent=2)
+        atomic_write_private(path, json.dumps(self.to_dict(), ensure_ascii=False, indent=2).encode("utf-8"))
 
     @classmethod
     def load(cls, path: Any) -> "MappingChain":

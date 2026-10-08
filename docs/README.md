@@ -53,7 +53,7 @@ Since v3.0 all code lives in a single top-level package **`datamasking`**
 ### `datamasking.extras` Package (optional features)
 | Module | Description |
 |--------|-------------|
-| `config.py` | YAML + ENV + CLI configuration with priorities (CLI > ENV > YAML > Default) |
+| `config.py` | YAML + ENV + CLI configuration with priorities (CLI > ENV > config_local.yaml > config.yaml > config.py > Default) |
 | `security.py` | AES-256-GCM encryption/decryption of mapping files |
 | `masking_logger.py` | Structured logging (JSON + colored console output) |
 | `selective.py` | `--only` / `--exclude` filters for selective masking |
@@ -74,7 +74,7 @@ Since v3.0 all code lives in a single top-level package **`datamasking`**
 ### Install (v3.0+)
 ```bash
 pip install '.[full]'        # from a repository checkout
-data-mask input.txt          # console scripts appear on PATH
+data-mask -i input.txt       # console scripts appear on PATH
 data-unmask masked_file.txt
 ```
 Running from source without installation also works — see below.
@@ -117,7 +117,7 @@ python unmask_data.py -c config.yaml
 ### Diagnostics
 ```bash
 python diagnose_mapping.py mapping1.json mapping2.json   # compare mappings
-python diagnose_mapping.py --verify input.txt recovered.txt  # verify recovery
+python diagnose_mapping.py              # in a folder with input.txt + input_recovery_*.txt: verifies the recovery, compares the two latest mappings
 ```
 
 ---
@@ -141,7 +141,7 @@ python diagnose_mapping.py --verify input.txt recovered.txt  # verify recovery
 
 ### Documents
 - **BR numbers** — 75/25/3400/Р, 818/856, 86319/06/1689/Р, 566
-- **Dates** — DD.MM.YYYY (±30 days)
+- **Dates** — DD.MM.YYYY and D.M.YYYY (±30 days, never 0; also when glued to letters: `31.12.2024р.`); written-out dates (`«06» жовтня 2025 року`) get another day, month and ±1 year
 
 ### Exceptions
 - **Abbreviations** (never masked as a surname) — ЗСУ, МОУ, ВСУ, ДПСУ, НГУ, ДСНС, СБУ, ГУР, ТЦК, СП, КМУ, ОТЦКСП, ТВО, ТРО
@@ -157,39 +157,35 @@ The full lists are in [`config.yaml`](../config.yaml) (section `dictionaries`, e
 ### Instance Tracking
 Each occurrence is tracked individually:
 ```
-Вхід:  "Іванов зустрів Петрова, потім Іванов пішов"
-Маска: "Сидоров зустрів Коваля, потім Сидоров пішов"
-                ↑ instance 1           ↑ instance 2
-Unmask правильно відновить обидва входження
+Вхід:  "Іванов Петро Іванович і Петров Олег Петрович. Потім Іванов пішов, а Петров лишився."
+Маска: "Івенов Павло Леонідович і Пергов Омелян Степанович. Потім Івенов пішов, а Пергов лишився."
 ```
+A surname is recognised as part of a name (`Прізвище Ім'я По батькові`, or after a rank); once it is known in the document, every other occurrence of it — including other case forms — gets the same synthetic stem, and unmask restores each occurrence by its instance number.
 
 ### Preserving Grammatical Forms
 
-**Rank declension:**
+Ranks are recognised next to a name (or in quotes as a standalone value); a rank word in running text (`рядовий склад`, `Командир роти капітан`) is left as it is — and masks never collide with it. Real output (3.1.x):
+
+**Rank declension** (the surname keeps its case ending):
 ```
-"молодшому сержанту"   → "старшому солдату"   (давальний)
-"молодшого сержанта"   → "старшого солдата"   (родовий)
-"молодшим сержантом"   → "старшим солдатом"   (орудний)
+"молодшому сержанту Іванову …"   → "старшому солдату Івенову …"    (давальний)
+"молодшого сержанта Іванова …"   → "старшого солдата Івенова …"    (родовий)
+"молодшим сержантом Івановим …"  → "старшим солдатом Івеновим …"   (орудний)
 ```
 
-**Name declension:**
-```
-"Іванову Петру"    → "Сидорову Андрію"    (давальний)
-"Іванова Петра"    → "Сидорова Андрія"    (родовий)
-"Івановим Петром"  → "Сидоровим Андрієм"  (орудний)
-```
+**First names and patronymics:** the first-name mask follows the dative and instrumental case (`Петру → Павлу`, `Петром → Павлом`); in the genitive and for every patronymic the mask is in the nominative (`Петра → Павло`, `Миколайовичу → Охрімович`). Unmasking is exact in all cases; the grammar of the mask is a known limitation.
 
 **Gender:**
 ```
-"молодшою сержанткою"  → "старшою солдаткою"  (жіночий)
-"капітанці"            → "майорці"            (жіночий)
+"молодшою сержанткою Коваленко Марією …"  → "старшою солдаткою Котвиненко Іриною …"
+"капітанці Коваленко Марії …"             → "лейтенантці Котвиненко Марті …"
 ```
 
 **Additional modifiers:**
 ```
-"Солдату у відставці"     → "Рядовому у відставці"       (давальний зберігається!)
-"Сержанту в запасі"       → "Старшому солдату в запасі"  (давальний зберігається!)
-"Капітану на пенсії"      → "Майору на пенсії"           (давальний зберігається!)
+"Солдату у відставці Петренку …"   → "Рядовому у відставці Пебоженку …"
+"Сержанту в запасі Петренку …"     → "Старшому сержанту в запасі Пебоженку …"
+"Капітану на пенсії Петренку …"    → "Лейтенанту на пенсії Пебоженку …"
 ```
 
 ### Surname masks (v3.0.8, rule refined in v3.0.16)
@@ -197,10 +193,10 @@ A surname mask keeps up to the **first 3 characters** of the original, the rest 
 
 ### Case Preservation
 ```
-"ІВАНОВ"   → "ПЕТРЕНКО"
-"Іванов"   → "Петренко"
-"іванов"   → "петренко"
+"ІВАНОВ ІВАН ІВАНОВИЧ"  → "ІВЕНОВ ІГОР ЛЕОНІДОВИЧ"
+"Іванов Іван Іванович"  → "Івенов Ігор Леонідович"
 ```
+Names are recognised by their capital letter; an all-lowercase `іванов іван` is not a name for the parser and stays as it is.
 
 ### Deterministic Generation
 
@@ -251,7 +247,7 @@ Priority: CLI > ENV > config_local.yaml > config.yaml > config.py > Default. Key
 **Private overrides — `config_local.yaml`.** Keep shared settings in `config.yaml` and private ones (call signs, local abbreviations, your own paths) in `config_local.yaml`. It is looked up in the user config directory (`~/.config/data-masking/`, `$XDG_CONFIG_HOME/data-masking/`, `%APPDATA%\data-masking\` on Windows) and next to `config.yaml` (or in the current directory); the one next to `config.yaml` is applied last. Every key set to a non-null value replaces the shared value (sections merge key by key, lists are replaced as a whole); `null` keeps the shared value. Start from [`config_local.example.yaml`](../config_local.example.yaml): `cp config_local.example.yaml config_local.yaml`. The file is in `.gitignore`; keep it `chmod 600` (the program warns otherwise). `--config-local FILE` uses a specific file instead, `--no-local-config` ignores them; both work for `data-mask` and `data-unmask`.
 
 ```bash
-data-mask --init-config                                  # write config.yaml with every key
+data-mask --init-config                                  # write a short config.yaml (the repository config.yaml lists every key)
 data-mask -i input.txt --config config.yaml              # ./config.yaml is also picked up automatically
 data-mask -i input.txt --config docs/config-examples/share.yaml
 data-unmask output.txt -c config.yaml
@@ -317,7 +313,7 @@ Structured logging with JSON and colored console output:
 from datamasking.extras.masking_logger import MaskingLogger, setup_logging
 
 logger = MaskingLogger("masking")
-setup_logging(level="DEBUG", json_output=True)
+setup_logging(level="DEBUG", format_type="json")
 ```
 
 ---
@@ -433,17 +429,17 @@ ID-паспорт 123947568, видано наказом №59/87/4249/Р від
 
 ```json
 {
-  "version": "2.0",
+  "version": "3.1.11",
   "mappings": {
     "rank": {
-      "молодшому сержанту": {
-        "masked_as": "старшому солдату",
+      "молодший сержант": {
+        "masked_as": "старший солдат",
         "instances": [1, 3]
       }
     },
     "surname": {
-      "іванов": {
-        "masked_as": "петренко",
+      "Іванов": {
+        "masked_as": "Івенов",
         "instances": [1, 2]
       }
     },
@@ -455,8 +451,8 @@ ID-паспорт 123947568, видано наказом №59/87/4249/Р від
     }
   },
   "instance_tracking": {
-    "старшому солдату": 3,
-    "петренко": 2,
+    "старший солдат": 3,
+    "Івенов": 2,
     "123947568": 1
   }
 }
@@ -466,8 +462,8 @@ ID-паспорт 123947568, видано наказом №59/87/4249/Р від
 
 ## 📚 Supported Ranks
 
-### Army (31 ranks)
-**Enlisted:** рядовий, солдат, старший солдат
+### Army (27 ranks)
+**Enlisted:** рядовий, солдат, старший солдат, ефрейтор
 
 **Sergeants:** молодший сержант, сержант, старший сержант, головний сержант, штаб-сержант, майстер-сержант, старший майстер-сержант, головний майстер-сержант
 
@@ -516,8 +512,9 @@ ID-паспорт 123947568, видано наказом №59/87/4249/Р від
 This is **pseudonymization**, not full anonymization. Consider the following:
 
 - **Partial preservation of the original.** IPN retains the first 3 and last digit
-  (4 out of 10), passport retains 4 out of 9, long surnames retain the first 3
-  and last 5 characters. This is intentional (preserves format and partial context)
+  (4 out of 10), passport retains 4 out of 9, surnames keep 2–3 leading letters and
+  the grammatical ending (`surname_prefix_length: 0` removes the prefix). This is
+  intentional (preserves format and partial context)
   but allows re-identification by brute-forcing against a candidate dictionary.
 - **Deterministic generation without a secret.** Masks are derived from the
   blake2b hash of the original without salt/key. Anyone who knows the algorithm
@@ -535,18 +532,18 @@ a motivated adversary with knowledge of the context.
 ## 🛠️ Troubleshooting
 
 ### Unmask does not restore correctly
-- Check the mapping version (should be v2.0)
+- Check the mapping version (2.1 or any 3.x; 1.x mappings are restored with the v1 logic)
 - Use the latest script versions
 
 ### Ranks are not masked
-- Make sure `MASK_RANKS = True`
+- Make sure `masking_rules.enable_ranks: true` and that the rank stands next to a name
 - Update to the latest version
 
 ### Abbreviations are being masked
 - Update to v2.1.16+ with whitelist support
 
 ### ID passports are not masked
-- Make sure `MASK_PASSPORT = True`
+- Make sure `masking_rules.enable_passport: true`
 - ID passports = 9 digits (not 10 like IPN)
 
 ---

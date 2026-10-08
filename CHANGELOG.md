@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.11] - 2026-10
+
+### Fixed — programmatic API and documentation (audit, part 5)
+- **`datamasking.extras.tools`** (the documented API: `mask_*_direct`,
+  `mask_pib_force`, `mask_value`) had its own outdated implementation:
+  surname masks kept the first 3 and last 5 letters of the original
+  (`Петренко → Петірченкренко`), ranks were recognised only in the
+  nominative (`mask_rank_direct("капітана")` returned the input), dates
+  outside 2015–2035 were not masked. Every function now delegates to the
+  masking engine and gives the same masks as `data-mask`.
+- `MappingChain.get_chain_mapping()` failed with `TypeError` on every real
+  chain (mapping values are objects, not strings). `MappingChain.save()` and
+  `MappingSecurityManager.save_mapping(encrypt=False)` write atomically with
+  mode 0600, like the CLI.
+- Four OCR artefacts (`неналежііе`, `инутрішньої`, …) removed from the
+  built-in word list and `config.yaml`.
+- README (EN/UK): commands that did not exist (`data-mask input.txt`,
+  `diagnose_mapping.py --verify`, `unmask_data.py -i`, `--exclude date_text`,
+  `setup_logging(json_output=True)`) are corrected; the examples of rank,
+  name and case handling show real output and state the known limitation
+  (first-name masks in the genitive and all patronymic masks are in the
+  nominative); ranks are masked next to a name, lowercase names are not
+  recognised, `--init-config` writes a short file while `config.yaml` has
+  every key; mapping example and troubleshooting refer to the current keys
+  and versions; 27 army ranks; the security note mentions the surname
+  prefix. `config.yaml` / examples: version 3.1, military ID format,
+  command examples.
+- Tests: `tests/test_tools_api.py`.
+
 ## [3.1.10] - 2026-10
 
 ### Fixed — configuration, CLI and error handling (audit, part 4)
