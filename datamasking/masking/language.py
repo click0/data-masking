@@ -147,6 +147,12 @@ def apply_case_to_name(name: str, case: str, gender: str) -> str:
 
     return name
 
+def normalize_apostrophe(name: str) -> str:
+    """Апостроф у масках — ASCII «'»: faker дає «ʼ» (U+02BC), якого немає в
+    cp1251, і запис виходу в цьому кодуванні падав (v3.1.8)."""
+    return name.replace("ʼ", "'").replace("’", "'")
+
+
 def same_name_forms(candidate: str, original: str) -> bool:
     """Чи може *candidate* бути тим самим ім'ям, що й *original*, в іншому
     відмінку: «Олег» / «Олега», «Петро» / «Петра», «Юрій» / «Юрія»,
@@ -191,6 +197,7 @@ def generate_easy_name(gender: str, first_letter: str, seed: int, max_attempts: 
     for attempt in range(max_attempts):
         if gender == 'female': name = _cfg.fake_uk.first_name_female()
         else: name = _cfg.fake_uk.first_name_male()
+        name = normalize_apostrophe(name)
         last_name = name
         if name[0].lower() != first_letter: continue
         if same_name_forms(name, exclude): continue
@@ -198,4 +205,5 @@ def generate_easy_name(gender: str, first_letter: str, seed: int, max_attempts: 
 
     fallback = [n for n in whitelist if not same_name_forms(n, exclude)]
     if fallback: return random.choice(fallback).capitalize()
-    return last_name if last_name else (_cfg.fake_uk.first_name_female() if gender == 'female' else _cfg.fake_uk.first_name_male())
+    return last_name if last_name else normalize_apostrophe(
+        _cfg.fake_uk.first_name_female() if gender == 'female' else _cfg.fake_uk.first_name_male())

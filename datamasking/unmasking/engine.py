@@ -266,11 +266,19 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
                         + re.escape(parts[1]) + r'\s+' + re.escape(parts[2]))
         return re.escape(mask)
 
+    def _bounded(mask: str) -> str:
+        # Числова маска (дата, ІПН, номер) може стояти впритул до літер
+        # («31.12.2024р.», «ІПН1234567890» — v3.1.8), тож її межа — «не
+        # цифра»; для масок із літер межа — «не літера/цифра», як і раніше
+        before = r'(?<!\d)' if mask[:1].isdigit() else r'(?<!\w)'
+        after = r'(?!\d)' if mask[-1:].isdigit() else r'(?!\w)'
+        return before + _alternative(mask) + after
+
     # Єдиний regex; довші маски першими в alternation
     masks_sorted = sorted(instance_map.keys(), key=len, reverse=True)
     try:
         big_re = re.compile(
-            r'(?<!\w)(' + '|'.join(_alternative(m) for m in masks_sorted) + r')(?!\w)',
+            r'(' + '|'.join(_bounded(m) for m in masks_sorted) + r')',
             re.IGNORECASE,
         )
     except re.error as e:

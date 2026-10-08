@@ -1151,11 +1151,12 @@ def _save_results(masked_data, is_json: bool, masking_dict: Dict,
             if logger:
                 logger.info(f"Backup of existing output: {backup_path}")
         out_encoding = masking_dict.get("input_encoding", "utf-8")
-        with open(output_path, 'w', encoding=out_encoding, newline='') as f:
-            if is_json:
-                json.dump(masked_data, f, ensure_ascii=False, indent=2)
-            else:
-                f.write(masked_data)
+        # Кодуємо ДО відкриття файлу: інакше помилка кодування (символ поза
+        # cp1251) лишала порожній вихідний файл без mapping (v3.1.8)
+        out_text = json.dumps(masked_data, ensure_ascii=False, indent=2) if is_json else masked_data
+        payload = out_text.encode(out_encoding)
+        with open(output_path, 'wb') as f:
+            f.write(payload)
 
         if chain is not None:
             chain_json = map_path.with_name(map_path.name.replace("masking_map_", "masking_chain_", 1))

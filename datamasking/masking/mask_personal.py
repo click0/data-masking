@@ -18,7 +18,7 @@ from datamasking.masking.helpers import (
 )
 from datamasking.masking.language import (
     detect_gender_by_patronymic, detect_name_case_and_gender,
-    generate_easy_name, apply_case_to_name, same_name_forms,
+    generate_easy_name, apply_case_to_name, same_name_forms, normalize_apostrophe,
 )
 from datamasking.masking.surname import synthesize_surname, known_surname_forms
 
@@ -86,18 +86,18 @@ def mask_military_id(original: str, masking_dict: Dict, instance_counters: Dict)
     if original in masking_dict["mappings"]["military_id"]:
         masked = masking_dict["mappings"]["military_id"][original]["masked_as"]
     else:
-        normalized = normalize_identifier(original)
-        prefix_match = re.match(r'^([A-ZА-Я]{2})?(\d{6})$', normalized)
+        # Серія — як в оригіналі (до 3.1.8 переводилась у верхній регістр:
+        # «мт-123456» → «МТ-…», і unmask повертав «МТ-123456»)
+        prefix_match = re.match(r'^([A-Za-zА-Яа-яІіЇїЄєҐґ]{2})?([\s-]*)(\d{6})$', original.strip())
         if not prefix_match: return original
         prefix = prefix_match.group(1) or ""
-        digits = prefix_match.group(2)
+        sep = prefix_match.group(2) if prefix else ""
+        digits = prefix_match.group(3)
         seed = get_deterministic_seed(original)
         random.seed(seed)
         middle = ''.join([str(random.randint(0, 9)) for _ in range(2)])
         masked_digits = digits[:2] + middle + digits[-2:]
-        if " " in original: masked = f"{prefix} {masked_digits}" if prefix else masked_digits
-        elif "-" in original: masked = f"{prefix}-{masked_digits}" if prefix else masked_digits
-        else: masked = prefix + masked_digits
+        masked = prefix + sep + masked_digits
     return add_to_mapping(masking_dict, instance_counters, "military_id", original, masked)
 
 def mask_surname(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
@@ -163,13 +163,13 @@ def mask_patronymic(patronymic: str, gender: str, masking_dict: Dict, instance_c
     provider = _cfg.fake_uk if hasattr(_cfg.fake_uk, 'middle_name_male') else _cfg.fake_uk_fallback
     if provider is not _cfg.fake_uk:
         provider.seed_instance(seed)
-    fake_patronymic = provider.middle_name_male() if gender == 'male' else provider.middle_name_female()
+    fake_patronymic = normalize_apostrophe(provider.middle_name_male() if gender == 'male' else provider.middle_name_female())
     # Не те саме по батькові в іншому відмінку («Петровича» → «Петрович»)
     for attempt in range(10):
         if not same_name_forms(fake_patronymic, patronymic_lower):
             break
         provider.seed_instance(seed + attempt + 1)
-        fake_patronymic = provider.middle_name_male() if gender == 'male' else provider.middle_name_female()
+        fake_patronymic = normalize_apostrophe(provider.middle_name_male() if gender == 'male' else provider.middle_name_female())
 
     # Застосовуємо регістр
     if is_upper: fake_patronymic = fake_patronymic.upper()

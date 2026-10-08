@@ -4,6 +4,44 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.8] - 2026-10
+
+### Fixed — pattern types left unmasked (audit, part 2)
+- **Dates glued to letters** were not masked: `31.12.2024р.`, `2024року`,
+  `01.01.2024по`. Any `DD.MM.YYYY` not surrounded by digits is a date now, and
+  `D.M.YYYY` without leading zeros (`1.1.2025`) is masked too, keeping its
+  width. `data-unmask` restores numeric masks (dates, IPN, numbers) that
+  stand next to letters.
+- **Ranks `прапорщик`, `старший прапорщик`, `ефрейтор`, `капітан-лейтенант`**
+  were recognised but masked to themselves or left as they were: the first
+  three were missing from the army hierarchy, the last two had no declension
+  table. **Rank masks differ from 3.1.7** because the hierarchy now has three
+  more steps; existing mappings unmask as before.
+- **BR numbers without `№`**: `БР 566` and `БР-123` were not masked and the
+  first segment of `БР 123/45` was kept. The `БР`/`БР-`/`№БР-` prefix is now
+  stripped before masking the digits.
+- **Brigades**: only the genitive (`окремої механізованої бригади`) was
+  recognised; `72 окрема механізована бригада`, `93-ї ОМБр`, dative and
+  instrumental forms are masked now. The masked number is never the
+  original one (7 numbers out of 160 used to map to themselves).
+- **Initials**: a surname with the typographic apostrophe `’` (Word's
+  default), a hyphenated surname (`Нечуй-Левицький П.В.`), initials without
+  the final dot (`О.П`), and initials after a year (`2024 р. П. Петренко`,
+  where `р.` was taken for a sub-point marker) were not masked.
+- **Identifiers**: a series with `І/Ї/Є/Ґ` (`ІВ 123456`), a unit written
+  `А 1234`, and `ІПН1234567890` glued to its label were not masked. The
+  series of a military ID keeps its case (`мт-123456` used to come back as
+  `МТ-123456` after unmasking), and a lowercase word before a number
+  (`до 150000`) is no longer taken for a series.
+- `№ 123-к` (a personnel order) was classified as a BR number, so it followed
+  the BR switch instead of the orders switch.
+- **cp1251 output** failed when a generated name contained the apostrophe
+  `ʼ` (U+02BC), leaving an empty output file and no mapping. Name masks now
+  use the ASCII apostrophe, and the output is encoded before the file is
+  opened, so a failure leaves nothing behind. **Masks of names with an
+  apostrophe differ from 3.1.7** (`Лукʼянович` → `Лук'янович`).
+- Tests: `tests/test_pattern_gaps.py`.
+
 ## [3.1.7] - 2026-10
 
 ### Fixed — names left unmasked by the line parser (audit, part 1)
