@@ -597,16 +597,11 @@ def mask_pib_force(
 
     surname, name, patronymic = parts
 
-    # Auto-detect gender from patronymic
+    # Auto-detect gender from patronymic (any grammatical case)
     if gender is None:
-        patronymic_lower = patronymic.lower()
-        if (patronymic_lower.endswith("ович")
-                or patronymic_lower.endswith("йович")):
-            gender = "male"
-        elif (patronymic_lower.endswith("івна")
-              or patronymic_lower.endswith("ївна")):
-            gender = "female"
-        else:
+        from datamasking.masking.language import detect_gender_by_patronymic
+        gender = detect_gender_by_patronymic(patronymic)
+        if gender == "unknown":
             gender = "male"
 
     masked_surname = mask_surname_direct(surname, masking_dict,

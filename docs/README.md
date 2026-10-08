@@ -173,12 +173,21 @@ Ranks are recognised next to a name (or in quotes as a standalone value); a rank
 "молодшим сержантом Івановим …"  → "старшим солдатом Івеновим …"   (орудний)
 ```
 
-**First names and patronymics:** the first-name mask follows the dative and instrumental case (`Петру → Павлу`, `Петром → Павлом`); in the genitive and for every patronymic the mask is in the nominative (`Петра → Павло`, `Миколайовичу → Охрімович`). Unmasking is exact in all cases; the grammar of the mask is a known limitation.
+**First names and patronymics** (3.1.12) follow the case of the original, and all case forms of one name share one mask — the mask is derived from the nominative:
+```
+"капітан Петренко Петро Іванович"          → "лейтенант Пебоженко Павло Леонідович"
+"капітана Петренка Петра Івановича"        → "лейтенанта Пебоженка Павла Леонідовича"
+"капітану Петренку Петру Івановичу"        → "лейтенанту Пебоженку Павлу Леонідовичу"
+"капітаном Петренком Петром Івановичем"    → "лейтенантом Пебоженком Павлом Леонідовичем"
+"сержанта Коваль Тетяни Сергіївни"         → "старшого сержанта Ковар Катерини Павлівни"
+"сержантом Коваль Тетяною Сергіївною"      → "старшим сержантом Ковар Катериною Павлівною"
+```
+The gender and case of a first name are taken from the patronymic (`Петра Івановича` is a masculine genitive, not the feminine name Петра; `Наталі Петрівни` is genitive, `Наталі Петрівні` dative); without a patronymic — from the adjacent rank (`рядового Петренка Богуслава` → genitive of Богуслав). Forms in `-ові` (`Петрові → Павлові`), the vocative (`Петре`), the third declension (`Любові → Лариси`) and consonant alternations (`Ользі → Ольга`) are recognised. Unmasking does not depend on this: it restores by the mapping.
 
 **Gender:**
 ```
-"молодшою сержанткою Коваленко Марією …"  → "старшою солдаткою Котвиненко Іриною …"
-"капітанці Коваленко Марії …"             → "лейтенантці Котвиненко Марті …"
+"молодшою сержанткою Коваленко Марією …"  → "старшою солдаткою Котвиненко Марусею …"
+"капітанці Коваленко Марії …"             → "лейтенантці Котвиненко Марусі …"
 ```
 
 **Additional modifiers:**
@@ -419,8 +428,8 @@ ID-паспорт 123947568, видано наказом №59/87/4249/Р від
 
 **Result:**
 ```
-Старшому солдату ЗАВОДСЬКИЙ Павлу та молодшому солдату БОЙКО Станіславу,
-а також солдату ПЕТРЕНКО Андрію видати по 100 грн.
+Старшому сержанту БОСИЛЕНКО Омеляну та старшому солдату КОТВИНЕНКО Артему,
+а також старшому солдату ШЕМАЧЕНКО Павлу видати по 100 грн.
 ```
 
 ---
@@ -429,7 +438,7 @@ ID-паспорт 123947568, видано наказом №59/87/4249/Р від
 
 ```json
 {
-  "version": "3.1.11",
+  "version": "3.1.12",
   "mappings": {
     "rank": {
       "молодший сержант": {

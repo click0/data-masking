@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.12] - 2026-10
+
+### Added — first-name and patronymic masks follow the grammatical case
+- **Masks of first names and patronymics are declined like the original:**
+  `капітана Петренка Петра Івановича → лейтенанта Пебоженка Павла
+  Леонідовича`, `сержантом Коваль Тетяною Сергіївною → старшим сержантом
+  Ковар Катериною Павлівною`. Before, the genitive of a first name was taken
+  for a feminine nominative (`Петра → Павло`) and every patronymic mask was
+  in the nominative (`Петровича → Лук'янович`).
+- **All case forms of one name share one mask** (`Петро / Петра / Петру /
+  Петром → Павло / Павла / Павлу / Павлом`, `Іванович / Івановича →
+  Леонідович / Леонідовича`): the mask is derived from the nominative of the
+  original. Masks of nominative forms are unchanged, so documents masked
+  earlier keep the same masks for them.
+- The gender and case of a first name are taken from the patronymic
+  (`Петра Івановича` is a masculine genitive; `Наталі Петрівни` is genitive,
+  `Наталі Петрівні` dative). Without a patronymic they come from the adjacent
+  rank: `рядового Петренка Богуслава` is the genitive of Богуслав, not the
+  feminine name Богуслава; a feminine rank form (`сержантки`) marks a woman.
+  Forms in `-ові` / `-єві` (`Петрові`), the vocative (`Петре`, `Олеже`), the
+  third declension (`Любові`, `Любов'ю`) and consonant alternations
+  (`Ользі → Ольга`, `Вероніці → Вероніка`) are recognised; `Васильу` is no
+  longer produced for a dative.
+- Patronymics in the accusative (`Сергіївну`) count as part of a name.
+- Unmasking is unaffected: it restores by the mapping, not by grammar.
+- New module `datamasking/masking/declension.py` (`analyze_name`,
+  `decline_name`, `analyze_patronymic`, `decline_patronymic`);
+  `detect_name_case_and_gender()` accepts a gender hint,
+  `apply_case_to_name()` delegates to the new module; `mask_name()` takes
+  `case_hint`. Tests: `tests/test_name_declension.py`. README (EN/UK): the
+  limitation paragraph is replaced by real output.
+
 ## [3.1.11] - 2026-10
 
 ### Fixed — programmatic API and documentation (audit, part 5)
