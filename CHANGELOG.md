@@ -4,6 +4,40 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.9] - 2026-10
+
+### Fixed — unmasking returned a different text (audit, part 3)
+- **A mask could equal a word or number of the document that is not
+  masked**, and `data-unmask` then swapped the two. `Наказ № 123` masked to
+  `№ 778` while the text said `778 одиниць`; a rank mask equal to a rank
+  standing without a name (`Командир роти капітан`); a first-name mask equal
+  to a name standing alone (`Ім'я: Ігор`); a date mask equal to the date of
+  a legal act, which is deliberately kept. Masks of ranks, names,
+  patronymics, order/BR numbers and dates now avoid such words: ranks that
+  will stay open are found by a trial run, the others are checked against
+  the document text. Masks change only in documents where a collision
+  would have occurred.
+- **The same name in Title and UPPER case** (`Сидоренко Петро` /
+  `СИДОРЕНКО ПЕТРО`) was counted per exact form when masking but merged
+  case-insensitively when unmasking, so the third occurrence was restored
+  with the wrong name. Unmasking now counts exact forms separately. The
+  upper-case form of a surname also got a different synthetic stem than the
+  title-case form; both now share one. **Surname masks change in documents
+  that contain the same surname in different letter cases.**
+- **A rank in quotes in an oblique case** (`«сержанта»`) was masked twice
+  (`«головного сержанта»`), and unmasking stopped at `«старшого сержанта»`.
+- **A rank was taken from the first occurrence in the line**, not from the
+  word next to the name: in `рядовий склад … рядовий Петренко Іван
+  Іванович і солдат Коваль Олег Петрович` the words `рядовий склад` were
+  masked and the ranks of both people were not. A rank now belongs to a
+  name only when it stands right before it.
+- Order numbers with `І/Ї/Є/Ґ` letters (`№ 45-ЦІ`) were cut; a capitalised
+  month in a written-out date was lower-cased; spaces inside initials
+  (`Петренко  О.  П.`, `О.П.Петренко`) were normalised — all of these made
+  unmasking return a slightly different text. The original spelling is
+  kept now.
+- Tests: `tests/test_roundtrip_gaps.py`.
+
 ## [3.1.8] - 2026-10
 
 ### Fixed — pattern types left unmasked (audit, part 2)

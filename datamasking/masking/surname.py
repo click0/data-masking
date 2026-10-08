@@ -82,25 +82,59 @@ _FAKER_DRAWS = 12
 _WORD_RE = re.compile(r"[А-ЯІЇЄҐа-яіїєґ][А-ЯІЇЄҐа-яіїєґ'’]+")
 _document_vocab: Set[str] = set()
 _document_long_words: Set[str] = set()
+_document_text: str = ""
+# Слова/числа документа (нижній регістр), які після маскування лишаться
+# відкритими — визначає пробний прогін у engine (None — ще не визначено:
+# тоді document_contains шукає по всьому тексту)
+_residue_tokens: Optional[Set[str]] = None
 _depth = 0
 
 
 def enter_document(text: str) -> None:
     """Реєструє слова документа (зовнішній виклик); вкладені — лише лічильник."""
-    global _depth, _document_vocab, _document_long_words
+    global _depth, _document_vocab, _document_long_words, _document_text
     if _depth == 0:
         words = {m.group(0).lower() for m in _WORD_RE.finditer(text)}
         _document_vocab = words
         _document_long_words = {w for w in words if len(w) >= 5}
+        _document_text = text
     _depth += 1
 
 
+def set_residue(tokens: Optional[Set[str]]) -> None:
+    """Слова/числа, що лишаться незамаскованими (нижній регістр); None — скинути."""
+    global _residue_tokens
+    _residue_tokens = tokens
+
+
+def residue_vocabulary() -> Set[str]:
+    """Слова, яких має уникати маска імені: ті, що лишаться відкритими
+    (якщо визначено), інакше — всі слова документа."""
+    return _residue_tokens if _residue_tokens is not None else _document_vocab
+
+
+def document_contains(token: str) -> bool:
+    """Чи лишиться *token* у документі відкритим словом/числом (без
+    урахування регістру). Маска, що збігається з таким словом (звання
+    «капітан» у «Командир роти капітан», число 778 у «778 одиниць», дата
+    закону), після розмаскування мінялась місцями з ним (v3.1.9)."""
+    if not _document_text or not token:
+        return False
+    if _residue_tokens is not None and " " not in token:
+        return token.lower() in _residue_tokens
+    before = r"(?<!\d)" if token[0].isdigit() else r"(?<![\w'’ʼ])"
+    after = r"(?!\d)" if token[-1].isdigit() else r"(?![\w'’ʼ])"
+    return re.search(before + re.escape(token) + after, _document_text, re.IGNORECASE) is not None
+
+
 def exit_document() -> None:
-    global _depth, _document_vocab, _document_long_words
+    global _depth, _document_vocab, _document_long_words, _document_text
     _depth = max(0, _depth - 1)
     if _depth == 0:
         _document_vocab = set()
         _document_long_words = set()
+        _document_text = ""
+        set_residue(None)
 
 
 def document_vocabulary() -> Set[str]:
@@ -257,13 +291,18 @@ def _leaks(masked: str, original: str, stem: str) -> bool:
     return False
 
 
-def known_surname_forms(masking_dict: Dict) -> Set[str]:
+def known_surname_forms(masking_dict: Dict, except_original: Optional[str] = None) -> Set[str]:
     """Усі вже відомі оригінали та маски прізвищ (нижній регістр) —
-    нова маска не повинна з ними збігатися, інакше unmask неоднозначний."""
+    нова маска не повинна з ними збігатися, інакше unmask неоднозначний.
+
+    *except_original* — маски інших регістрових форм ТОГО Ж прізвища
+    (Сидоренко / СИДОРЕНКО) не заборонені: вони мають дати ту саму основу
+    (до 3.1.9 ВЕЛИКА форма діставала іншу основу)."""
     forms: Set[str] = set()
+    same = (except_original or "").lower()
     for original, info in masking_dict.get("mappings", {}).get("surname", {}).items():
         forms.add(original.lower())
-        if isinstance(info, dict) and info.get("masked_as"):
+        if isinstance(info, dict) and info.get("masked_as") and original.lower() != same:
             forms.add(info["masked_as"].lower())
     return forms
 

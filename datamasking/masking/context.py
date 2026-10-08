@@ -55,7 +55,7 @@ def analyze_number_sign_context(text: str, match: re.Match) -> Optional[Dict]:
 
     # 1. №БР...
     if re.match(r'\s*БР', after_text, re.IGNORECASE):
-        br_match = re.match(r'\s*БР[-\s]?(\d+(?:[/-]\d+)*(?:[/-][А-Яа-яA-Za-z]+)*)', after_text, re.IGNORECASE)
+        br_match = re.match(r'\s*БР[-\s]?(\d+(?:[/-]\d+)*(?:[/-][А-Яа-яІіЇїЄєҐґA-Za-z]+)*)', after_text, re.IGNORECASE)
         if br_match:
             full_text = text[match.start():match.end() + len(br_match.group(0))]
             return {
@@ -67,7 +67,7 @@ def analyze_number_sign_context(text: str, match: re.Match) -> Optional[Dict]:
             }
 
     # 2. № 123...
-    number_match = re.match(r'\s*(\d+(?:[/-]\d+)*(?:[/-][А-Яа-яA-Za-z]+|[А-Яа-яA-Za-z]+)?)', after_text)
+    number_match = re.match(r'\s*(\d+(?:[/-]\d+)*(?:[/-][А-Яа-яІіЇїЄєҐґA-Za-z]+|[А-Яа-яІіЇїЄєҐґA-Za-z]+)?)', after_text)
     if not number_match:
         return None
 
@@ -83,7 +83,7 @@ def analyze_number_sign_context(text: str, match: re.Match) -> Optional[Dict]:
             return {'type': 'br_with_suffix', 'full_text': full_text, 'number_part': number_text, 'start': match.start(), 'end': match.end() + len(number_match.group(0))}
 
     # 4. № 123/ОКП
-    if re.search(r'[А-Яа-яA-Za-z]', number_text):
+    if re.search(r'[А-Яа-яІіЇїЄєҐґA-Za-z]', number_text):
         return {'type': 'order_with_letters', 'full_text': full_text, 'number_part': number_text, 'start': match.start(), 'end': match.end() + len(number_match.group(0))}
 
     # 5. № 123
@@ -325,11 +325,33 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
         # «рядовий Кіт»): звання — сильний контекст, що далі стоїть прізвище
         if len(pib_words) >= 2 or (after_rank and len(pib_words[0]) >= 3):
             pib = candidate
+            # ПІБ знайдено за якорем, а не після звання: звання належить
+            # особі, лише якщо стоїть упритул перед ПІБ. До 3.1.9 бралось
+            # перше звання рядка — «рядовий склад … солдат Коваль Олег
+            # Петрович» маскувало «рядовий», а «солдат» лишало
+            if not after_rank:
+                rank = _adjacent_rank(parts, start, rank_matches)
             break
 
     if rank and not pib and not identifier: return None, None, None
 
     return rank, pib, identifier
+
+
+def _adjacent_rank(parts: List[str], start: int, rank_matches) -> str:
+    """Звання, що стоїть упритул перед словом parts[start] (1–4 слова, у
+    регістрі оригіналу), або "" — якщо його там немає. rank_matches містить
+    лише перше входження кожної форми, тож спершу дивимось на самі слова."""
+    for k in range(min(4, start), 0, -1):
+        words = [w.strip(_cfg.QUOTE_CHARS).strip(',.;:!?') for w in parts[start - k:start]]
+        phrase = ' '.join(words)
+        if phrase.lower() in _cfg.RANKS_LIST_LOWER:
+            return phrase
+    for _idx, rank_form, pos, count in rank_matches:
+        if pos + count == start:
+            words = [w.strip(_cfg.QUOTE_CHARS) for w in parts[pos:pos + count]]
+            return ' '.join(words) if words else rank_form
+    return ""
 
 
 def _rank_word_as_surname(word: str, next_word: Optional[str]) -> bool:

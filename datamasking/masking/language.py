@@ -9,7 +9,7 @@ Extracted from data_masking.py during the package refactoring (v2.5.0).
 
 import random
 import re
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Set
 
 from datamasking.masking import constants as _cfg
 from datamasking.masking.helpers import get_deterministic_seed
@@ -174,7 +174,7 @@ def same_name_forms(candidate: str, original: str) -> bool:
 
 
 def generate_easy_name(gender: str, first_letter: str, seed: int, max_attempts: int = 50,
-                       exclude: Optional[str] = None) -> str:
+                       exclude: Optional[str] = None, forbidden: Optional[Set[str]] = None) -> str:
     """Синтетичне ім'я на ту саму літеру, що легко відмінюється.
 
     *exclude* — оригінал (нижній регістр), який НЕ можна повернути: до 3.0.3
@@ -187,8 +187,11 @@ def generate_easy_name(gender: str, first_letter: str, seed: int, max_attempts: 
     _cfg.fake_uk.seed_instance(seed)
     whitelist = _cfg.GOOD_UKRAINIAN_NAMES_MALE if gender == 'male' else _cfg.GOOD_UKRAINIAN_NAMES_FEMALE
     exclude = (exclude or "").lower()
+    # *forbidden* — слова документа (нижній регістр): маска не має збігатися
+    # з ім'ям, яке вже стоїть у тексті (v3.1.9)
+    forbidden = forbidden or set()
     available = [n for n in whitelist if n[0].lower() == first_letter.lower()
-                 and not same_name_forms(n, exclude)]
+                 and not same_name_forms(n, exclude) and n.lower() not in forbidden]
     if available:
         name = random.choice(available).capitalize()
         return name
@@ -200,10 +203,10 @@ def generate_easy_name(gender: str, first_letter: str, seed: int, max_attempts: 
         name = normalize_apostrophe(name)
         last_name = name
         if name[0].lower() != first_letter: continue
-        if same_name_forms(name, exclude): continue
+        if same_name_forms(name, exclude) or name.lower() in forbidden: continue
         if is_easy_to_decline(name, gender): return name
 
-    fallback = [n for n in whitelist if not same_name_forms(n, exclude)]
+    fallback = [n for n in whitelist if not same_name_forms(n, exclude) and n.lower() not in forbidden]
     if fallback: return random.choice(fallback).capitalize()
     return last_name if last_name else normalize_apostrophe(
         _cfg.fake_uk.first_name_female() if gender == 'female' else _cfg.fake_uk.first_name_male())

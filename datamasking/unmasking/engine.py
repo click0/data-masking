@@ -245,10 +245,26 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
     if not instance_map:
         return restored_text, stats
 
-    # Case-insensitive lookup: lower(маска) -> {instance_num: original}
-    by_lower: Dict[str, Dict[int, str]] = {}
+    # lower(маска) -> {точна маска: {instance_num: original}}. Маски, що
+    # різняться лише регістром («Павло» / «ПАВЛО»), рахуються окремо — як
+    # і при маскуванні (до 3.1.9 зливались, і третє входження відновлювалось
+    # чужим ім'ям). Форма, якої немає в mapping, береться без урахування регістру
+    by_lower: Dict[str, Dict[str, Dict[int, str]]] = {}
     for masked_value, inst_map in instance_map.items():
-        by_lower.setdefault(masked_value.lower(), {}).update(inst_map)
+        by_lower.setdefault(masked_value.lower(), {})[masked_value] = inst_map
+
+    def _lookup(matched: str, key: str):
+        group = by_lower.get(key)
+        if not group:
+            return None, key
+        if matched in group:
+            return group[matched], matched
+        if len(group) == 1:
+            return next(iter(group.values())), key
+        merged: Dict[int, str] = {}
+        for inst in group.values():
+            merged.update(inst)
+        return merged, key
 
     # Текстові дати зберігаються в mapping без лапок («31 грудня 2025»), а в
     # тексті день часто в лапках: «28» вересня 2025. Для них — толерантний
@@ -271,7 +287,12 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
         # («31.12.2024р.», «ІПН1234567890» — v3.1.8), тож її межа — «не
         # цифра»; для масок із літер межа — «не літера/цифра», як і раніше
         before = r'(?<!\d)' if mask[:1].isdigit() else r'(?<!\w)'
-        after = r'(?!\d)' if mask[-1:].isdigit() else r'(?!\w)'
+        if mask[-1:].isdigit():
+            after = r'(?!\d)'
+        elif mask[-1:] == '.':
+            after = ''  # ініціали впритул до прізвища: «Ґ.Є.Пебоженко»
+        else:
+            after = r'(?!\w)'
         return before + _alternative(mask) + after
 
     # Єдиний regex; довші маски першими в alternation
@@ -291,24 +312,24 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
         )
         return _unmask_other_data_slow(restored_text, instance_map)
 
-    seen: Dict[str, int] = {}   # lower(маска) -> скільки входжень уже зустріли
+    seen: Dict[str, int] = {}   # маска (точна або lower) -> скільки входжень уже зустріли
     segments: List[str] = []
     prev_end = 0
     for m in big_re.finditer(restored_text):
         matched = m.group(0)
         key = matched.lower()
-        inst: Optional[Dict[int, str]] = by_lower.get(key)
+        inst, counter_key = _lookup(matched, key)
         quoted_date = False
         if not inst and date_text_masks:
             # «28» вересня 2025 → ключ «28 вересня 2025»
             key = _DT_STRIP_RE.sub('', matched).lower()
             key = ' '.join(key.split())
-            inst = by_lower.get(key)
+            inst, counter_key = _lookup(key, key)
             quoted_date = inst is not None
         if not inst:
             continue
-        n = seen.get(key, 0) + 1
-        seen[key] = n
+        n = seen.get(counter_key, 0) + 1
+        seen[counter_key] = n
         original_value = inst.get(n)
         if original_value is None:
             stats["skipped_count"] += 1
