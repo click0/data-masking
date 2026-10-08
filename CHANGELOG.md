@@ -4,6 +4,63 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.10] - 2026-10
+
+### Fixed — configuration, CLI and error handling (audit, part 4)
+- **The strings `"false"` / `"true"` in a configuration file** were taken
+  as Python truthiness (`bool("false")` is `True`): `enable_ranks: "false"`
+  kept masking ranks and `encrypt_output: "false"` encrypted the mapping,
+  while `strict_mode: "true"` did not enable strict mode. Values are now
+  coerced to the field type (`"false"`, `"no"`, `"off"`, `0` → false; digit
+  strings → integers); anything else is a configuration error naming the key.
+- **Tracebacks on expected errors**: an unknown `system.hash_algorithm`,
+  `validation.allowed_encodings` that is not a list, and a damaged mapping
+  file (a category that is not an object, `masked_as: null`, `instances`
+  that is not a list) now give a one-line error and exit code 1.
+- `null` for `remask.max_passes`, `validation.min_date_year` /
+  `max_date_year` means the default instead of an error;
+  `validation.max_input_size_mb`, `surname_prefix_length` /
+  `surname_prefix_min` and `security.password_file` are type-checked.
+- `--password` / `--password-env` without `--encrypt` were ignored silently
+  and the mapping was written in plain text; now exit code 2. Both flags
+  together are also an error. `data-mask` accepts `-c` like `data-unmask`.
+- `--init-config` writes to the path given with `--config`, and warns when
+  PyYAML is not installed (a `config.yaml` was generated but then ignored
+  without a word; loading now warns too).
+- **`data-unmask`**:
+  - `-o` overwrote any file without asking — including the mapping itself
+    when given by mistake. It now refuses an existing file without `--force`
+    and a path equal to the masked file or the mapping (exit code 2); the
+    default name gets a random suffix so parallel runs do not collide; the
+    result is written atomically with mode 0600 (it is more sensitive than
+    the mapping).
+  - `logging.*` from the configuration (level, file, console, `enabled`)
+    and `max_input_size_mb` / `max_file_size_mb` apply to unmasking too;
+    CLI flags still win.
+  - JSON input: `--to-version N` was ignored (always a full restore) and the
+    statistics were `0/0`, so `strict_mode` always failed. Both fixed.
+  - Without `--map`, encrypted mappings and `--re-mask` chains next to an
+    `output_*` file are found as well.
+  - A mapping with a missing or unreadable `version` but a v2 structure
+    restored nothing with exit code 0; the structure now decides. When a
+    mapping restores nothing at all, a warning is printed.
+  - `strict_mode` counted a document word that happens to equal a mask as
+    "not restored"; only occurrences recorded in the mapping count now.
+  - `.ENC` (upper case) is recognised as an encrypted mapping.
+- The report for `--re-mask N` summed the statistics of all passes
+  ("unique" values ×N) and left instance tracking empty; it now describes
+  the first pass.
+- `diagnose_mapping.py` returned exit code 0 on every error.
+- `config.yaml`: `masking_rules.preserve_case` and `logging.log_to_file` are
+  `null` by default, so `DATA_MASKING_PRESERVE_CASE` and a `logging.file`
+  from `config_local.yaml` are no longer overridden by the committed file;
+  the `system.temp_dir` comment says what it does and does not affect.
+- Packaging: `MANIFEST.in` no longer lists a non-existent `README.md`; the
+  release workflow picks the wheel and sdist by pattern, so pre-release
+  versions (`3.2.0-beta` → `3.2.0b0`) can be published.
+- Tests: `tests/test_cli_config_gaps.py`; two configuration tests no longer
+  depend on the current directory.
+
 ## [3.1.9] - 2026-10
 
 ### Fixed — unmasking returned a different text (audit, part 3)

@@ -81,10 +81,13 @@ def find_file_pairs(directories: List[Path]) -> List[Tuple[Path, Path, str]]:
                 continue
 
             timestamp_suffix = match.group(1)
-            map_file = directory / f"masking_map_{timestamp_suffix}.json"
-
-            if map_file.exists():
-                pairs.append((output_file, map_file, timestamp_suffix))
+            # mapping або ланцюг, відкритий або шифрований (v3.1.10)
+            for name in (f"masking_map_{timestamp_suffix}.json", f"masking_map_{timestamp_suffix}.enc",
+                         f"masking_chain_{timestamp_suffix}.json", f"masking_chain_{timestamp_suffix}.enc"):
+                map_file = directory / name
+                if map_file.exists():
+                    pairs.append((output_file, map_file, timestamp_suffix))
+                    break
 
     pairs.sort(key=lambda x: x[2], reverse=True)
     return pairs
@@ -126,8 +129,14 @@ def check_mapping_version(masking_map: Dict) -> str:
     """
     version = masking_map.get("version", "1.0.0")
 
-    match = re.match(r"v?(\d+)\.(\d+)", version)
+    match = re.match(r"v?(\d+)\.(\d+)", str(version))
     if not match:
+        # Невідома/відсутня версія — визначаємо за структурою: записи-об'єкти
+        # з masked_as — це v2.1 (до 3.1.10 такий mapping ішов у v1 і нічого
+        # не відновлював, мовчки)
+        for entries in masking_map.get("mappings", {}).values():
+            if isinstance(entries, dict) and any(isinstance(v, dict) and "masked_as" in v for v in entries.values()):
+                return "v2.1"
         return "v1"
     major, minor = int(match.group(1)), int(match.group(2))
 

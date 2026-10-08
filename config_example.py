@@ -84,7 +84,7 @@ class MaskingRulesConfig:
     enable_orders: bool = True
     enable_br_numbers: bool = True
     enable_document_numbers: bool = True
-    preserve_case: bool = True
+    preserve_case: Optional[bool] = None  # None — як system.preserve_case / ENV
     preserve_gender: bool = True
     # Незмінна поведінка програми: приймається лише True
     consistent_mapping: bool = True
@@ -144,7 +144,7 @@ class LoggingConfig:
     max_log_size_mb: int = 10
     log_rotation_count: int = 5
     log_to_console: bool = True
-    log_to_file: bool = False
+    log_to_file: Optional[bool] = None  # None — писати у file, якщо задано
     log_sensitive_data: bool = False
     log_performance: bool = False
     log_statistics: bool = True

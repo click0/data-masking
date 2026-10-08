@@ -317,10 +317,15 @@ jobs:
         run: |
           mkdir release
           for f in "data-masking-${VERSION}.tar.gz" "data-masking-${VERSION}.zip" \
-                   "data_masking-${VERSION}-py3-none-any.whl" "data_masking-${VERSION}.tar.gz" \
                    "data-masking-${VERSION}-windows-x64.zip"; do
             test -f "dist/$f" || { echo "::error::missing release file $f"; ls -la dist; exit 1; }
             cp "dist/$f" release/
+          done
+          # Ім'я wheel/sdist нормалізує setuptools (3.2.0-beta → 3.2.0b0) — беремо за шаблоном
+          for pat in "dist/data_masking-*-py3-none-any.whl" "dist/data_masking-*.tar.gz"; do
+            set -- $pat
+            test -f "$1" || { echo "::error::missing release file $pat"; ls -la dist; exit 1; }
+            cp "$1" release/
           done
           cd release
           sha256sum * > SHA256SUMS

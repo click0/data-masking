@@ -43,7 +43,7 @@ def load_mapping_file(map_path: Path, password: Optional[str] = None) -> Dict:
     if not map_path.exists():
         raise FileNotFoundError(f"Файл маппінгу не знайдено: {map_path}")
 
-    if map_path.suffix == '.enc':
+    if map_path.suffix.lower() == '.enc':
         if not SECURITY_AVAILABLE:
             raise ValueError(
                 "Для роботи з .enc файлами потрібен модуль security. "
@@ -86,21 +86,44 @@ def validate_mapping_schema(mapping: Dict) -> None:
     if not isinstance(mapping, dict):
         raise ValueError("Mapping file must be a JSON object")
 
-    if "passes" in mapping and "total_passes" in mapping:
+    if "passes" in mapping:
         if not isinstance(mapping["passes"], list):
             raise ValueError("Chain mapping 'passes' must be a list")
+        for i, pass_map in enumerate(mapping["passes"], 1):
+            if not isinstance(pass_map, dict):
+                raise ValueError(f"Chain mapping: pass {i} must be an object")
+            _validate_mappings(pass_map, f"passes[{i}].")
         return
 
     version = mapping.get("version")
-    _major = re.match(r"v?(\d+)\.", version) if version else None
-    if _major and int(_major.group(1)) >= 2:
-        if "mappings" not in mapping:
-            raise ValueError(
-                f"Mapping v{version} must contain 'mappings' key"
-            )
-        if not isinstance(mapping["mappings"], dict):
-            raise ValueError("'mappings' must be a dictionary")
+    _major = re.match(r"v?(\d+)\.", str(version)) if version else None
+    if _major and int(_major.group(1)) >= 2 and "mappings" not in mapping:
+        raise ValueError(f"Mapping v{version} must contain 'mappings' key")
+    _validate_mappings(mapping, "")
+
+
+def _validate_mappings(mapping: Dict, where: str) -> None:
+    """Кожна категорія — об'єкт; запис — рядок (v1) або об'єкт із
+    masked_as (рядок) та instances (список цілих). До 3.1.10 битий mapping
+    давав traceback посеред розмаскування."""
+    if "mappings" not in mapping:
         return
+    mappings = mapping["mappings"]
+    if not isinstance(mappings, dict):
+        raise ValueError(f"'{where}mappings' must be a dictionary")
+    for category, entries in mappings.items():
+        if not isinstance(entries, dict):
+            raise ValueError(f"'{where}mappings.{category}' must be a dictionary")
+        for original, info in entries.items():
+            if isinstance(info, str):
+                continue
+            if not isinstance(info, dict):
+                raise ValueError(f"'{where}mappings.{category}.{original}' must be an object or a string")
+            if not isinstance(info.get("masked_as"), str):
+                raise ValueError(f"'{where}mappings.{category}.{original}.masked_as' must be a string")
+            instances = info.get("instances", [])
+            if not isinstance(instances, list) or not all(isinstance(n, int) for n in instances):
+                raise ValueError(f"'{where}mappings.{category}.{original}.instances' must be a list of integers")
 
 
 def show_chain_info(masking_map: Dict) -> None:
