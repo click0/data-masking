@@ -41,6 +41,12 @@ Author: Vladyslav V. Prodan
 Contact: github.com/click0
 License: BSD 3-Clause
 Year: 2025-2026
+
+Since 3.1.11 every ``mask_*_direct`` function delegates to the masking engine
+(``datamasking.masking``), so the API gives the same masks as ``data-mask``:
+surnames without the original stem, ranks in any grammatical case, dates for
+1900–2100. The helpers kept in this module (RANK_PATTERNS, add_to_mapping …)
+remain for backward compatibility.
 """
 
 import hashlib
@@ -328,6 +334,14 @@ def add_to_mapping(
     return masked
 
 
+def _ensure_categories(masking_dict: Dict) -> None:
+    """Рушій очікує наявні категорії в mappings (словник міг прийти не з init_masking_dict)."""
+    masking_dict.setdefault("mappings", {})
+    masking_dict.setdefault("statistics", {})
+    for cat in MAPPING_CATEGORIES + ["initials", "custom", "date_text"]:
+        masking_dict["mappings"].setdefault(cat, {})
+
+
 def init_masking_dict() -> Dict:
     """Create a fresh, empty masking dictionary with all required keys.
 
@@ -420,24 +434,10 @@ def mask_ipn_direct(
     Returns:
         Masked IPN string of the same length and format.
     """
-    entity_type = "ipn"
-    if "mappings" not in masking_dict:
-        masking_dict["mappings"] = {}
-    if entity_type not in masking_dict["mappings"]:
-        masking_dict["mappings"][entity_type] = {}
-
-    if value in masking_dict["mappings"][entity_type]:
-        masked = masking_dict["mappings"][entity_type][value]["masked_as"]
-    else:
-        if len(value) != 10 or not value.isdigit():
-            return value
-        seed = get_deterministic_seed(value)
-        random.seed(seed)
-        middle = ''.join([str(random.randint(0, 9)) for _ in range(6)])
-        masked = value[:3] + middle + value[-1]
-    return add_to_mapping(masking_dict, instance_counters, entity_type,
-                          value, masked)
-
+    # v3.1.11: делегування в рушій — ті самі маски, що дає data-mask
+    _ensure_categories(masking_dict)
+    from datamasking.masking.mask_personal import mask_ipn
+    return mask_ipn(value, masking_dict, instance_counters)
 
 def mask_passport_direct(
     value: str,
@@ -456,24 +456,10 @@ def mask_passport_direct(
     Returns:
         Masked passport ID string of the same length and format.
     """
-    entity_type = "passport_id"
-    if "mappings" not in masking_dict:
-        masking_dict["mappings"] = {}
-    if entity_type not in masking_dict["mappings"]:
-        masking_dict["mappings"][entity_type] = {}
-
-    if value in masking_dict["mappings"][entity_type]:
-        masked = masking_dict["mappings"][entity_type][value]["masked_as"]
-    else:
-        if len(value) != 9 or not value.isdigit():
-            return value
-        seed = get_deterministic_seed(value)
-        random.seed(seed)
-        middle = ''.join([str(random.randint(0, 9)) for _ in range(5)])
-        masked = value[:3] + middle + value[-1]
-    return add_to_mapping(masking_dict, instance_counters, entity_type,
-                          value, masked)
-
+    # v3.1.11: делегування в рушій — ті самі маски, що дає data-mask
+    _ensure_categories(masking_dict)
+    from datamasking.masking.mask_personal import mask_passport_id
+    return mask_passport_id(value, masking_dict, instance_counters)
 
 def mask_date_direct(
     value: str,
@@ -496,55 +482,10 @@ def mask_date_direct(
     Returns:
         Masked date string in the same format.
     """
-    entity_type = "date"
-    if "mappings" not in masking_dict:
-        masking_dict["mappings"] = {}
-    if entity_type not in masking_dict["mappings"]:
-        masking_dict["mappings"][entity_type] = {}
-
-    if value in masking_dict["mappings"][entity_type]:
-        masked = masking_dict["mappings"][entity_type][value]["masked_as"]
-    else:
-        try:
-            match = re.match(r'(\d{2})\.(\d{2})\.(\d{4})', value)
-            if not match:
-                return value
-
-            day = int(match.group(1))
-            month = int(match.group(2))
-            year = int(match.group(3))
-
-            # Validate year range
-            if year < 2015 or year > 2035:
-                return value
-
-            # Validate date
-            try:
-                date_obj = datetime(year, month, day)
-            except ValueError:
-                return value
-
-            seed = get_deterministic_seed(value)
-            random.seed(seed)
-            new_date = date_obj + timedelta(days=random.randint(-30, 30))
-
-            # Clamp to [2015, 2035]
-            if new_date.year < 2015:
-                new_date = datetime(2015, 1, 1) + timedelta(
-                    days=random.randint(0, 365)
-                )
-            elif new_date.year > 2035:
-                new_date = datetime(2035, 12, 31) - timedelta(
-                    days=random.randint(0, 365)
-                )
-
-            masked = new_date.strftime("%d.%m.%Y")
-        except (ValueError, OverflowError, TypeError, AttributeError):
-            return value
-
-    return add_to_mapping(masking_dict, instance_counters, entity_type,
-                          value, masked)
-
+    # v3.1.11: делегування в рушій — ті самі маски, що дає data-mask
+    _ensure_categories(masking_dict)
+    from datamasking.masking.mask_military import mask_date
+    return mask_date(value, masking_dict, instance_counters)
 
 def mask_surname_direct(
     value: str,
@@ -570,58 +511,10 @@ def mask_surname_direct(
     Returns:
         Masked surname with case preserved.
     """
-    entity_type = "surname"
-    if "mappings" not in masking_dict:
-        masking_dict["mappings"] = {}
-    if entity_type not in masking_dict["mappings"]:
-        masking_dict["mappings"][entity_type] = {}
-
-    if value in masking_dict["mappings"][entity_type]:
-        masked = masking_dict["mappings"][entity_type][value]["masked_as"]
-    else:
-        if not FAKER_AVAILABLE:
-            return value
-
-        is_upper = value.isupper()
-        is_capitalize = (
-            len(value) > 1
-            and value[0].isupper()
-            and value[1:].islower()
-        )
-
-        seed = get_deterministic_seed(value)
-        random.seed(seed)
-        fake_uk.seed_instance(seed)
-        fake_surname = fake_uk.last_name()
-
-        if len(value) < 5:
-            target_length = random.randint(
-                max(3, len(value) - 1),
-                min(6, len(value) + 2),
-            )
-            masked = (
-                fake_surname[:target_length]
-                if len(fake_surname) > target_length
-                else fake_surname
-            )
-        else:
-            middle_len = min(random.randint(2, 7), len(fake_surname) - 2)
-            middle = (
-                fake_surname[1:1 + middle_len]
-                if len(fake_surname) > 4
-                else fake_surname[1:-1]
-            )
-            masked = value[:3] + middle + value[-5:]
-
-        # Apply case
-        if is_upper:
-            masked = masked.upper()
-        elif is_capitalize:
-            masked = masked.capitalize()
-
-    return add_to_mapping(masking_dict, instance_counters, entity_type,
-                          value, masked)
-
+    # v3.1.11: делегування в рушій — ті самі маски, що дає data-mask
+    _ensure_categories(masking_dict)
+    from datamasking.masking.mask_personal import mask_surname
+    return mask_surname(value, masking_dict, instance_counters)
 
 def mask_name_direct(
     value: str,
@@ -644,81 +537,10 @@ def mask_name_direct(
     Returns:
         Masked first name with case preserved.
     """
-    entity_type = "name"
-    if "mappings" not in masking_dict:
-        masking_dict["mappings"] = {}
-    if entity_type not in masking_dict["mappings"]:
-        masking_dict["mappings"][entity_type] = {}
-
-    if value in masking_dict["mappings"][entity_type]:
-        masked = masking_dict["mappings"][entity_type][value]["masked_as"]
-    else:
-        if not value:
-            return value
-
-        is_upper = value.isupper()
-        is_capitalize = (
-            value[0].isupper()
-            and (len(value) == 1 or value[1:].islower())
-        )
-        is_lower = value.islower()
-
-        first_letter = value[0].lower()
-        seed = get_deterministic_seed(value)
-        random.seed(seed)
-
-        if FAKER_AVAILABLE:
-            fake_uk.seed_instance(seed)
-            if gender == 'female':
-                new_name = fake_uk.first_name_female()
-            else:
-                new_name = fake_uk.first_name_male()
-        else:
-            # Fallback: pick from built-in lists
-            name_pool = (
-                GOOD_UKRAINIAN_NAMES_FEMALE
-                if gender == 'female'
-                else GOOD_UKRAINIAN_NAMES_MALE
-            )
-            candidates = [n for n in name_pool if n[0] == first_letter]
-            if not candidates:
-                candidates = name_pool
-            new_name = random.choice(candidates)
-
-        masked = new_name.lower()
-
-        # Avoid mapping a name to itself
-        attempts = 0
-        while masked.lower() == value.lower() and attempts < 10:
-            seed = get_deterministic_seed(value + str(attempts))
-            random.seed(seed)
-            if FAKER_AVAILABLE:
-                fake_uk.seed_instance(seed)
-                if gender == 'female':
-                    new_name = fake_uk.first_name_female()
-                else:
-                    new_name = fake_uk.first_name_male()
-            else:
-                masked_candidate = random.choice(
-                    GOOD_UKRAINIAN_NAMES_FEMALE
-                    if gender == 'female'
-                    else GOOD_UKRAINIAN_NAMES_MALE
-                )
-                new_name = masked_candidate
-            masked = new_name.lower()
-            attempts += 1
-
-        # Apply case
-        if is_upper:
-            masked = masked.upper()
-        elif is_capitalize:
-            masked = masked.capitalize()
-        elif is_lower:
-            masked = masked.lower()
-
-    return add_to_mapping(masking_dict, instance_counters, entity_type,
-                          value, masked)
-
+    # v3.1.11: делегування в рушій — ті самі маски, що дає data-mask
+    _ensure_categories(masking_dict)
+    from datamasking.masking.mask_personal import mask_name
+    return mask_name(value, masking_dict, instance_counters, gender_hint=gender)
 
 def mask_patronymic_direct(
     value: str,
@@ -740,60 +562,10 @@ def mask_patronymic_direct(
     Returns:
         Masked patronymic with case preserved.
     """
-    entity_type = "patronymic"
-    if "mappings" not in masking_dict:
-        masking_dict["mappings"] = {}
-    if entity_type not in masking_dict["mappings"]:
-        masking_dict["mappings"][entity_type] = {}
-
-    if not value:
-        return value
-
-    is_upper = value.isupper()
-    is_capitalize = (
-        len(value) > 1
-        and value[0].isupper()
-        and value[1:].islower()
-    )
-
-    value_lower = value.lower()
-
-    if value_lower in masking_dict["mappings"][entity_type]:
-        masked = masking_dict["mappings"][entity_type][value_lower][
-            "masked_as"
-        ]
-        masked_with_case = _apply_original_case(value, masked)
-        instance_num = get_next_instance(masked, instance_counters)
-        masking_dict["mappings"][entity_type][value_lower][
-            "instances"
-        ].append(instance_num)
-        return masked_with_case
-
-    if not FAKER_AVAILABLE:
-        return value
-
-    seed = get_deterministic_seed(value_lower)
-    random.seed(seed)
-    fake_uk.seed_instance(seed)
-    fake_patronymic = (
-        fake_uk.middle_name_male()
-        if gender == 'male'
-        else fake_uk.middle_name_female()
-    )
-
-    # Apply case
-    if is_upper:
-        fake_patronymic = fake_patronymic.upper()
-    elif is_capitalize:
-        fake_patronymic = fake_patronymic.capitalize()
-    else:
-        fake_patronymic = fake_patronymic.lower()
-
-    return add_to_mapping(
-        masking_dict, instance_counters, entity_type,
-        value_lower, fake_patronymic,
-    )
-
+    # v3.1.11: делегування в рушій — ті самі маски, що дає data-mask
+    _ensure_categories(masking_dict)
+    from datamasking.masking.mask_personal import mask_patronymic
+    return mask_patronymic(value, gender, masking_dict, instance_counters)
 
 def mask_pib_force(
     value: str,
@@ -871,97 +643,10 @@ def mask_rank_direct(
     Returns:
         Masked rank string with case and grammatical form preserved.
     """
-    entity_type = "rank"
-    if "mappings" not in masking_dict:
-        masking_dict["mappings"] = {}
-    if entity_type not in masking_dict["mappings"]:
-        masking_dict["mappings"][entity_type] = {}
-
-    original_key = value.lower()
-    detected_base, detected_case, detected_gender = _get_rank_info(
-        original_key
-    )
-
-    # Check existing mapping (but avoid re-using another value's mask)
-    if original_key in masking_dict["mappings"][entity_type]:
-        is_someone_else_mask = False
-        for other_original, other_data in masking_dict["mappings"][
-            entity_type
-        ].items():
-            if isinstance(other_data, dict) and "masked_as" in other_data:
-                if (other_data["masked_as"].lower() == original_key
-                        and other_original != original_key):
-                    is_someone_else_mask = True
-                    break
-        if not is_someone_else_mask:
-            masked = masking_dict["mappings"][entity_type][original_key][
-                "masked_as"
-            ]
-            final_masked = add_to_mapping(
-                masking_dict, instance_counters, entity_type,
-                original_key, masked,
-            )
-            return _apply_original_case(value, final_masked)
-
-    # Determine category and hierarchy
-    category_name, matched = _get_rank_category_and_match(original_key)
-    if not matched:
-        return value
-
-    hierarchy_map = {
-        "army": ARMY_RANKS,
-        "naval": NAVAL_RANKS,
-        "legal": LEGAL_RANKS,
-        "medical": MEDICAL_RANKS,
-    }
-    hierarchy = hierarchy_map.get(category_name or "")
-    if hierarchy is None:
-        return value
-
-    try:
-        idx = [r.lower() for r in hierarchy].index(matched.lower())
-    except ValueError:
-        return value
-
-    # Generate shifted rank
-    seed = get_deterministic_seed(original_key)
-    random.seed(seed)
-    shift = random.choice(RANK_SHIFT_OPTIONS)
-    new_idx = max(0, min(len(hierarchy) - 1, idx + shift))
-    masked = hierarchy[new_idx]
-
-    # Avoid self-mapping
-    attempts = 0
-    while masked.lower() == original_key and attempts < 10:
-        shift = random.choice(RANK_SHIFT_OPTIONS)
-        new_idx = max(0, min(len(hierarchy) - 1, idx + shift))
-        masked = hierarchy[new_idx]
-        attempts += 1
-
-    # Apply grammatical case
-    if detected_case and detected_case != "nominative":
-        masked = _get_rank_in_case(masked, detected_case)
-
-    final_masked = add_to_mapping(
-        masking_dict, instance_counters, entity_type,
-        original_key, masked,
-    )
-
-    # Apply letter case
-    # Special handling for multi-word Title Case and hyphenated ranks
-    if '-' in value and value.istitle():
-        return final_masked.title()
-
-    words = value.split()
-    if len(words) > 1:
-        all_title = all(
-            word and word[0].isupper() for word in words if word
-        )
-        if all_title:
-            return final_masked.title()
-
-    return _apply_original_case(value, final_masked)
-
+    # v3.1.11: делегування в рушій — ті самі маски, що дає data-mask
+    _ensure_categories(masking_dict)
+    from datamasking.masking.mask_military import mask_rank_preserve_case
+    return mask_rank_preserve_case(value, masking_dict, instance_counters)
 
 def mask_military_unit_direct(
     value: str,
@@ -984,26 +669,10 @@ def mask_military_unit_direct(
     Returns:
         Masked military unit string in the same format.
     """
-    entity_type = "military_unit"
-    if "mappings" not in masking_dict:
-        masking_dict["mappings"] = {}
-    if entity_type not in masking_dict["mappings"]:
-        masking_dict["mappings"][entity_type] = {}
-
-    if value in masking_dict["mappings"][entity_type]:
-        masked = masking_dict["mappings"][entity_type][value]["masked_as"]
-    else:
-        match = re.match(r'^([А-ЯA-Z])(\d{4})$', value)
-        if not match:
-            return value
-        letter = match.group(1)
-        seed = get_deterministic_seed(value)
-        random.seed(seed)
-        digits = ''.join([str(random.randint(0, 9)) for _ in range(4)])
-        masked = letter + digits
-    return add_to_mapping(masking_dict, instance_counters, entity_type,
-                          value, masked)
-
+    # v3.1.11: делегування в рушій — ті самі маски, що дає data-mask
+    _ensure_categories(masking_dict)
+    from datamasking.masking.mask_military import mask_military_unit
+    return mask_military_unit(value, masking_dict, instance_counters)
 
 # ============================================================================
 # UNIVERSAL DISPATCH FUNCTION

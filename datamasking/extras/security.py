@@ -330,8 +330,9 @@ class MappingSecurityManager:
             return self.encrypt_mapping(mapping_dict, password, path)
 
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as fp:
-            json.dump(mapping_dict, fp, ensure_ascii=False, indent=2)
+        # Атомарно, 0600 — як mapping з CLI (до 3.1.11 — звичайний запис 0644)
+        from datamasking._fsutil import atomic_write_private
+        atomic_write_private(path, json.dumps(mapping_dict, ensure_ascii=False, indent=2).encode("utf-8"))
 
         logger.info("Mapping written to %s", path)
         return Path(path).resolve()
