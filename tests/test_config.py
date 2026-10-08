@@ -325,8 +325,9 @@ class TestEnvOverride:
 class TestCliOverride:
     """CLI arguments should override everything else."""
 
-    def test_cli_override(self, clean_env):
+    def test_cli_override(self, clean_env, tmp_path, monkeypatch):
         """Dotted and plain CLI keys should set the right config attributes."""
+        monkeypatch.chdir(tmp_path)  # не читати ./config.yaml репозиторію
         cli_args = {
             "masking_rules.enable_ranks": False,
             "masking_rules.enable_dates": False,
@@ -435,8 +436,9 @@ class TestPriority:
 class TestUtilities:
     """Tests for the convenience functions in the config module."""
 
-    def test_load_config_function(self, clean_env):
+    def test_load_config_function(self, clean_env, tmp_path, monkeypatch):
         """load_config() should return a valid Config with defaults."""
+        monkeypatch.chdir(tmp_path)
         cfg = load_config()
 
         assert isinstance(cfg, Config)

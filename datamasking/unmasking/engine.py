@@ -433,22 +433,34 @@ def unmask_text_v1(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
     return restored_text, stats
 
 
+def unmask_json_with_stats(masked_data: Any, masking_map: Dict, map_version: str) -> Tuple[Any, Dict]:
+    """Рекурсивний unmask для JSON структур зі статистикою (v3.1.10: до того
+    JSON давав 0/0, і strict_mode завжди завершувався помилкою)."""
+    stats = {"restored_count": 0, "skipped_count": 0}
+
+    def walk(data: Any) -> Any:
+        if isinstance(data, dict):
+            return {k: walk(v) for k, v in data.items()}
+        if isinstance(data, list):
+            return [walk(item) for item in data]
+        if isinstance(data, str):
+            if map_version.startswith("v2"):
+                restored, st = unmask_text_v2(data, masking_map, map_version)
+            else:
+                restored, st = unmask_text_v1(data, masking_map)
+            stats["restored_count"] += st.get("restored_count", 0)
+            stats["skipped_count"] += st.get("skipped_count", 0)
+            return restored
+        return data
+
+    return walk(masked_data), stats
+
+
 def unmask_json_recursive(masked_data: Any, masking_map: Dict, map_version: str) -> Any:
     """
     Рекурсивний unmask для JSON структур.
     """
-    if isinstance(masked_data, dict):
-        return {k: unmask_json_recursive(v, masking_map, map_version) for k, v in masked_data.items()}
-    elif isinstance(masked_data, list):
-        return [unmask_json_recursive(item, masking_map, map_version) for item in masked_data]
-    elif isinstance(masked_data, str):
-        if map_version.startswith("v2"):
-            restored, _ = unmask_text_v2(masked_data, masking_map, map_version)
-        else:
-            restored, _ = unmask_text_v1(masked_data, masking_map)
-        return restored
-    else:
-        return masked_data
+    return unmask_json_with_stats(masked_data, masking_map, map_version)[0]
 
 
 # ============================================================================
@@ -480,20 +492,30 @@ def unmask_chain(masked_text: str, chain_data: Dict, to_version: int = 0) -> Tup
     return text, total_stats
 
 
-def unmask_json_chain(masked_data: Any, chain_data: Dict) -> Any:
+def unmask_json_chain_with_stats(masked_data: Any, chain_data: Dict, to_version: int = 0) -> Tuple[Any, Dict]:
+    """Unmask JSON data masked with multiple passes (chain), зі статистикою.
+
+    to_version — як в unmask_chain (до 3.1.10 для JSON ігнорувався)."""
+    passes = chain_data.get("passes", [])
+    stats = {"restored_count": 0, "skipped_count": 0}
+    if not passes:
+        return masked_data, stats
+    if to_version < 0 or to_version > len(passes):
+        raise ValueError(f"to_version must be in 0..{len(passes)}, got {to_version}")
+    data = masked_data
+    for pass_data in reversed(passes[to_version:]):
+        pass_version = check_mapping_version(pass_data)
+        data, st = unmask_json_with_stats(data, pass_data, pass_version)
+        stats["restored_count"] += st.get("restored_count", 0)
+        stats["skipped_count"] += st.get("skipped_count", 0)
+    return data, stats
+
+
+def unmask_json_chain(masked_data: Any, chain_data: Dict, to_version: int = 0) -> Any:
     """
     Unmask JSON data masked with multiple passes (chain).
     """
-    passes = chain_data.get("passes", [])
-    if not passes:
-        return masked_data
-
-    data = masked_data
-    for pass_data in reversed(passes):
-        pass_version = check_mapping_version(pass_data)
-        data = unmask_json_recursive(data, pass_data, pass_version)
-
-    return data
+    return unmask_json_chain_with_stats(masked_data, chain_data, to_version)[0]
 
 
 def is_chain_mapping(masking_map: Dict) -> bool:

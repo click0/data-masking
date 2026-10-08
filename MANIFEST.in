@@ -1,7 +1,7 @@
 # sdist має бути придатним для `pytest` після розпакування:
 # пакет + кореневі обгортки/shim-и + тести з conftest + конфіги.
 # У wheel потрапляє лише пакет datamasking (див. [tool.setuptools.packages.find]).
-include LICENSE CHANGELOG.md README.md pyproject.toml pytest.ini mypy.ini
+include LICENSE CHANGELOG.md pyproject.toml pytest.ini mypy.ini
 include requirements.txt requirements-dev.txt
 include data_masking.py unmask_data.py diagnose_mapping.py rank_data.py __main__.py
 include pyinstaller_utf8_hook.py config_example.py config_example.yaml

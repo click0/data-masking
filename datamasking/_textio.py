@@ -34,6 +34,8 @@ def check_encoding_settings(encoding: str, allowed: Optional[Iterable[str]]) -> 
     Raises:
         ValueError з текстом для користувача.
     """
+    if allowed is not None and not isinstance(allowed, (list, tuple)):
+        raise ValueError("validation.allowed_encodings must be a list of encodings")
     allowed_list = [normalize_encoding(a) for a in (DEFAULT_ALLOWED if allowed is None else allowed)]
     if not allowed_list:
         raise ValueError("validation.allowed_encodings must not be empty")

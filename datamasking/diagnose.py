@@ -410,7 +410,8 @@ def verify_text_recovery(original_path: Path, recovery_path: Path, ignore_flags:
 # MAIN (Точка входу)
 # ============================================================================
 
-def main() -> None:
+def main() -> int:
+    """Код виходу: 0 — успіх, 1 — помилка (до 3.1.10 завжди 0)."""
     parser = argparse.ArgumentParser(
         description="Mapping diagnostics, comparison and text verification utility.",
         formatter_class=argparse.RawTextHelpFormatter
@@ -451,7 +452,8 @@ def main() -> None:
                 diagnose_single_file(str(latest_maps[0]))
             else:
                 print("❌ Файлів masking_map_*.json не знайдено.")
-            return
+                return 1
+            return 0
         mode = "diff"
         target_file_a = latest_maps[0]
         target_file_b = latest_maps[1]
@@ -463,14 +465,17 @@ def main() -> None:
             idx = int(arg)
             if len(latest_maps) <= idx:
                 print(f"❌ Недостатньо файлів історії для зміщення {idx}. Знайдено: {len(latest_maps)}.")
-                return
+                return 1
             mode = "diff"
             target_file_a = latest_maps[0]
             target_file_b = latest_maps[idx]
         else:
             # Якщо аргумент шлях -> просто діагностика одного файлу
+            if not Path(arg).is_file():
+                print(f"❌ Файл не знайдено: {arg}")
+                return 1
             diagnose_single_file(arg)
-            return
+            return 0
 
     elif len(files_input) >= 2:
         # Явне порівняння двох вказаних файлів
@@ -482,8 +487,10 @@ def main() -> None:
         print(f"🔍 Порівнюємо маппінги:\n A: {target_file_a}\n B: {target_file_b}")
         if not target_file_a.exists() or not target_file_b.exists():
             print("❌ Один з файлів маппінгу не існує.")
-            return
+            return 1
         compare_mappings(target_file_a, target_file_b)
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -441,6 +441,59 @@ def format_ignored_keys_warning(source: str, keys: List[str], limit: int = 10) -
             f"config_example.yaml or regenerate it: data-mask --init-config")
 
 
+_TRUE_WORDS = frozenset({"true", "yes", "on", "1"})
+_FALSE_WORDS = frozenset({"false", "no", "off", "0"})
+
+
+def _field_base_type(section_obj: Any, key: str) -> Optional[type]:
+    """bool / int / str / list для поля dataclass (Optional[...] розгортається); None — інше."""
+    import dataclasses
+    import typing
+    try:
+        f = section_obj.__dataclass_fields__[key]
+    except (AttributeError, KeyError):
+        return None
+    t = f.type
+    if isinstance(t, str):
+        return None
+    origin = typing.get_origin(t)
+    if origin is typing.Union:
+        args = [a for a in typing.get_args(t) if a is not type(None)]
+        if len(args) != 1:
+            return None
+        t = args[0]
+        origin = typing.get_origin(t)
+    if t is bool:
+        return bool
+    if t is int:
+        return int
+    if t is str:
+        return str
+    if origin in (list, List):
+        return list
+    return None
+
+
+def _set_coerced(section_obj: Any, key: str, value: Any, path: str) -> None:
+    """setattr з приведенням типу за полем dataclass (див. Config.from_dict)."""
+    base = _field_base_type(section_obj, key)
+    if value is not None and base is bool and not isinstance(value, bool):
+        if isinstance(value, str) and value.strip().lower() in _TRUE_WORDS:
+            value = True
+        elif isinstance(value, str) and value.strip().lower() in _FALSE_WORDS:
+            value = False
+        elif isinstance(value, int) and value in (0, 1):
+            value = bool(value)
+        else:
+            raise ValueError(f"{path}.{key} must be true or false, got {value!r}")
+    elif value is not None and base is int and not isinstance(value, bool):
+        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+            value = int(value.strip())
+        elif isinstance(value, float) and value.is_integer():
+            value = int(value)
+    setattr(section_obj, key, value)
+
+
 @dataclass
 class Config:
     """Top-level application configuration.
@@ -468,19 +521,24 @@ class Config:
         """Create a Config instance from a nested dictionary.
 
         Unknown keys are silently ignored so that forward-compatible YAML
-        files do not cause errors on older code.
+        files do not cause errors on older code. Values are coerced to the
+        field type where it is unambiguous: the strings "true"/"false" for
+        bool fields (до 3.1.10 рядок "false" у YAML вмикав опцію, бо
+        bool("false") is True), digit strings for int fields. Anything else
+        raises ValueError with the key path.
         """
         cfg = cls()
+        _set = _set_coerced
 
         if "system" in data and isinstance(data["system"], dict):
             for k, v in data["system"].items():
                 if hasattr(cfg.system, k):
-                    setattr(cfg.system, k, v)
+                    _set(cfg.system, k, v, "system")
 
         if "password_generation" in data and isinstance(data["password_generation"], dict):
             for k, v in data["password_generation"].items():
                 if hasattr(cfg.password_generation, k):
-                    setattr(cfg.password_generation, k, v)
+                    _set(cfg.password_generation, k, v, "password_generation")
 
         if "security" in data and isinstance(data["security"], dict):
             sec = data["security"]
@@ -488,48 +546,48 @@ class Config:
                 if k == "password_generation" and isinstance(v, dict):
                     for pk, pv in v.items():
                         if hasattr(cfg.security.password_generation, pk):
-                            setattr(cfg.security.password_generation, pk, pv)
+                            _set(cfg.security.password_generation, pk, pv, "security.password_generation")
                 elif k == "password_generation" and isinstance(v, bool):
                     # Шаблон 2.x писав `password_generation: true` — bool
                     # замість секції; не підміняємо dataclass булевим
                     cfg.security.password_generation.enabled = v
                 elif hasattr(cfg.security, k):
-                    setattr(cfg.security, k, v)
+                    _set(cfg.security, k, v, "security")
 
         if "masking_rules" in data and isinstance(data["masking_rules"], dict):
             for k, v in data["masking_rules"].items():
                 if hasattr(cfg.masking_rules, k):
-                    setattr(cfg.masking_rules, k, v)
+                    _set(cfg.masking_rules, k, v, "masking_rules")
 
         if "validation" in data and isinstance(data["validation"], dict):
             for k, v in data["validation"].items():
                 if hasattr(cfg.validation, k):
-                    setattr(cfg.validation, k, v)
+                    _set(cfg.validation, k, v, "validation")
 
         if "router_rules" in data and isinstance(data["router_rules"], dict):
             for k, v in data["router_rules"].items():
                 if hasattr(cfg.router_rules, k):
-                    setattr(cfg.router_rules, k, v)
+                    _set(cfg.router_rules, k, v, "router_rules")
 
         if "logging" in data and isinstance(data["logging"], dict):
             for k, v in data["logging"].items():
                 if hasattr(cfg.logging, k):
-                    setattr(cfg.logging, k, v)
+                    _set(cfg.logging, k, v, "logging")
 
         if "remask" in data and isinstance(data["remask"], dict):
             for k, v in data["remask"].items():
                 if hasattr(cfg.remask, k):
-                    setattr(cfg.remask, k, v)
+                    _set(cfg.remask, k, v, "remask")
 
         if "exclusions" in data and isinstance(data["exclusions"], dict):
             for k, v in data["exclusions"].items():
                 if hasattr(cfg.exclusions, k):
-                    setattr(cfg.exclusions, k, v)
+                    _set(cfg.exclusions, k, v, "exclusions")
 
         if "dictionaries" in data and isinstance(data["dictionaries"], dict):
             for k, v in data["dictionaries"].items():
                 if hasattr(cfg.dictionaries, k):
-                    setattr(cfg.dictionaries, k, v)
+                    _set(cfg.dictionaries, k, v, "dictionaries")
 
         return cfg
 
@@ -614,6 +672,9 @@ class ConfigLoader:
         """
         if not YAML_AVAILABLE:
             logger.debug("PyYAML not installed — skipping YAML config")
+            if Path(path).is_file():
+                self.notices.append(f"Warning: {path}: PyYAML is not installed — the configuration "
+                                    f"file was ignored (pip install pyyaml)")
             return None
 
         filepath = Path(path)

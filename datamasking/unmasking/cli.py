@@ -23,6 +23,7 @@ from datamasking.unmasking.engine import (
     unmask_text_v2, unmask_text_v1,
     unmask_json_recursive, unmask_chain, unmask_json_chain,
     is_chain_mapping,
+    unmask_json_with_stats, unmask_json_chain_with_stats,
 )
 from datamasking.unmasking.io import (
     load_mapping_file, validate_mapping_schema, show_chain_info,
@@ -60,10 +61,13 @@ except ImportError:
 # ============================================================================
 from datamasking._version import __version__  # єдине джерело версії
 from datamasking._textio import read_text, check_encoding_settings
+from datamasking._fsutil import atomic_write_private
+import random
 
 
 EXIT_OK = 0
 EXIT_ERROR = 1
+EXIT_USAGE = 2
 
 
 def _config_password(config) -> Optional[str]:
@@ -88,6 +92,27 @@ def _unmask_encoding(config, masking_map) -> Tuple[str, List[str]]:
         configured = str(from_map)
     return check_encoding_settings(configured, allowed_cfg) if configured.lower() == "auto" else (
         check_encoding_settings(configured, list(allowed_cfg) + [configured]))
+
+
+def _size_limit(config: Any) -> int:
+    """Ліміт розміру файлу: менший із system.max_file_size_mb і
+    validation.max_input_size_mb (до 3.1.10 unmask їх не читав)."""
+    from datamasking.unmasking.helpers import MAX_INPUT_FILE_SIZE
+    limit = MAX_INPUT_FILE_SIZE
+    for section, key in (("system", "max_file_size_mb"), ("validation", "max_input_size_mb")):
+        value = getattr(getattr(config, section, None), key, None)
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            limit = min(limit, value * 1024 * 1024)
+    return limit
+
+
+def _expected_instances(masking_map: Dict) -> int:
+    """Скільки входжень масок записано в mapping (для ланцюга — у всіх проходах)."""
+    maps = masking_map.get("passes", [masking_map]) if is_chain_mapping(masking_map) else [masking_map]
+    return sum(len(info.get("instances", []))
+               for m in maps if isinstance(m, dict)
+               for cat in m.get("mappings", {}).values() if isinstance(cat, dict)
+               for info in cat.values() if isinstance(info, dict))
 
 
 def main(argv=None) -> int:
@@ -149,11 +174,14 @@ Examples:
         config_group.add_argument('--no-local-config', action='store_true',
                                   help='Ignore config_local.yaml files')
 
+    parser.add_argument('--force', action='store_true',
+                        help='Overwrite an existing output file')
+
     if LOGGING_AVAILABLE:
         log_group = parser.add_argument_group('logging options')
-        log_group.add_argument('--log-level', default='INFO',
-                               choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
-                               help='Logging level (default: INFO)')
+        log_group.add_argument('--log-level', default=None,
+                               choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                               help='Logging level (default: INFO or logging.level from the configuration)')
         log_group.add_argument('--log-file', metavar='FILE',
                                help='Log file path')
 
@@ -163,16 +191,17 @@ Examples:
     # ІНІЦІАЛІЗАЦІЯ ЛОГЕРА
     # ========================================================================
 
+    # Логер створюється ПІСЛЯ читання конфігурації (logging.* звідти, v3.1.10);
+    # повідомлення про саме завантаження конфігурації — у чергу
     logger = None
-    if LOGGING_AVAILABLE:
-        log_level = getattr(args, 'log_level', 'INFO')
-        log_file = getattr(args, 'log_file', None)
-        logger = setup_logging(level=log_level, log_file=log_file)
-        logger.info(f"Data Unmasking Script v{__version__}")
+    cli_logging = getattr(args, 'log_level', None) is not None or getattr(args, 'log_file', None) is not None
+    pending_logs: List[str] = []
 
     def log_info(msg):
         if logger:
             logger.info(msg)
+        else:
+            pending_logs.append(msg)
 
     def log_error(msg):
         if logger:
@@ -214,6 +243,30 @@ Examples:
             print(f"❌ Помилка завантаження конфігурації: {e}")
             log_error(f"Помилка завантаження конфігурації: {e}")
             return EXIT_ERROR
+
+    # Логер: прапорці CLI > logging.* з конфігурації > INFO у консоль
+    # (до 3.1.10 unmask читав лише прапорці CLI)
+    if LOGGING_AVAILABLE:
+        log_cfg = getattr(config, 'logging', None) if not isinstance(config, dict) else None
+        log_level = getattr(args, 'log_level', None) or 'INFO'
+        log_file = getattr(args, 'log_file', None)
+        console = True
+        enabled = True
+        if log_cfg is not None and not cli_logging:
+            enabled = getattr(log_cfg, 'enabled', True) is not False
+            log_level = str(getattr(log_cfg, 'level', None) or 'INFO').upper()
+            if getattr(log_cfg, 'log_to_file', None) is not False:
+                log_file = getattr(log_cfg, 'file', None)
+            console = getattr(log_cfg, 'log_to_console', True) is not False
+        if enabled:
+            try:
+                logger = setup_logging(level=log_level, log_file=log_file, console=console)
+                logger.info(f"Data Unmasking Script v{__version__}")
+                for msg in pending_logs:
+                    logger.info(msg)
+            except (ValueError, OSError, TypeError) as e:
+                print(f"Warning: could not setup logging: {e}", file=sys.stderr)
+        pending_logs.clear()
 
     # ========================================================================
     # ВИЗНАЧЕННЯ ПАРОЛЯ
@@ -264,10 +317,14 @@ Examples:
             filename = masked_path.stem
             if filename.startswith('output_'):
                 map_path = masked_path.parent / f"masking_map_{filename[7:]}.json"
-                enc_path = map_path.with_suffix('.enc')
-                if not map_path.exists() and enc_path.exists():
-                    map_path = enc_path
-                    log_info(f"Знайдено шифрований mapping: {enc_path.name}")
+                # mapping або ланцюг (--re-mask), відкритий або шифрований (v3.1.10)
+                for candidate in (f"masking_map_{filename[7:]}.enc", f"masking_chain_{filename[7:]}.json",
+                                  f"masking_chain_{filename[7:]}.enc"):
+                    if map_path.exists():
+                        break
+                    if (masked_path.parent / candidate).exists():
+                        map_path = masked_path.parent / candidate
+                        log_info(f"Знайдено mapping: {map_path.name}")
             else:
                 print("❌ Будь ласка, вкажіть файл маппінгу через --map")
                 log_error("Файл маппінгу не вказано")
@@ -282,7 +339,25 @@ Examples:
             output_path = Path(args.output)
         else:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            output_path = masked_path.parent / f"input_recovery_{timestamp}{masked_path.suffix}"
+            # Випадковий суфікс — паралельні запуски не перезаписують один одного
+            output_path = masked_path.parent / f"input_recovery_{timestamp}_{random.randint(0, 999):03d}{masked_path.suffix}"
+
+    # Вихідний файл не має збігатися із замаскованим чи mapping (до 3.1.10
+    # «-o masking_map_X.json» знищував mapping) і не перезаписується без --force
+    try:
+        same_as = [p for p in (masked_path, map_path) if p.exists() and output_path.exists()
+                   and os.path.samefile(output_path, p)]
+    except OSError:
+        same_as = []
+    if same_as:
+        print(f"❌ Вихідний файл збігається з {same_as[0]}")
+        return EXIT_USAGE
+    if output_path.exists() and not getattr(args, 'force', False):
+        print(f"❌ Файл {output_path} уже існує (використайте --force для перезапису)")
+        return EXIT_USAGE
+    if output_path.is_dir():
+        print(f"❌ {output_path} — каталог")
+        return EXIT_USAGE
 
     # ========================================================================
     # ЗАВАНТАЖЕННЯ ФАЙЛІВ
@@ -309,7 +384,7 @@ Examples:
                 print(f"❌ --to-version має бути в межах 0..{len(masking_map.get('passes', []))}")
                 return EXIT_ERROR
 
-        validate_file_size(masked_path)
+        validate_file_size(masked_path, max_size=_size_limit(config))
         # Кодування: з mapping (mask записує його, якщо вхід був не в utf-8);
         # system.encoding у конфігурації, якщо задано явно, має пріоритет
         file_encoding, allowed = _unmask_encoding(config, masking_map)
@@ -341,8 +416,8 @@ Examples:
         log_info(f"Розмаскування ланцюга з {total_passes} проходів")
 
         if masked_path.suffix.lower() == '.json':
-            restored_data = unmask_json_chain(masked_data, masking_map)
-            stats = {"restored_count": 0, "skipped_count": 0}
+            restored_data, stats = unmask_json_chain_with_stats(
+                masked_data, masking_map, to_version=getattr(args, 'to_version', None) or 0)
         else:
             restored_data, stats = unmask_chain(masked_data, masking_map,
                                                 to_version=getattr(args, 'to_version', None) or 0)
@@ -352,8 +427,7 @@ Examples:
         log_info(f"Розмаскування {masked_path.name} (логіка {map_version})")
 
         if masked_path.suffix.lower() == '.json':
-            restored_data = unmask_json_recursive(masked_data, masking_map, map_version)
-            stats = {"restored_count": 0, "skipped_count": 0}
+            restored_data, stats = unmask_json_with_stats(masked_data, masking_map, map_version)
         else:
             if map_version.startswith("v2"):
                 restored_data, stats = unmask_text_v2(masked_data, masking_map, map_version)
@@ -365,11 +439,10 @@ Examples:
     # ========================================================================
 
     try:
-        with open(output_path, 'w', encoding=file_encoding, newline='') as f:
-            if masked_path.suffix.lower() == '.json':
-                json.dump(restored_data, f, ensure_ascii=False, indent=2)
-            else:
-                f.write(restored_data)
+        # Відновлений текст чутливіший за mapping: атомарно, 0600 (v3.1.10)
+        out_text = json.dumps(restored_data, ensure_ascii=False, indent=2) \
+            if masked_path.suffix.lower() == '.json' else restored_data
+        atomic_write_private(output_path, out_text.encode(file_encoding))
 
         elapsed = time.time() - start_time
         print(f"✅ Готово! Збережено у: {output_path}")
@@ -377,15 +450,19 @@ Examples:
         log_info(f"Збережено у: {output_path} ({elapsed:.2f} сек)")
         log_info(f"Статистика: відновлено={stats.get('restored_count', 0)}, "
                  f"пропущено={stats.get('skipped_count', 0)}")
+        expected = _expected_instances(masking_map)
+        if expected and stats.get('restored_count', 0) == 0:
+            print("⚠️ Жодного значення не відновлено: mapping, схоже, не від цього файлу", file=sys.stderr)
+            log_error("Nothing restored: the mapping does not seem to belong to this file")
         # strict_mode: файл записано, але не все відновлено — код виходу 1.
-        # Не відновлено = зайві входження масок (skipped) + входження з
-        # mapping, яких у тексті вже немає (лише для звичайного mapping)
+        # Не відновлено = входження з mapping, яких у тексті не знайдено
+        # (для ланцюга — зайві входження масок; до 3.1.10 слово документа,
+        # що збігалось із маскою, теж рахувалось як помилка)
         if CONFIG_AVAILABLE and not isinstance(config, dict) and is_strict(config):
-            unrestored = stats.get('skipped_count', 0)
-            if not is_chain_mapping(masking_map):
-                expected = sum(len(info.get("instances", [])) for cat in masking_map.get("mappings", {}).values()
-                               if isinstance(cat, dict) for info in cat.values() if isinstance(info, dict))
-                unrestored += max(0, expected - stats.get('restored_count', 0))
+            if is_chain_mapping(masking_map):
+                unrestored = stats.get('skipped_count', 0)
+            else:
+                unrestored = max(0, expected - stats.get('restored_count', 0))
             if unrestored:
                 print(f"❌ strict_mode: {unrestored} masked value(s) were not restored")
                 log_error(f"strict_mode: {unrestored} masked value(s) were not restored")

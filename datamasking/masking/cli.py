@@ -242,7 +242,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--debug", action="store_true", help="Debug mode")
     parser.add_argument("--init-config", action="store_true",
                         help="Generate default config.yaml and exit")
-    parser.add_argument("--config", type=str, default=None,
+    parser.add_argument("-c", "--config", type=str, default=None,
                         help="Path to YAML configuration file")
     parser.add_argument("--config-local", type=str, default=None, metavar="FILE",
                         help="Private overrides on top of the configuration (default: "
@@ -491,6 +491,11 @@ def _major(version: str) -> Optional[int]:
     return int(m.group(1)) if m else None
 
 
+def _or_default(value, default):
+    """null у конфігурації — значення за замовчуванням, а не помилка."""
+    return default if value is None else value
+
+
 def _int_setting(value, name: str, lo: int, hi: int) -> int:
     """Ціле в межах [lo, hi]; інакше ValueError з текстом для користувача."""
     if isinstance(value, bool):
@@ -509,7 +514,7 @@ def _apply_level1_settings(args, config, logger) -> Optional[str]:
     значень. Повертає помилку конфігурації або None."""
     try:
         return _apply_level1_settings_impl(args, config, logger)
-    except ValueError as e:
+    except (ValueError, TypeError) as e:
         return str(e)
 
 
@@ -562,8 +567,8 @@ def _apply_level1_settings_impl(args, config, logger) -> Optional[str]:
         if getattr(validation, 'validate_date_range', True) is False:
             _cfg.DATE_DETECT_YEAR_MIN, _cfg.DATE_DETECT_YEAR_MAX = 1, 9999
         else:
-            lo = _int_setting(getattr(validation, 'min_date_year', 1900), "validation.min_date_year", 1, 9999)
-            hi = _int_setting(getattr(validation, 'max_date_year', 2100), "validation.max_date_year", 1, 9999)
+            lo = _int_setting(_or_default(getattr(validation, 'min_date_year', None), 1900), "validation.min_date_year", 1, 9999)
+            hi = _int_setting(_or_default(getattr(validation, 'max_date_year', None), 2100), "validation.max_date_year", 1, 9999)
             if lo > hi:
                 return f"validation.min_date_year ({lo}) is greater than validation.max_date_year ({hi})"
             _cfg.DATE_DETECT_YEAR_MIN, _cfg.DATE_DETECT_YEAR_MAX = lo, hi
@@ -588,7 +593,7 @@ def _apply_level1_settings_impl(args, config, logger) -> Optional[str]:
     if remask is not None:
         if getattr(remask, 'enabled', True) is False and getattr(args, 're_mask', None):
             return "--re-mask is disabled by the configuration (remask.enabled: false)"
-        _cfg.REMASK_MAX_PASSES = _int_setting(getattr(remask, 'max_passes', 10), "remask.max_passes", 2, 10)
+        _cfg.REMASK_MAX_PASSES = _int_setting(_or_default(getattr(remask, 'max_passes', None), 10), "remask.max_passes", 2, 10)
 
     # Склад пароля — перевірити ДО запису файлів (сам пароль генерується пізніше)
     _password_policy(config)
@@ -729,6 +734,9 @@ def _apply_config_settings(args, config, logger) -> Optional[str]:
             _cfg.PRESERVE_CASE = bool(cfg_preserve_case)
 
         cfg_hash = getattr(system_cfg, 'hash_algorithm', None)
+        if cfg_hash is not None and str(cfg_hash).lower() not in ('blake2b', 'md5', 'sha1', 'sha256', 'sha512'):
+            return (f"system.hash_algorithm must be one of blake2b, md5, sha1, sha256, sha512, "
+                    f"got {cfg_hash!r}")
         if cfg_hash is not None:
             _cfg.HASH_ALGORITHM = str(cfg_hash)
 
@@ -746,29 +754,26 @@ def _apply_config_settings(args, config, logger) -> Optional[str]:
     prefix_len = getattr(masking_rules, 'surname_prefix_length', None)
     if prefix_len is not None:
         try:
-            prefix_len = int(prefix_len)
-        except (TypeError, ValueError):
-            return f"masking_rules.surname_prefix_length must be an integer, got {prefix_len!r}"
-        if prefix_len < 0:
-            return "masking_rules.surname_prefix_length must be >= 0"
-        _cfg.SURNAME_PREFIX_LENGTH = prefix_len
+            _cfg.SURNAME_PREFIX_LENGTH = _int_setting(prefix_len, "masking_rules.surname_prefix_length", 0, 100)
+        except ValueError as e:
+            return str(e)
 
     # masking_rules.surname_prefix_min — мінімум, навіть понад «половину»
     prefix_min = getattr(masking_rules, 'surname_prefix_min', None)
     if prefix_min is not None:
         try:
-            prefix_min = int(prefix_min)
-        except (TypeError, ValueError):
-            return f"masking_rules.surname_prefix_min must be an integer, got {prefix_min!r}"
-        if prefix_min < 0:
-            return "masking_rules.surname_prefix_min must be >= 0"
-        _cfg.SURNAME_PREFIX_MIN = prefix_min
+            _cfg.SURNAME_PREFIX_MIN = _int_setting(prefix_min, "masking_rules.surname_prefix_min", 0, 100)
+        except ValueError as e:
+            return str(e)
 
     # validation.max_input_size_mb — раніше документований, але мертвий ключ
     validation_cfg = getattr(config, 'validation', None)
     max_mb = getattr(validation_cfg, 'max_input_size_mb', None)
-    if isinstance(max_mb, int) and max_mb > 0:
-        _cfg.MAX_INPUT_FILE_SIZE = max_mb * 1024 * 1024
+    if max_mb is not None:
+        try:
+            _cfg.MAX_INPUT_FILE_SIZE = _int_setting(max_mb, "validation.max_input_size_mb", 1, 1_000_000) * 1024 * 1024
+        except ValueError as e:
+            return str(e)
 
     # security.encrypt_output — те саме, що --encrypt (раніше ігнорувався)
     security_cfg = getattr(config, 'security', None)
@@ -855,7 +860,10 @@ def _resolve_password(args, config, logger) -> Tuple[Optional[str], Optional[str
         return None, (f"--encrypt needs a password: set ${env_name}, use --password-env VAR, "
                       f"or allow generation (security.auto_generate_password)")
 
-    password_file = str(getattr(getattr(config, 'security', None), 'password_file', '') or '')
+    password_file_raw = getattr(getattr(config, 'security', None), 'password_file', '')
+    if password_file_raw is not None and not isinstance(password_file_raw, str):
+        return None, f"security.password_file must be a path string, got {password_file_raw!r}"
+    password_file = str(password_file_raw or '')
     if password_file:
         target = Path(password_file)
         if target.exists() and not getattr(args, 'force', False):
@@ -959,13 +967,16 @@ def _run_multi_pass_masking(input_data, is_json: bool, masking_dict: Dict,
             pass_dict["statistics"][category] = len(mappings)
         chain.add_pass(pass_dict)
 
-    masking_dict["instance_tracking"] = {}
+    # Звіт — за першим проходом (справжні унікальні значення документа);
+    # до 3.1.10 статистика підсумовувалась по всіх проходах (×N) і
+    # instance tracking лишався порожнім
+    first = chain.passes[0] if chain.passes else {}
+    masking_dict["instance_tracking"] = dict(first.get("instance_tracking", {}))
     total_unique = 0
-    for p in chain.passes:
-        for cat, count in p.get("statistics", {}).items():
-            masking_dict["statistics"][cat] = masking_dict["statistics"].get(cat, 0) + count
-            if cat != "total_masked":
-                total_unique += count
+    for cat, count in first.get("statistics", {}).items():
+        masking_dict["statistics"][cat] = count
+        if cat != "total_masked":
+            total_unique += count
     masking_dict["statistics"]["total_masked"] = total_unique
 
     return masked_data, total_unique, chain
@@ -1215,12 +1226,27 @@ def main(argv=None) -> int:
     # Handle --init-config (early exit)
     # ================================================================
     if args.init_config:
-        if Path("config.yaml").exists() and not args.force:
-            print("Error: config.yaml already exists (use --force to overwrite)")
+        target = args.config or "config.yaml"
+        if Path(target).exists() and not args.force:
+            print(f"Error: {target} already exists (use --force to overwrite)")
             return EXIT_ERROR
-        generate_default_config("config.yaml")
-        print("Generated config.yaml")
+        generate_default_config(target)
+        print(f"Generated {target}")
+        try:
+            import yaml  # noqa: F401
+        except ImportError:
+            print("Warning: PyYAML is not installed — this file will be ignored until you run: "
+                  "pip install pyyaml", file=sys.stderr)
         return EXIT_OK
+
+    # --password / --password-env мають сенс лише з --encrypt; обидва разом — суперечність
+    if getattr(args, 'password', None) is not None and getattr(args, 'password_env', None):
+        print("Error: use either --password or --password-env, not both")
+        return EXIT_USAGE
+    if (getattr(args, 'password', None) is not None or getattr(args, 'password_env', None)) \
+            and not getattr(args, 'encrypt', False):
+        print("Error: --password / --password-env require --encrypt (the mapping would be written unencrypted)")
+        return EXIT_USAGE
 
     # ================================================================
     # Handle --list-types (early exit)
