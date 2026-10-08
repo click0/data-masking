@@ -49,12 +49,12 @@ _SP = r'[  ]'
 # Прізвище + 2 ініціали: Іванов П.А. / Іванов П. А. / ІВАНОВ П.А. / Іванов П.А (без
 # останньої крапки — лише якщо далі не літера)
 _RE_NAME_INI2 = re.compile(
-    r'(' + _NAME_RE + r')' + _SP + r'+([А-ЯІЇЄҐ])\.' + _SP + r'?([А-ЯІЇЄҐ])(?:\.|(?![а-яіїєґА-ЯІЇЄҐa-zA-Z\'ʼ’]))'
+    r'(' + _NAME_RE + r')' + _SP + r'+([А-ЯІЇЄҐ])\.' + _SP + r'*([А-ЯІЇЄҐ])(?:\.|(?![а-яіїєґА-ЯІЇЄҐa-zA-Z\'ʼ’]))'
 )
 # 2 ініціали + Прізвище: П.А. Іванов / П. А. Іванов
 _RE_INI2_NAME = re.compile(
     r'(?<![а-яіїєґА-ЯІЇЄҐa-zA-Z])'
-    r'([А-ЯІЇЄҐ])\.' + _SP + r'?([А-ЯІЇЄҐ])\.' + _SP + r'?(' + _NAME_RE + r')'
+    r'([А-ЯІЇЄҐ])\.' + _SP + r'*([А-ЯІЇЄҐ])\.' + _SP + r'*(' + _NAME_RE + r')'
 )
 # Прізвище + 1 ініціал: Іванов П.
 _RE_NAME_INI1 = re.compile(
@@ -63,7 +63,7 @@ _RE_NAME_INI1 = re.compile(
 # 1 ініціал + Прізвище: П. Іванов
 _RE_INI1_NAME = re.compile(
     r'(?<![а-яіїєґА-ЯІЇЄҐa-zA-Z])'
-    r'([А-ЯІЇЄҐ])\.' + _SP + r'?(' + _NAME_RE + r')'
+    r'([А-ЯІЇЄҐ])\.' + _SP + r'*(' + _NAME_RE + r')'
 )
 
 
@@ -97,11 +97,15 @@ def _is_surname_candidate(word: str) -> bool:
 
 
 def _mask_initial(letter: str, context: str = "") -> str:
-    """Маскує одну літеру ініціала: П -> В (детерміновано, з контекстом прізвища)."""
+    """Маскує одну літеру ініціала: П -> В (детерміновано, з контекстом прізвища).
+
+    Літера, що лишається в документі окремим токеном («п. В.» — буквений
+    підпункт), не береться: unmask переплутав би її з маскою (v3.1.9)."""
     seed = get_deterministic_seed(letter.lower() + "_initial_" + context.lower())
     random.seed(seed)
     candidates = [c for c in _UA_UPPER if c != letter.upper()]
-    return random.choice(candidates)
+    free = [c for c in candidates if not _surname.document_contains(c)]
+    return random.choice(free or candidates)
 
 
 # Службові скорочення з крапкою. Якщо такий токен стоїть безпосередньо
@@ -143,33 +147,39 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
     # Фаза 1: збір кандидатів (start, end, surname, [ініціали], has_space, ini_first)
     candidates = []
 
+    # Кандидат: (start, end, прізвище, [ініціали], проміжок між ініціалами,
+    # проміжок між блоком ініціалів і прізвищем, ініціали першими, остання
+    # крапка). Проміжки — як у тексті (подвійний пробіл, NBSP, без пробілу):
+    # до 3.1.9 вони зводились до одного пробілу, і unmask повертав не оригінал
     for m in _RE_NAME_INI2.finditer(text):
         surname, i1, i2 = m.group(1), m.group(2), m.group(3)
         if _is_surname_candidate(surname):
-            has_space = f"{i1}. {i2}" in m.group(0)
+            mid_gap = text[m.end(2) + 1:m.start(3)]
+            sur_gap = text[m.end(1):m.start(2)]
             # «Петренко О.П» без останньої крапки — маска теж без неї
-            candidates.append((m.start(), m.end(), surname, [i1, i2], has_space, False,
+            candidates.append((m.start(), m.end(), surname, [i1, i2], mid_gap, sur_gap, False,
                                m.group(0).endswith('.')))
 
     for m in _RE_INI2_NAME.finditer(text):
         i1, i2, surname = m.group(1), m.group(2), m.group(3)
         if _is_surname_candidate(surname) and _left_token(text, m.start()) not in _NON_INITIAL_LEFT:
-            has_space = f"{i1}. {i2}." in m.group(0)
-            candidates.append((m.start(), m.end(), surname, [i1, i2], has_space, True, True))
+            mid_gap = text[m.end(1) + 1:m.start(2)]
+            sur_gap = text[m.end(2) + 1:m.start(3)]
+            candidates.append((m.start(), m.end(), surname, [i1, i2], mid_gap, sur_gap, True, True))
 
     for m in _RE_NAME_INI1.finditer(text):
         surname, i1 = m.group(1), m.group(2)
         if _is_surname_candidate(surname):
-            candidates.append((m.start(), m.end(), surname, [i1], False, False, True))
+            candidates.append((m.start(), m.end(), surname, [i1], "", text[m.end(1):m.start(2)], False, True))
 
     for m in _RE_INI1_NAME.finditer(text):
         i1, surname = m.group(1), m.group(2)
         if _is_surname_candidate(surname) and _left_token(text, m.start()) not in _NON_INITIAL_LEFT:
-            candidates.append((m.start(), m.end(), surname, [i1], False, True, True))
+            candidates.append((m.start(), m.end(), surname, [i1], "", text[m.end(1) + 1:m.start(2)], True, True))
 
     # Довші патерни мають пріоритет; знімаємо перекриття
     candidates.sort(key=lambda x: (x[1] - x[0]), reverse=True)
-    kept: List[Tuple[int, int, str, List[str], bool, bool, bool]] = []
+    kept: List[Tuple[int, int, str, List[str], str, str, bool, bool]] = []
     for c in candidates:
         if not any(c[0] < k[1] and c[1] > k[0] for k in kept):
             kept.append(c)
@@ -180,9 +190,9 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
     kept.sort(key=lambda x: x[0])
     segments = []
     prev_end = 0
-    for start, end, surname, initials, has_space, ini_first, final_dot in kept:
+    for start, end, surname, initials, mid_gap, sur_gap, ini_first, final_dot in kept:
         ms = mask_surname(surname, masking_dict, instance_counters) if mask_surnames else surname
-        sep = '. ' if has_space else '.'
+        sep = '.' + mid_gap
         tail = '.' if final_dot else ''
         orig_ini = sep.join(initials) + tail
         if mask_initials:
@@ -193,7 +203,7 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
                                         "initials", orig_ini, masked_ini)
         else:
             masked_ini = orig_ini
-        new_text = f"{masked_ini} {ms}" if ini_first else f"{ms} {masked_ini}"
+        new_text = f"{masked_ini}{sur_gap}{ms}" if ini_first else f"{ms}{sur_gap}{masked_ini}"
         segments.append(text[prev_end:start])
         segments.append(new_text)
         prev_end = end
@@ -203,6 +213,74 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
         text = ''.join(segments)
 
     return text
+
+
+_RANK_FORMS_RE: Optional[Pattern[str]] = None
+
+
+def _get_rank_forms_re() -> Pattern[str]:
+    global _RANK_FORMS_RE
+    if _RANK_FORMS_RE is None:
+        forms = sorted(_cfg.ALL_RANK_FORMS, key=len, reverse=True)
+        alternation = '|'.join(re.escape(f).replace(r'\ ', r'\s+') for f in forms)
+        _RANK_FORMS_RE = re.compile(r"(?<![\w'’ʼ-])(?:" + alternation + r")(?![\w'’ʼ-])", re.IGNORECASE)
+    return _RANK_FORMS_RE
+
+
+_TOKEN_RE = re.compile(r"\d+(?:[./-]\d+)*|[А-ЯІЇЄҐа-яіїєґA-Za-z][А-ЯІЇЄҐа-яіїєґA-Za-z'’ʼ-]*")
+
+
+def _instance_counts(masking_dict: Dict) -> Dict[str, int]:
+    """Скільки входжень замасковано для кожного оригіналу (нижній регістр), за всіма категоріями."""
+    counts: Dict[str, int] = {}
+    for category in masking_dict.get("mappings", {}).values():
+        if not isinstance(category, dict):
+            continue
+        for original, info in category.items():
+            if isinstance(info, dict):
+                key = str(original).lower()
+                counts[key] = counts.get(key, 0) + len(info.get("instances", []))
+    return counts
+
+
+def _unmasked_residue(text: str, masking_dict: Dict, instance_counters: Dict,
+                      kept: Optional[List[Tuple[str, str]]]) -> Tuple[set, set]:
+    """Що після маскування лишиться в тексті відкритим: (звання за називною
+    формою, слова/числа в нижньому регістрі). Маска не має з ними збігатися,
+    інакше unmask міняє їх місцями: «Командир роти капітан», «рядовий склад»,
+    «778 одиниць», «Ім'я: Ігор», дата закону (v3.1.9).
+
+    Пробний прогін на копіях mapping і лічильників: скільки разів слово
+    трапляється в тексті, мінус скільки разів його замасковано."""
+    import copy
+    rank_counts: Dict[str, int] = {}
+    if _cfg.MASK_RANKS:
+        for m in _get_rank_forms_re().finditer(text):
+            info = _cfg.RANK_TO_NOMINATIVE.get(" ".join(m.group(0).split()).lower())
+            if info:
+                rank_counts[info[0]] = rank_counts.get(info[0], 0) + 1
+    token_counts: Dict[str, int] = {}
+    for m in _TOKEN_RE.finditer(text):
+        tok = m.group(0).lower()
+        token_counts[tok] = token_counts.get(tok, 0) + 1
+
+    trial_dict = copy.deepcopy(masking_dict)
+    trial_counters = dict(instance_counters)
+    before = _instance_counts(masking_dict)
+    saved_ranks, saved_residue = _cfg.AVOID_RANK_MASKS, _surname._residue_tokens
+    _cfg.AVOID_RANK_MASKS = frozenset()
+    _surname.set_residue(set())
+    try:
+        _mask_text_core_impl(text, trial_dict, trial_counters, kept)
+    finally:
+        _cfg.AVOID_RANK_MASKS = saved_ranks
+        _surname.set_residue(saved_residue)
+    after = _instance_counts(trial_dict)
+    masked = {k: after.get(k, 0) - before.get(k, 0) for k in after}
+
+    rank_residue = {base for base, n in rank_counts.items() if n > masked.get(base, 0)}
+    token_residue = {tok for tok, n in token_counts.items() if n > masked.get(tok, 0)}
+    return rank_residue, token_residue
 
 
 _BROKEN_RANKS_RE: Optional[Pattern[str]] = None
@@ -253,12 +331,20 @@ def _mask_quoted_ranks(text: str, masking_dict: Dict, instance_counters: Dict) -
     if not _cfg.MASK_RANKS:
         return text
 
-    # Вже використані маски звань — щоб не маскувати результат повторно
-    already = {
-        info["masked_as"].lower()
-        for info in masking_dict["mappings"].get("rank", {}).values()
-        if isinstance(info, dict) and "masked_as" in info
-    }
+    # Вже використані маски звань — у всіх відмінках і родах — щоб не
+    # маскувати результат повторно («старшого сержанта» в лапках — це вже
+    # маска, до 3.1.9 порівнювався лише називний відмінок)
+    already = set()
+    for info in masking_dict["mappings"].get("rank", {}).values():
+        if not (isinstance(info, dict) and "masked_as" in info):
+            continue
+        base = info["masked_as"].lower()
+        already.add(base)
+        already.update(f.lower() for f in _cfg.RANK_DECLENSIONS.get(base, {}).values())
+        female = _cfg.RANK_FEMININE_MAP.get(base)
+        if female:
+            already.add(female.lower())
+            already.update(f.lower() for f in _cfg.RANK_DECLENSIONS_FEMALE.get(female, {}).values())
 
     segments = []
     prev_end = 0
@@ -378,6 +464,26 @@ def locate_words(line: str, phrase: str) -> Optional[Tuple[int, int, List[str]]]
     return m.start(), m.end(), list(m.groups())
 
 
+def locate_words_before(line: str, phrase: str, before: int) -> Optional[Tuple[int, int, List[str]]]:
+    """Як locate_words, але входження, що закінчується найближче ПЕРЕД
+    позицією *before* (звання безпосередньо перед ПІБ). До 3.1.9 бралось
+    перше входження в рядку: у «рядовий склад … рядовий Петренко Іван
+    Іванович» маскувалось «рядовий склад», а звання особи лишалось."""
+    words = phrase.split()
+    if not words:
+        return None
+    pattern = r"(?<![\w'’ʼ-])" + r"([\s|]+)".join(re.escape(w) for w in words) + r"(?![\w'’ʼ-])"
+    best = None
+    for m in re.finditer(pattern, line):
+        if m.end() <= before:
+            best = m
+        else:
+            break
+    if best is None:
+        return locate_words(line, phrase)
+    return best.start(), best.end(), list(best.groups())
+
+
 def join_with_separators(words: List[str], separators: List[str]) -> str:
     """Склеює слова оригінальними роздільниками (їх на 1 менше, ніж слів;
     якщо кількість слів змінилась — одинарні пробіли)."""
@@ -440,7 +546,16 @@ def _mask_text_core(text: str, masking_dict: Dict, instance_counters: Dict,
     bom = text.startswith("\ufeff")
     if bom:
         text = text[1:]
-    text = _mask_text_core_impl(text, masking_dict, instance_counters, kept)
+    # Звання і слова, що лишаться відкритими, — заборонені як маски (див. _unmasked_residue)
+    rank_residue, token_residue = _unmasked_residue(text, masking_dict, instance_counters, kept)
+    saved = _cfg.AVOID_RANK_MASKS
+    _cfg.AVOID_RANK_MASKS = frozenset(rank_residue)
+    _surname.set_residue(token_residue)
+    try:
+        text = _mask_text_core_impl(text, masking_dict, instance_counters, kept)
+    finally:
+        _cfg.AVOID_RANK_MASKS = saved
+        _surname.set_residue(None)
     return ("\ufeff" + text) if bom else text
 
 
@@ -685,7 +800,7 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
                 break
 
             if rank and _cfg.MASK_RANKS:
-                rank_span = locate_words(current_line_for_parsing, rank)
+                rank_span = locate_words_before(current_line_for_parsing, rank, pib_span[0])
                 if rank_span is not None:
                     masked_rank_val = mask_rank_preserve_case(rank, masking_dict, instance_counters)
                     masked_rank_val = join_with_separators(masked_rank_val.split(), rank_span[2])

@@ -10,9 +10,10 @@ Extracted from data_masking.py during the package refactoring (v2.5.0).
 import random
 import re
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Callable
 
 from datamasking.masking import constants as _cfg
+from datamasking.masking import surname as _surname
 from datamasking.masking.helpers import add_to_mapping, get_deterministic_seed, _apply_original_case
 from datamasking.masking.context import extract_base_rank
 
@@ -36,6 +37,24 @@ def mask_military_unit(original: str, masking_dict: Dict, instance_counters: Dic
         masked = letter + sep + digits
     return add_to_mapping(masking_dict, instance_counters, "military_unit", original, masked)
 
+def _redigit(original: str, attempt: int = 0) -> str:
+    """Замінює всі цифри випадковими (детерміновано від оригіналу й номера спроби)."""
+    random.seed(get_deterministic_seed(original) if attempt == 0 else get_deterministic_seed(f"{original}\x00{attempt}"))
+    return re.sub(r'\d', lambda _: str(random.randint(0, 9)), original)
+
+
+def _distinct_mask(original: str, generate: "Callable[[int], str]", attempts: int = 10) -> str:
+    """Маска, що не дорівнює оригіналу і не збігається з числом/словом
+    документа (інакше unmask мінял би їх місцями, v3.1.9). *generate(attempt)*
+    — детермінований генератор; після *attempts* спроб — остання маска."""
+    masked = generate(0)
+    for attempt in range(1, attempts + 1):
+        if masked != original and not _surname.document_contains(masked):
+            break
+        masked = generate(attempt)
+    return masked
+
+
 def mask_order_number(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
     """
     Маскує номер наказу.
@@ -45,18 +64,14 @@ def mask_order_number(original: str, masking_dict: Dict, instance_counters: Dict
     if original in masking_dict["mappings"]["order_number"]:
         masked = masking_dict["mappings"]["order_number"][original]["masked_as"]
     else:
-        seed = get_deterministic_seed(original)
-        random.seed(seed)
-        masked = re.sub(r'\d', lambda _: str(random.randint(0, 9)), original)
+        masked = _distinct_mask(original, lambda a: _redigit(original, a))
     return add_to_mapping(masking_dict, instance_counters, "order_number", original, masked)
 
 def mask_order_number_with_letters(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
     if original in masking_dict["mappings"]["order_number_with_letters"]:
         masked = masking_dict["mappings"]["order_number_with_letters"][original]["masked_as"]
     else:
-        seed = get_deterministic_seed(original)
-        random.seed(seed)
-        masked = re.sub(r'\d', lambda _: str(random.randint(0, 9)), original)
+        masked = _distinct_mask(original, lambda a: _redigit(original, a))
     return add_to_mapping(masking_dict, instance_counters, "order_number_with_letters", original, masked)
 
 def mask_br_number(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
@@ -133,9 +148,7 @@ def mask_br_number_complex(original: str, masking_dict: Dict, instance_counters:
     if original in masking_dict["mappings"]["br_number_complex"]:
         masked = masking_dict["mappings"]["br_number_complex"][original]["masked_as"]
     else:
-        seed = get_deterministic_seed(original)
-        random.seed(seed)
-        masked = re.sub(r'\d', lambda _: str(random.randint(0, 9)), original)
+        masked = _distinct_mask(original, lambda a: _redigit(original, a))
     return add_to_mapping(masking_dict, instance_counters, "br_number_complex", original, masked)
 
 def mask_brigade_number(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
@@ -194,6 +207,15 @@ def mask_date(original: str, masking_dict: Dict, instance_counters: Dict) -> str
             random.seed(seed)
             shift = random.randint(-30, 30) or random.choice((-1, 1))
             new_date = date_obj + timedelta(days=shift)
+            # Маска не має збігатися з іншою датою документа (напр. датою
+            # закону, яка не маскується) — інакше unmask їх переплутає
+            for attempt in range(1, 11):
+                probe = f"{day_fmt % new_date.day}.{month_fmt % new_date.month}.{new_date.year:04d}"
+                if not _surname.document_contains(probe):
+                    break
+                random.seed(get_deterministic_seed(f"{original}\x00{attempt}"))
+                shift = random.randint(-30, 30) or random.choice((-1, 1))
+                new_date = date_obj + timedelta(days=shift)
 
             # Дати документів лишаються в межах 2015–2035 (як до 3.0.22 —
             # маски наявних дат не змінюються); дату народження 1985 року
@@ -254,6 +276,13 @@ def mask_date_text(original: str, masking_dict: Dict, instance_counters: Dict) -
         new_year = str(int(year) + year_shift)
 
         masked_key = f"{new_day} {new_month} {new_year}"
+        for attempt in range(1, 11):
+            if not _surname.document_contains(masked_key):
+                break
+            random.seed(get_deterministic_seed(f"{original_key}\x00{attempt}"))
+            new_month = random.choice(available_months)
+            new_year = str(int(year) + random.choice([-1, 0, 1]))
+            masked_key = f"{new_day} {new_month} {new_year}"
 
     masked_key = add_to_mapping(masking_dict, instance_counters,
                                 "date_text", key, masked_key)
@@ -261,8 +290,11 @@ def mask_date_text(original: str, masking_dict: Dict, instance_counters: Dict) -
     parts = masked_key.split()
     if len(parts) < 3:
         return original
+    # Місяць — у регістрі оригіналу («Жовтня» → «Грудня»); unmask порівнює
+    # без урахування регістру й повертає оригінальний
+    new_month_text = parts[1].capitalize() if month_name[:1].isupper() else parts[1]
     return original.replace(day, parts[0], 1).replace(
-        month_name, parts[1], 1).replace(year, parts[2], 1)
+        month_name, new_month_text, 1).replace(year, parts[2], 1)
 
 
 # Аліас для зворотної сумісності (історично було дві копії функції)
@@ -351,6 +383,17 @@ def mask_rank(original: str, masking_dict: Dict, instance_counters: Dict) -> str
         new_idx = max(0, min(len(hierarchy) - 1, idx + shift))
         masked = hierarchy[new_idx]
         attempts += 1
+
+    # Звання, яке в документі лишиться відкритим (без ПІБ), — не маска:
+    # інакше unmask переплутає його з маскою. Беремо найближчого сусіда
+    # за зсувом; якщо всі зайняті — лишається перший варіант (v3.1.9)
+    if masked.lower() in _cfg.AVOID_RANK_MASKS:
+        for alt_shift in sorted(_cfg.RANK_SHIFT_OPTIONS, key=abs):
+            alt = hierarchy[max(0, min(len(hierarchy) - 1, idx + alt_shift))]
+            if alt.lower() != search_key and alt.lower() not in _cfg.AVOID_RANK_MASKS:
+                masked = alt
+                break
+
 
     # Store mapping by base form (nominative) for consistency
     final_masked = add_to_mapping(masking_dict, instance_counters, "rank", lookup_key, masked)

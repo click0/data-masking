@@ -20,6 +20,7 @@ from datamasking.masking.language import (
     detect_gender_by_patronymic, detect_name_case_and_gender,
     generate_easy_name, apply_case_to_name, same_name_forms, normalize_apostrophe,
 )
+from datamasking.masking import surname as _surname
 from datamasking.masking.surname import synthesize_surname, known_surname_forms
 
 
@@ -116,7 +117,7 @@ def mask_surname(original: str, masking_dict: Dict, instance_counters: Dict) -> 
     if original in masking_dict["mappings"]["surname"]:
         masked = masking_dict["mappings"]["surname"][original]["masked_as"]
     else:
-        forbidden = known_surname_forms(masking_dict)
+        forbidden = known_surname_forms(masking_dict, except_original=original)
         hyphen_parts = original.split('-')
         if len(hyphen_parts) == 2 and all(len(p) >= 3 for p in hyphen_parts):
             # Подвійне прізвище: кожна частина — власна синтетична маска,
@@ -166,7 +167,7 @@ def mask_patronymic(patronymic: str, gender: str, masking_dict: Dict, instance_c
     fake_patronymic = normalize_apostrophe(provider.middle_name_male() if gender == 'male' else provider.middle_name_female())
     # Не те саме по батькові в іншому відмінку («Петровича» → «Петрович»)
     for attempt in range(10):
-        if not same_name_forms(fake_patronymic, patronymic_lower):
+        if not same_name_forms(fake_patronymic, patronymic_lower) and not _surname.document_contains(fake_patronymic):
             break
         provider.seed_instance(seed + attempt + 1)
         fake_patronymic = normalize_apostrophe(provider.middle_name_male() if gender == 'male' else provider.middle_name_female())
@@ -214,17 +215,19 @@ def mask_name(original: str, masking_dict: Dict, instance_counters: Dict,
         first_letter = original[0].lower()
         seed = get_deterministic_seed(original)
         nominative_guess = original.lower()
+        doc_words = _surname.residue_vocabulary()
         new_name = generate_easy_name(gender, first_letter, seed, max_attempts=50,
-                                      exclude=nominative_guess)
+                                      exclude=nominative_guess, forbidden=doc_words)
         masked = apply_case_to_name(new_name, case, gender)
 
         # Страховка: маска ніколи не є тим самим ім'ям (у будь-якому відмінку)
+        # і не збігається зі словом документа
         attempts = 0
-        while (same_name_forms(masked, original) or same_name_forms(new_name, original)) \
-                and attempts < 10:
+        while (same_name_forms(masked, original) or same_name_forms(new_name, original)
+               or masked.lower() in doc_words) and attempts < 10:
             seed = get_deterministic_seed(original + str(attempts))
             new_name = generate_easy_name(gender, first_letter, seed, max_attempts=50,
-                                          exclude=new_name.lower())
+                                          exclude=new_name.lower(), forbidden=doc_words)
             masked = apply_case_to_name(new_name, case, gender)
             attempts += 1
 
