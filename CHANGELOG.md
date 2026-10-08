@@ -4,6 +4,39 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.7] - 2026-10
+
+### Fixed — names left unmasked by the line parser (audit, part 1)
+An audit of the parser found inputs where a full name stayed in the clear.
+All of them are masked now; masks of previously handled text are unchanged
+(verified on 152 documents), and existing mappings unmask as before.
+
+- **A line in capital letters without a rank** was taken for a heading:
+  `КОВАЛЬ ТЕТЯНА СЕРГІЇВНА` (a signature) was not masked at all. A run of
+  three capitalised words ending in a patronymic is now always a name,
+  whatever the rest of the line looks like. Real headings
+  (`НАКАЗ КОМАНДИРА ВІЙСЬКОВОЇ ЧАСТИНИ`) are still left alone.
+- **Tabs, double spaces, non-breaking spaces or table bars `|` between the
+  words of a name** — common in documents exported from Word or tables —
+  made the whole name (and its rank) stay open, even `капітан\tКоваль\t…`.
+  The words are now located with any separator, and the separators are kept
+  in the output; `data-unmask` restores ranks written with such separators.
+- **Line filters** rejected whole lines together with the name they
+  contained: lines starting with `Згідно`/`Відповідно`, short lines
+  (`Кіт Олег`), lines mentioning `статуту`/`закону`, or a surname that
+  merely contains an office word (`Наказний`). The filters now skip the
+  office phrase, not the line, and `наказ`, `статут` … are matched as whole
+  words. A one-word surname after a rank may be 3 letters (`рядовий Кіт`).
+- **Only 10 names per line** were masked; the 11th and later stayed open.
+- **A surname standing alone** after the full name had been masked stayed
+  open next to its own mask (`… Івенов Павло Данилович звільнений. Іванов
+  отримав виплату.`). Known surnames are now masked wherever they appear,
+  including other grammatical cases with the same ending (`Іванова`,
+  `Іванову`), with the same synthetic stem.
+- **A UTF-8 BOM** at the start of a file was glued to the first word, so
+  the first surname was not masked. The BOM is kept in the output.
+- Tests: `tests/test_pib_parsing_gaps.py`.
+
 ## [3.1.6] - 2026-10
 
 ### Added

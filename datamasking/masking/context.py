@@ -12,7 +12,40 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from datamasking.masking import constants as _cfg
 from datamasking.masking.helpers import normalize_string, normalize_identifier, is_pib_anchor
-from datamasking.masking.language import looks_like_name
+from datamasking.masking.language import looks_like_name, detect_gender_by_patronymic
+
+# Роздільники слів усередині рядка: будь-які пробільні символи (пробіл, таб,
+# NBSP) і «|» таблиць. До 3.1.7 ПІБ із табуляцією або подвійним пробілом
+# між словами не маскувався взагалі: parse_hybrid_line стискав пробіли, а
+# рушій шукав зібраний ПІБ дослівно в рядку (і не знаходив).
+WORD_SEPARATOR_RE = re.compile(r"[\s|]+")
+
+# Канцелярські слова, після яких кандидат на ПІБ — не ПІБ («Наказ
+# Міністерства…»). Збіг — лише цілим словом: до 3.1.7 порівнювався підрядок,
+# і прізвище «Наказний» або «Законова» відкидало весь рядок
+_BAD_WORD_RE = re.compile(
+    r"\b(?:наказ(?:у|ом|и|ів|ах)?|статут(?:у|ом|и)?|вимог(?:а|и|у|ам|ами)?|порушенн(?:я|ю|ям|і)|"
+    r"служб(?:а|и|у|ою|і)|закон(?:у|ом|и|ів|ах)?|указ(?:у|ом|и|ів)?|кодекс(?:у|ом|и)?|положенн(?:я|ю|ям|і))\b",
+    re.IGNORECASE)
+
+
+def _strip_word(word: str) -> str:
+    return word.strip(_cfg.QUOTE_CHARS).strip(',.!?;:')
+
+
+def has_full_pib(words: List[str]) -> bool:
+    """Сильна ознака ПІБ: три слова поспіль схожі на імена, третє — по
+    батькові (-ович/-івна … у будь-якому відмінку). Такий рядок маскується
+    незалежно від евристик-фільтрів (капс, «Згідно…», «статуту», довжина):
+    до 3.1.7 вони відкидали весь рядок разом із ПІБ."""
+    clean = [_strip_word(w) for w in words]
+    for i in range(len(clean) - 2):
+        a, b, c = clean[i], clean[i + 1], clean[i + 2]
+        if (a and b and c and a[0].isupper() and b[0].isupper() and c[0].isupper()
+                and detect_gender_by_patronymic(c) != 'unknown'
+                and looks_like_name(a) and looks_like_name(b) and looks_like_name(c)):
+            return True
+    return False
 
 
 def analyze_number_sign_context(text: str, match: re.Match) -> Optional[Dict]:
@@ -71,6 +104,9 @@ def analyze_br_keyword(text: str, match: re.Match) -> Optional[Dict]:
     return None
 
 def clean_line_before_parsing(line: str) -> str:
+    # «|» таблиць — як пробіл (рушій потім знаходить слова ПІБ у рядку з
+    # оригінальними роздільниками, див. engine.locate_words)
+    line = line.replace('|', ' ')
     # Видаляємо нумерацію пунктів на початку рядка: "20.1.2.1.", "1.", "1.2.", "3.2." тощо
     line = re.sub(r'^\s*(?:\d+\.)+\s*', '', line)
     line = re.sub(r'\d{1,2}[.!]\d{1,2}\.\d{4}', '', line)
@@ -116,17 +152,24 @@ def extract_base_rank(full_rank_text: str) -> Tuple[str, str]:
     return base_rank, additional
 
 def looks_like_pib_line(line: str) -> bool:
-    if not line or len(line.strip()) < 10: return False
-    line_clean = line.strip()
+    if not line or len(line.strip()) < 6: return False
+    line_clean = WORD_SEPARATOR_RE.sub(' ', line).strip()
     line_lower = line_clean.lower()
 
     if line_clean.startswith('===') or line_clean.startswith('---') or re.match(r'^[А-ЯҐЄІЇA-Z\s]+:\s*$', line_clean): return False
 
     normalized = normalize_string(line_clean)
     has_rank = any(rank in normalized for rank in _cfg.RANKS_LIST)
+    words = line_clean.split()
+
+    # Повний ПІБ (…Прізвище Ім'я По-батькові…) — маскуємо завжди: і в рядку
+    # капсом («КОВАЛЬ ТЕТЯНА СЕРГІЇВНА» — підпис), і після «Згідно з рапортом»,
+    # і поруч зі «статуту». До 3.1.7 такі рядки лишались відкритими
+    if has_full_pib(words): return True
 
     if not has_rank:
-        if line_clean.isupper() and len(line_clean.split()) >= 3:
+        # Рядок капсом без звання і без ПІБ — заголовок («НАКАЗ КОМАНДИРА…»)
+        if line_clean.isupper() and len(words) >= 3:
             if not re.search(r'\b\d{10}\b|\b\d{9}\b|[А-ЯA-Z]{2}\s*-?\s*\d{6}\b', line_clean): return False
 
     # Звання — сильний контекст: «Відповідно до рапорту старшого сержанта
@@ -145,7 +188,6 @@ def looks_like_pib_line(line: str) -> bool:
         for term in legal_terms:
             if term in line_lower: return False
 
-    words = line_clean.split()
     capitalize_sequence = 0
     max_sequence = 0
     for word in words:
@@ -261,21 +303,26 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
         rank_without_number = re.sub(r'^\d+\.\s*', '', rank)
         if re.search(r'\d{2,}', rank_without_number): return None, None, identifier
 
-    bad_words = ['статут', 'наказ', 'вимог', 'порушення', 'служби', 'закон', 'указ', 'кодекс', 'положення']
     pib = None
+    strong_only = False
     for start, after_rank in starts:
         pib_words = _extract_pib_words(parts, start, after_rank)
         if not pib_words:
             continue
         candidate = " ".join(pib_words)
-        candidate_lower = candidate.lower()
-        if any(bad_word in candidate_lower for bad_word in bad_words):
-            # Канцелярський зворот («Наказ Міністерства…») — далі не шукаємо,
-            # інакше зростає ризик хибних спрацювань на офіційному тексті
-            return None, None, identifier
-        # Одне слово приймаємо ЛИШЕ одразу після звання («рядовий Іванов прибув»):
-        # звання — сильний контекст, що далі стоїть прізвище
-        if len(pib_words) >= 2 or (after_rank and len(pib_words[0]) >= 4):
+        if _BAD_WORD_RE.search(candidate):
+            # Канцелярський зворот («Наказ Міністерства Оборони…») — не ПІБ.
+            # Далі в рядку приймаємо лише сильних кандидатів (після звання
+            # або з по батькові), щоб «Міністерства Оборони» не стало ПІБ,
+            # а «… капітан Петренко Іван Іванович» у тому ж рядку — маскувалось
+            strong_only = True
+            continue
+        if strong_only and not after_rank and not (
+                len(pib_words) == 3 and detect_gender_by_patronymic(pib_words[2]) != 'unknown'):
+            continue
+        # Одне слово приймаємо ЛИШЕ одразу після звання («рядовий Іванов прибув»,
+        # «рядовий Кіт»): звання — сильний контекст, що далі стоїть прізвище
+        if len(pib_words) >= 2 or (after_rank and len(pib_words[0]) >= 3):
             pib = candidate
             break
 
