@@ -27,13 +27,13 @@ def mask_military_unit(original: str, masking_dict: Dict, instance_counters: Dic
     if original in masking_dict["mappings"]["military_unit"]:
         masked = masking_dict["mappings"]["military_unit"][original]["masked_as"]
     else:
-        match = re.match(r'^([А-ЯA-Z])(\d{4})$', original)
+        match = re.match(r'^([А-ЯA-Z])( ?)(\d{4})$', original)
         if not match: return original
-        letter = match.group(1)
+        letter, sep = match.group(1), match.group(2)
         seed = get_deterministic_seed(original)
         random.seed(seed)
         digits = ''.join([str(random.randint(0, 9)) for _ in range(4)])
-        masked = letter + digits
+        masked = letter + sep + digits
     return add_to_mapping(masking_dict, instance_counters, "military_unit", original, masked)
 
 def mask_order_number(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
@@ -75,14 +75,14 @@ def mask_br_number(original: str, masking_dict: Dict, instance_counters: Dict) -
         suffix_match = re.search(r'(дск|п|к)$', original)
         suffix = suffix_match.group(1) if suffix_match else ""
 
-        # Витягуємо префікс (№)
+        # Витягуємо префікс: «№», «БР», «БР-», «№БР-» (до 3.1.8 — лише «№»,
+        # тож у «БР 123/45» перший сегмент, а в «БР 566» усе лишалось відкритим)
         prefix = ""
         number_part = original
-        if original.startswith("№"):
-            match = re.match(r'(№\s*)', original)
-            if match:
-                prefix = match.group(1)
-                number_part = original[len(prefix):]
+        match = re.match(r'(№\s*)?(БР[-\s]?)?', original, re.IGNORECASE)
+        if match and match.group(0):
+            prefix = match.group(0)
+            number_part = original[len(prefix):]
         if suffix: number_part = number_part[:-len(suffix)]
 
         # Обробляємо частини розділені слешами
@@ -142,12 +142,16 @@ def mask_brigade_number(original: str, masking_dict: Dict, instance_counters: Di
     if original in masking_dict["mappings"]["brigade_number"]:
         masked = masking_dict["mappings"]["brigade_number"][original]["masked_as"]
     else:
-        match = re.match(r'(\d+)\s+(.+)', original)
+        match = re.match(r'(\d+)((?:-[а-яіїєґА-ЯІЇЄҐ]{1,2})?\s+.+)', original)
         if not match: return original
-        brigade_name = match.group(2)
+        number, rest = match.group(1), match.group(2)
         seed = get_deterministic_seed(original)
         random.seed(seed)
-        masked = f"{random.randint(1, 160)} {brigade_name}"
+        new_number = random.randint(1, _cfg.BRIGADE_NUMBER_MAX if hasattr(_cfg, 'BRIGADE_NUMBER_MAX') else 160)
+        # Номер ніколи не збігається з оригіналом (до 3.1.8 — 7 номерів зі 160)
+        while str(new_number) == number:
+            new_number = random.randint(1, _cfg.BRIGADE_NUMBER_MAX if hasattr(_cfg, 'BRIGADE_NUMBER_MAX') else 160)
+        masked = f"{new_number}{rest}"
     return add_to_mapping(masking_dict, instance_counters, "brigade_number", original, masked)
 
 def is_valid_date(day: int, month: int, year: int) -> bool:
@@ -175,8 +179,11 @@ def mask_date(original: str, masking_dict: Dict, instance_counters: Dict) -> str
         masked = masking_dict["mappings"]["date"][original]["masked_as"]
     else:
         try:
-            match = re.match(r'(\d{2})\.(\d{2})\.(\d{4})', original)
+            match = re.match(r'(\d{1,2})\.(\d{1,2})\.(\d{4})$', original)
             if not match: return original
+            # «1.1.2025» → маска теж без провідних нулів
+            day_fmt = '%d' if len(match.group(1)) == 1 else '%02d'
+            month_fmt = '%d' if len(match.group(2)) == 1 else '%02d'
 
             day, month, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
             if not is_valid_date(day, month, year): return original
@@ -198,7 +205,7 @@ def mask_date(original: str, masking_dict: Dict, instance_counters: Dict) -> str
                 elif new_date.year > hi:
                     new_date = datetime(hi, 12, 31) - timedelta(days=random.randint(0, 365))
 
-            masked = new_date.strftime("%d.%m.%Y")
+            masked = f"{day_fmt % new_date.day}.{month_fmt % new_date.month}.{new_date.year:04d}"
         except (ValueError, OverflowError, TypeError, AttributeError) as e:
             if _cfg.DEBUG_MODE:
                 # Оригінал — лише з logging.log_sensitive_data: true

@@ -38,7 +38,7 @@ _UA_UPPER = "АБВГҐДЕЖЗІЙКЛМНОПРСТУФХЦЧШЩЮЯЄІЇҐ"
 
 # Прізвище у Title Case, зокрема подвійне з великої після дефіса
 # (Петренко-Іванова, Нечуй-Левицький)
-_SURNAME_RE = r'[А-ЯІЇЄҐ][а-яіїєґ\'ʼ]{2,}(?:-[А-ЯІЇЄҐ]?[а-яіїєґ\'ʼ]{2,})?'
+_SURNAME_RE = r'[А-ЯІЇЄҐ][а-яіїєґ\'ʼ’]{2,}(?:-[А-ЯІЇЄҐ]?[а-яіїєґ\'ʼ’]{2,})?'
 _SURNAME_UPPER_RE = r'[А-ЯІЇЄҐ]{3,}'
 _NAME_RE = r'(?:' + _SURNAME_RE + r'|' + _SURNAME_UPPER_RE + r')'
 
@@ -46,9 +46,10 @@ _NAME_RE = r'(?:' + _SURNAME_RE + r'|' + _SURNAME_UPPER_RE + r')'
 # з наступним рядком через \n)
 _SP = r'[  ]'
 
-# Прізвище + 2 ініціали: Іванов П.А. / Іванов П. А. / ІВАНОВ П.А.
+# Прізвище + 2 ініціали: Іванов П.А. / Іванов П. А. / ІВАНОВ П.А. / Іванов П.А (без
+# останньої крапки — лише якщо далі не літера)
 _RE_NAME_INI2 = re.compile(
-    r'(' + _NAME_RE + r')' + _SP + r'+([А-ЯІЇЄҐ])\.' + _SP + r'?([А-ЯІЇЄҐ])\.'
+    r'(' + _NAME_RE + r')' + _SP + r'+([А-ЯІЇЄҐ])\.' + _SP + r'?([А-ЯІЇЄҐ])(?:\.|(?![а-яіїєґА-ЯІЇЄҐa-zA-Z\'ʼ’]))'
 )
 # 2 ініціали + Прізвище: П.А. Іванов / П. А. Іванов
 _RE_INI2_NAME = re.compile(
@@ -67,7 +68,8 @@ _RE_INI1_NAME = re.compile(
 
 
 def _is_surname_candidate(word: str) -> bool:
-    """Перевіряє чи слово схоже на прізвище (Title Case або UPPER, >= 3 літер)."""
+    """Перевіряє чи слово схоже на прізвище (Title Case або UPPER, >= 3 літер;
+    подвійне — кожна частина окремо: Нечуй-Левицький)."""
     if not word or len(word) < 3:
         return False
     clean = word.rstrip(',.!?;:')
@@ -79,11 +81,19 @@ def _is_surname_candidate(word: str) -> bool:
         return False
     if clean.lower() in _cfg.RANKS_LIST_LOWER:
         return False
-    if clean.isupper() and len(clean) >= 3:
-        return True
-    if clean[0].isupper() and clean[1:].islower():
-        return True
-    return False
+    parts = [p for p in clean.split('-') if p]
+    if not parts:
+        return False
+    for part in parts:
+        letters = part.replace("'", "").replace("ʼ", "").replace("’", "")
+        if not letters:
+            return False
+        if letters.isupper() and len(letters) >= 2:
+            continue
+        if letters[0].isupper() and letters[1:].islower():
+            continue
+        return False
+    return True
 
 
 def _mask_initial(letter: str, context: str = "") -> str:
@@ -104,12 +114,16 @@ _NON_INITIAL_LEFT = frozenset({
 
 
 def _left_token(text: str, pos: int) -> str:
-    """Останнє слово (без розділових) безпосередньо ліворуч від pos."""
+    """Останнє слово (без розділових) безпосередньо ліворуч від pos.
+    «р.»/«рр.» одразу після числа («2024 р.») — рік, не підпункт: повертає ""."""
     left = text[:pos].rstrip()
     if not left:
         return ""
-    tok = left.split()[-1]
-    return tok.rstrip('.').lower()
+    words = left.split()
+    tok = words[-1].rstrip('.').lower()
+    if tok in ('р', 'рр') and len(words) >= 2 and re.search(r'\d$', words[-2]):
+        return ""
+    return tok
 
 
 def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -> str:
@@ -132,28 +146,30 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
     for m in _RE_NAME_INI2.finditer(text):
         surname, i1, i2 = m.group(1), m.group(2), m.group(3)
         if _is_surname_candidate(surname):
-            has_space = f"{i1}. {i2}." in m.group(0)
-            candidates.append((m.start(), m.end(), surname, [i1, i2], has_space, False))
+            has_space = f"{i1}. {i2}" in m.group(0)
+            # «Петренко О.П» без останньої крапки — маска теж без неї
+            candidates.append((m.start(), m.end(), surname, [i1, i2], has_space, False,
+                               m.group(0).endswith('.')))
 
     for m in _RE_INI2_NAME.finditer(text):
         i1, i2, surname = m.group(1), m.group(2), m.group(3)
         if _is_surname_candidate(surname) and _left_token(text, m.start()) not in _NON_INITIAL_LEFT:
             has_space = f"{i1}. {i2}." in m.group(0)
-            candidates.append((m.start(), m.end(), surname, [i1, i2], has_space, True))
+            candidates.append((m.start(), m.end(), surname, [i1, i2], has_space, True, True))
 
     for m in _RE_NAME_INI1.finditer(text):
         surname, i1 = m.group(1), m.group(2)
         if _is_surname_candidate(surname):
-            candidates.append((m.start(), m.end(), surname, [i1], False, False))
+            candidates.append((m.start(), m.end(), surname, [i1], False, False, True))
 
     for m in _RE_INI1_NAME.finditer(text):
         i1, surname = m.group(1), m.group(2)
         if _is_surname_candidate(surname) and _left_token(text, m.start()) not in _NON_INITIAL_LEFT:
-            candidates.append((m.start(), m.end(), surname, [i1], False, True))
+            candidates.append((m.start(), m.end(), surname, [i1], False, True, True))
 
     # Довші патерни мають пріоритет; знімаємо перекриття
     candidates.sort(key=lambda x: (x[1] - x[0]), reverse=True)
-    kept: List[Tuple[int, int, str, List[str], bool, bool]] = []
+    kept: List[Tuple[int, int, str, List[str], bool, bool, bool]] = []
     for c in candidates:
         if not any(c[0] < k[1] and c[1] > k[0] for k in kept):
             kept.append(c)
@@ -164,13 +180,14 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
     kept.sort(key=lambda x: x[0])
     segments = []
     prev_end = 0
-    for start, end, surname, initials, has_space, ini_first in kept:
+    for start, end, surname, initials, has_space, ini_first, final_dot in kept:
         ms = mask_surname(surname, masking_dict, instance_counters) if mask_surnames else surname
         sep = '. ' if has_space else '.'
-        orig_ini = sep.join(initials) + '.'
+        tail = '.' if final_dot else ''
+        orig_ini = sep.join(initials) + tail
         if mask_initials:
             masked_letters = [_mask_initial(i, surname) for i in initials]
-            masked_ini = sep.join(masked_letters) + '.'
+            masked_ini = sep.join(masked_letters) + tail
             # Зберігаємо у mapping — інакше unmask не зможе відновити ініціали
             masked_ini = add_to_mapping(masking_dict, instance_counters,
                                         "initials", orig_ini, masked_ini)
@@ -515,7 +532,7 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
         def run() -> None:
             if not getattr(_cfg, flag_name):
                 return
-            for match in re.finditer(pattern, text, re.IGNORECASE if item_type == 'military_id' else 0):
+            for match in re.finditer(pattern, text):
                 skip = _inside_skip(match.start(), match.end()) or _overlaps_mask(match.start(), match.end())
                 if not skip: _add_mask({'type': item_type, 'full_text': match.group(0), 'number_part': match.group(0), 'start': match.start(), 'end': match.end()})
         return run
@@ -566,10 +583,14 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
         'custom': _phase_custom,
         'order_number': _phase_order_number,
         'br_number': _phase_br_number,
-        'ipn': _simple_phase('ipn', 'MASK_IPN', r'\b\d{10}\b'),
-        'passport_id': _simple_phase('passport_id', 'MASK_PASSPORT', r'\b\d{9}\b'),
-        'military_id': _simple_phase('military_id', 'MASK_MILITARY_ID', r'\b[A-ZА-Я]{2}[\s-]?\d{6}\b'),
-        'military_unit': _simple_phase('military_unit', 'MASK_UNITS', r'\b[А-ЯA-Z]\d{4}\b'),
+        # (?<!\d)…(?!\d) замість \b: «ІПН1234567890» теж маскується (v3.1.8)
+        'ipn': _simple_phase('ipn', 'MASK_IPN', r'(?<!\d)\d{10}(?!\d)'),
+        'passport_id': _simple_phase('passport_id', 'MASK_PASSPORT', r'(?<!\d)\d{9}(?!\d)'),
+        # Серія: 2 великі літери (І/Ї/Є/Ґ теж) або малі з дефісом впритул
+        # («мт-123456»); «до 150000» (слово + пробіл) — не серія
+        'military_id': _simple_phase('military_id', 'MASK_MILITARY_ID',
+                                     r"(?<![\w'])(?:[A-ZА-ЯІЇЄҐ]{2}[\s-]?|[a-zа-яіїєґ]{2}-)?\d{6}(?!\d)"),
+        'military_unit': _simple_phase('military_unit', 'MASK_UNITS', r'\b[А-ЯA-Z] ?\d{4}\b'),
         'brigade_number': _phase_brigade_number,
         'date': _phase_date,
         'date_text': _phase_date_text,

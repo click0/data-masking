@@ -74,8 +74,9 @@ def analyze_number_sign_context(text: str, match: re.Match) -> Optional[Dict]:
     number_text = number_match.group(1)
     full_text = text[match.start():match.end() + len(number_match.group(0))]
 
-    # 3. № 123дск
-    if re.search(r'(дск|п|к)$', number_text, re.IGNORECASE):
+    # 3. № 123дск / № 45/12/3п — БР; «№ 123-к» (кадровий наказ) з дефісом —
+    # номер наказу (до 3.1.8 вважався БР і підпадав під прапорець БР)
+    if re.search(r'(дск|п|к)$', number_text, re.IGNORECASE) and not re.search(r'-[пк]$', number_text, re.IGNORECASE):
         if number_text.count('/') >= 2:
             return {'type': 'br_with_slashes', 'full_text': full_text, 'number_part': number_text, 'start': match.start(), 'end': match.end() + len(number_match.group(0))}
         else:
