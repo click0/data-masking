@@ -12,6 +12,9 @@ import re
 from typing import Optional, Tuple, Set
 
 from datamasking.masking import constants as _cfg
+from datamasking.masking.declension import (
+    VOCATIVE, analyze_name, analyze_patronymic, decline_name,
+)
 from datamasking.masking.helpers import get_deterministic_seed
 
 
@@ -64,31 +67,22 @@ def looks_like_name(word: str) -> bool:
     return False
 
 def detect_gender_by_patronymic(patronymic: str) -> str:
+    """Рід за по батькові в будь-якому відмінку: -ович/-євич/-ич (Ілліч,
+    Кузьмич) — чоловічий, -івна/-ївна — жіночий; з 3.1.12 і знахідний
+    («Сергіївну»). Кличний («Петрівно») не вважається по батькові —
+    так само закінчуються звичайні слова («Рівно»)."""
     if not patronymic: return 'unknown'
-    patron_lower = patronymic.lower().strip('.,!?;')
-    # -ович/-євич/-йович + рідші -евич (Їжакевич, Гуревич), -ич (Ілліч, Кузьмич,
-    # Лукич, Хомич) у всіх відмінках — усі чоловічі
-    male_endings = ['ович', 'євич', 'евич', 'ійович', 'йович', 'ич', 'іч',
-                    'овича', 'євича', 'евича', 'ійовича', 'йовича', 'ича', 'іча',
-                    'овичу', 'євичу', 'евичу', 'ійовичу', 'йовичу', 'ичу', 'ічу',
-                    'овичем', 'євичем', 'евичем', 'ійовичем', 'йовичем', 'ичем', 'ічем']
-    female_endings = ['івна', 'ївна', 'івни', 'ївни', 'івні', 'ївні', 'івною', 'ївною']
-    if any(patron_lower.endswith(e) for e in female_endings): return 'female'
-    if any(patron_lower.endswith(e) for e in male_endings): return 'male'
-    return 'unknown'
+    form = analyze_patronymic(patronymic)
+    if form.case == VOCATIVE: return 'unknown'
+    return form.gender
 
-def detect_name_case_and_gender(name: str) -> Tuple[str, str]:
+def detect_name_case_and_gender(name: str, gender_hint: Optional[str] = None) -> Tuple[str, str]:
+    """Відмінок і рід форми імені (див. declension.analyze_name). До 3.1.12 —
+    евристика лише за закінченням: «Петра» вважалось жіночим ім'ям у
+    називному."""
     if not name: return 'nominative', 'male'
-    name_lower = name.lower().strip('.,!?;')
-    if name_lower.endswith(('ом', 'ем', 'єм', 'ім', 'їм')): return 'instrumental', 'male'
-    if name_lower.endswith(('у', 'ю')) and not name_lower.endswith(('ою', 'єю', 'ією')): return 'dative', 'male'
-    if name_lower.endswith(('а', 'я')) and len(name) > 4:
-        common_female_endings = ['ія', 'ла', 'на', 'ра', 'та', 'ка', 'га', 'ва', 'ня', 'ся', 'ша']
-        if not any(name_lower.endswith(e) for e in common_female_endings): return 'genitive', 'male'
-    if name_lower.endswith(('ією', 'ою', 'єю')): return 'instrumental', 'female'
-    if name_lower.endswith(('і', 'ї')) and len(name) > 3: return 'dative', 'female'
-    if name_lower.endswith(('ія', 'а', 'я')) and len(name) > 2: return 'nominative', 'female'
-    return 'nominative', 'male'
+    form = analyze_name(name, gender_hint)
+    return form.case, form.gender
 
 def is_easy_to_decline(name: str, gender: str) -> bool:
     if not name: return False
@@ -108,44 +102,9 @@ def is_easy_to_decline(name: str, gender: str) -> bool:
     return False
 
 def apply_case_to_name(name: str, case: str, gender: str) -> str:
+    """Називний відмінок імені → форма у відмінку *case* (declension.decline_name)."""
     if not name: return name
-    name = name.strip()
-    if case == 'nominative': return name
-
-    if gender == 'male':
-        stem = name
-        if name.endswith('о') or name.endswith('а'): stem = name[:-1]
-        elif name.endswith('ій'): stem = name[:-2] + 'і'
-        elif name.endswith('й'): stem = name[:-1]
-
-        if case == 'genitive':
-            if name.endswith('о') or name.endswith('а'): return stem + ('а' if name.endswith('о') else 'и')
-            if name.endswith('ій') or name.endswith('й'): return stem + 'я'
-            return stem + 'а'
-        elif case == 'dative':
-            if name.endswith('о'): return stem + 'у'
-            if name.endswith('а'): return stem + 'і'
-            if name.endswith('ій') or name.endswith('й'): return stem + 'ю'
-            return stem + 'у'
-        elif case == 'instrumental':
-            if name.endswith('о'): return stem + 'ом'
-            if name.endswith('а'): return stem + 'ою'
-            if name.endswith('ій') or name.endswith('й'): return stem + 'єм'
-            return stem + 'ом'
-
-    elif gender == 'female':
-        stem = name
-        if name.endswith('ія'): stem = name[:-2]
-        elif name.endswith(('а', 'я')): stem = name[:-1]
-
-        if case == 'genitive' or case == 'dative':
-            if name.endswith('ія'): return stem + 'ії'
-            return stem + 'і'
-        elif case == 'instrumental':
-            if name.endswith('ія'): return stem + 'ією'
-            return stem + 'ою'
-
-    return name
+    return decline_name(name, case, gender)
 
 def normalize_apostrophe(name: str) -> str:
     """Апостроф у масках — ASCII «'»: faker дає «ʼ» (U+02BC), якого немає в

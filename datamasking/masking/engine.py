@@ -31,8 +31,21 @@ from datamasking.masking.mask_military import (
     mask_military_unit, mask_order_number, mask_order_number_with_letters,
     mask_br_number, mask_br_number_slash, mask_br_number_complex,
     mask_brigade_number, mask_date, _mask_date_text,
-    mask_rank_preserve_case, is_valid_date,
+    mask_rank_preserve_case, is_valid_date, get_rank_info,
 )
+from datamasking.masking.context import extract_base_rank
+
+
+def _rank_hints(rank: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """(відмінок, рід) звання поруч із ПІБ як підказка для імені без по
+    батькові («рядового Петренка Богуслава» — родовий від Богуслав). Рід —
+    лише з жіночої форми звання («сержантки»): чоловіча форма звання вживається
+    і щодо жінок («сержант Коваль Тетяна»)."""
+    if not rank:
+        return None, None
+    base, _ = extract_base_rank(rank)
+    _nominative, case, gender = get_rank_info(base.strip())
+    return case, (gender if gender == 'female' else None)
 
 _UA_UPPER = "АБВГҐДЕЖЗІЙКЛМНОПРСТУФХЦЧШЩЮЯЄІЇҐ"
 
@@ -843,18 +856,16 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
                     # «Іван ПЕТРЕНКО» (прізвище виділене капсом) → ім'я перше.
                     # Але якщо ВЕСЬ ПІБ капсом — порядок стандартний
                     # (прізвище перше), інакше «ІВАНОВ ПЕТРО» плуталось місцями
-                    if is_likely_surname_by_case(parts[1]) and not is_likely_surname_by_case(parts[0]):
-                        name, surname = parts[0], parts[1]
-                        patronymic = parts[2] if len(parts) >= 3 else ""
-                        masked_surname = mask_surname(surname, masking_dict, instance_counters) if _cfg.MASK_SURNAMES else surname
-                        masked_name = mask_name(name, masking_dict, instance_counters, gender_hint=detect_gender_by_patronymic(patronymic) if patronymic else None, patronymic_hint=patronymic) if _cfg.MASK_NAMES else name
-                        masked_parts = [masked_name, masked_surname]
-                    else:
-                        surname, name = parts[0], parts[1]
-                        patronymic = parts[2] if len(parts) >= 3 else ""
-                        masked_surname = mask_surname(surname, masking_dict, instance_counters) if _cfg.MASK_SURNAMES else surname
-                        masked_name = mask_name(name, masking_dict, instance_counters, gender_hint=detect_gender_by_patronymic(patronymic) if patronymic else None, patronymic_hint=patronymic) if _cfg.MASK_NAMES else name
-                        masked_parts = [masked_surname, masked_name]
+                    name_first = is_likely_surname_by_case(parts[1]) and not is_likely_surname_by_case(parts[0])
+                    name, surname = (parts[0], parts[1]) if name_first else (parts[1], parts[0])
+                    patronymic = parts[2] if len(parts) >= 3 else ""
+                    # Рід і відмінок імені: по батькові, інакше — звання поруч (v3.1.12)
+                    rank_case, rank_gender = _rank_hints(rank)
+                    gender_hint = detect_gender_by_patronymic(patronymic) if patronymic else rank_gender
+                    masked_surname = mask_surname(surname, masking_dict, instance_counters) if _cfg.MASK_SURNAMES else surname
+                    masked_name = mask_name(name, masking_dict, instance_counters, gender_hint=gender_hint,
+                                            patronymic_hint=patronymic, case_hint=rank_case) if _cfg.MASK_NAMES else name
+                    masked_parts = [masked_name, masked_surname] if name_first else [masked_surname, masked_name]
 
                     if patronymic:
                         gender = detect_gender_by_patronymic(patronymic) if patronymic else 'male'

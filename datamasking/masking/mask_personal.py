@@ -16,9 +16,11 @@ from datamasking.masking.helpers import (
     add_to_mapping, get_deterministic_seed, get_next_instance,
     _apply_original_case, normalize_identifier,
 )
+from datamasking.masking.declension import (
+    NOMINATIVE, VOCATIVE, analyze_name, analyze_patronymic, decline_name, decline_patronymic,
+)
 from datamasking.masking.language import (
-    detect_gender_by_patronymic, detect_name_case_and_gender,
-    generate_easy_name, apply_case_to_name, same_name_forms, normalize_apostrophe,
+    generate_easy_name, same_name_forms, normalize_apostrophe,
 )
 from datamasking.masking import surname as _surname
 from datamasking.masking.surname import synthesize_surname, known_surname_forms
@@ -139,7 +141,11 @@ def pseudo_gender(value: str) -> str:
 
 def mask_patronymic(patronymic: str, gender: str, masking_dict: Dict, instance_counters: Dict) -> str:
     """
-    Маскує по батькові з урахуванням роду.
+    Маскує по батькові з урахуванням роду і відмінка.
+
+    З 3.1.12 маска стоїть у відмінку оригіналу («Петровича» → «Івановича»,
+    «Сергіївною» → «Борисівною»), а всі відмінки одного по батькові дають
+    одну маску (seed — від називного відмінка; для називного — як раніше).
     """
     if not _cfg.MASK_PATRONYMICS or not patronymic: return patronymic
     is_upper = patronymic.isupper()
@@ -154,23 +160,39 @@ def mask_patronymic(patronymic: str, gender: str, masking_dict: Dict, instance_c
         masking_dict["mappings"]["patronymic"][patronymic_lower]["instances"].append(instance_num)
         return masked_with_case
 
+    form = analyze_patronymic(patronymic_lower)
+    if form.gender == 'unknown':
+        lemma, case = patronymic_lower, NOMINATIVE
+    else:
+        lemma, case = form.nominative, form.case
+        if gender not in ('male', 'female'):
+            gender = form.gender
+
     # Генеруємо нове по батькові відповідного роду
     if not _cfg.PRESERVE_GENDER:
-        gender = pseudo_gender(patronymic_lower)
-    seed = get_deterministic_seed(patronymic_lower)
+        gender = pseudo_gender(lemma)
+    seed = get_deterministic_seed(lemma)
     random.seed(seed)
     _cfg.fake_uk.seed_instance(seed)
     # Більшість локалей faker не мають по батькові — беремо uk_UA-fallback
     provider = _cfg.fake_uk if hasattr(_cfg.fake_uk, 'middle_name_male') else _cfg.fake_uk_fallback
     if provider is not _cfg.fake_uk:
         provider.seed_instance(seed)
-    fake_patronymic = normalize_apostrophe(provider.middle_name_male() if gender == 'male' else provider.middle_name_female())
+
+    def _generate() -> str:
+        return normalize_apostrophe(provider.middle_name_male() if gender == 'male' else provider.middle_name_female())
+
+    fake_nominative = _generate()
+    fake_patronymic = decline_patronymic(fake_nominative, case)
     # Не те саме по батькові в іншому відмінку («Петровича» → «Петрович»)
+    # і не слово, що лишається в документі відкритим
     for attempt in range(10):
-        if not same_name_forms(fake_patronymic, patronymic_lower) and not _surname.document_contains(fake_patronymic):
+        if (not same_name_forms(fake_nominative, lemma) and not same_name_forms(fake_patronymic, patronymic_lower)
+                and not _surname.document_contains(fake_patronymic)):
             break
         provider.seed_instance(seed + attempt + 1)
-        fake_patronymic = normalize_apostrophe(provider.middle_name_male() if gender == 'male' else provider.middle_name_female())
+        fake_nominative = _generate()
+        fake_patronymic = decline_patronymic(fake_nominative, case)
 
     # Застосовуємо регістр
     if is_upper: fake_patronymic = fake_patronymic.upper()
@@ -180,9 +202,15 @@ def mask_patronymic(patronymic: str, gender: str, masking_dict: Dict, instance_c
     return add_to_mapping(masking_dict, instance_counters, "patronymic", patronymic_lower, fake_patronymic)
 
 def mask_name(original: str, masking_dict: Dict, instance_counters: Dict,
-              gender_hint: Optional[str] = None, patronymic_hint: Optional[str] = None) -> str:
+              gender_hint: Optional[str] = None, patronymic_hint: Optional[str] = None,
+              case_hint: Optional[str] = None) -> str:
     """
     Маскує ім'я з автоматичним визначенням роду та відмінка.
+
+    *patronymic_hint* дає рід і відмінок; *case_hint* — відмінок від звання
+    («рядового Петренка Богуслава» → родовий від Богуслав), коли по батькові
+    немає (v3.1.12). Маска стоїть у відмінку оригіналу, а всі відмінки одного
+    імені дають одну маску.
     """
     # БАГ #17 FIX: Зберігаємо оригінальний регістр перед обробкою
     is_upper = original.isupper()
@@ -196,39 +224,43 @@ def mask_name(original: str, masking_dict: Dict, instance_counters: Dict,
         # Перше маскування - генеруємо нову маску
         if not original: return original
 
-        # Визначаємо відмінок та рід
-        case, gender_from_name = detect_name_case_and_gender(original)
-
-        # Пріоритет визначення роду: gender_hint -> patronymic_hint -> gender_from_name
-        if gender_hint: gender = gender_hint
-        elif patronymic_hint:
-            gender = detect_gender_by_patronymic(patronymic_hint)
-            if gender == 'unknown': gender = gender_from_name
-        else: gender = gender_from_name
-        if gender == 'unknown': gender = 'male'
+        # Рід і відмінок: по батькові (якщо є) знімає неоднозначність форми
+        # («Петра Івановича» — чоловічий родовий, «Наталі Петрівни» — родовий)
+        if patronymic_hint:
+            pat_form = analyze_patronymic(patronymic_hint)
+            if pat_form.gender != 'unknown' and pat_form.case != VOCATIVE:
+                case_hint = pat_form.case
+                if gender_hint not in ('male', 'female'):
+                    gender_hint = pat_form.gender
+        form = analyze_name(original, gender_hint if gender_hint in ('male', 'female') else None, case_hint)
+        case, gender = form.case, form.gender
         if not _cfg.PRESERVE_GENDER:
-            gender = pseudo_gender(original)
+            gender = pseudo_gender(form.nominative)
 
-        # Генеруємо нове ім'я з тією ж першою літерою; оригінал (у називному)
+        # Генеруємо нове ім'я (у називному) з тією ж першою літерою; оригінал
         # виключаємо з кандидатів явно — інакше єдина кандидатка на літеру
-        # (Марія, Юлія, Ірина…) поверталась як «маска»
+        # (Марія, Юлія, Ірина…) поверталась як «маска». Seed — від називного
+        # відмінка оригіналу (в регістрі оригіналу), тож усі відмінки одного
+        # імені дають одну маску: «Петро/Петра/Петром» → «Павло/Павла/Павлом»
+        # (v3.1.12; для називного відмінка — як у попередніх версіях)
         first_letter = original[0].lower()
-        seed = get_deterministic_seed(original)
-        nominative_guess = original.lower()
+        lemma = _apply_original_case(original, form.nominative)
+        seed = get_deterministic_seed(lemma)
         doc_words = _surname.residue_vocabulary()
         new_name = generate_easy_name(gender, first_letter, seed, max_attempts=50,
-                                      exclude=nominative_guess, forbidden=doc_words)
-        masked = apply_case_to_name(new_name, case, gender)
+                                      exclude=form.nominative, forbidden=doc_words)
+        masked = decline_name(new_name, case, gender)
 
         # Страховка: маска ніколи не є тим самим ім'ям (у будь-якому відмінку)
         # і не збігається зі словом документа
         attempts = 0
         while (same_name_forms(masked, original) or same_name_forms(new_name, original)
+               or same_name_forms(new_name, form.nominative)
                or masked.lower() in doc_words) and attempts < 10:
-            seed = get_deterministic_seed(original + str(attempts))
+            seed = get_deterministic_seed(lemma + str(attempts))
             new_name = generate_easy_name(gender, first_letter, seed, max_attempts=50,
                                           exclude=new_name.lower(), forbidden=doc_words)
-            masked = apply_case_to_name(new_name, case, gender)
+            masked = decline_name(new_name, case, gender)
             attempts += 1
 
     # БАГ #17 FIX: Застосовуємо регістр до masked ПЕРЕД add_to_mapping
