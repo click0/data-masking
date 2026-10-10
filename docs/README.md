@@ -160,7 +160,7 @@ Each occurrence is tracked individually:
 Вхід:  "Іванов Петро Іванович і Петров Олег Петрович. Потім Іванов пішов, а Петров лишився."
 Маска: "Івенов Павло Леонідович і Пергов Омелян Степанович. Потім Івенов пішов, а Пергов лишився."
 ```
-A surname is recognised as part of a name (`Прізвище Ім'я По батькові`, or after a rank); once it is known in the document, every other occurrence of it — including other case forms — gets the same synthetic stem, and unmask restores each occurrence by its instance number.
+A surname is recognised as part of a name (`Прізвище Ім'я По батькові`, `Ім'я По батькові Прізвище`, or after a rank); once it is known in the document, every other occurrence of it — including other case forms — gets the same synthetic stem, and unmask restores each occurrence by its instance number. A first name with a patronymic and no surname is masked too (3.1.13): `Шановний Олегу Петровичу! → Шановний Омеляну Степановичу!`, `за підписом Олега Петровича → за підписом Омеляна Степановича`. A capitalised word in front of a full name (`Заява Петренка Олега Петровича`, `Характеристика Коваль Тетяни Сергіївни`) is left alone and the name after it is masked in full.
 
 ### Preserving Grammatical Forms
 
@@ -438,7 +438,7 @@ ID-паспорт 123947568, видано наказом №59/87/4249/Р від
 
 ```json
 {
-  "version": "3.1.12",
+  "version": "3.1.13",
   "mappings": {
     "rank": {
       "молодший сержант": {

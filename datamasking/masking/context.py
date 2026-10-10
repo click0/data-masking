@@ -11,8 +11,9 @@ import re
 from typing import Dict, List, Optional, Set, Tuple
 
 from datamasking.masking import constants as _cfg
+from datamasking.masking.declension import VOCATIVE, analyze_name, analyze_patronymic
 from datamasking.masking.helpers import normalize_string, normalize_identifier, is_pib_anchor
-from datamasking.masking.language import looks_like_name, detect_gender_by_patronymic
+from datamasking.masking.language import looks_like_name, detect_gender_by_patronymic, is_likely_surname_by_case
 
 # Роздільники слів усередині рядка: будь-які пробільні символи (пробіл, таб,
 # NBSP) і «|» таблиць. До 3.1.7 ПІБ із табуляцією або подвійним пробілом
@@ -33,17 +34,86 @@ def _strip_word(word: str) -> str:
     return word.strip(_cfg.QUOTE_CHARS).strip(',.!?;:')
 
 
+def is_patronymic_word(word: str, prev_word: Optional[str] = None) -> bool:
+    """Слово — по батькові в будь-якому відмінку (v3.1.13). Кличний
+    («Петрівно») приймається лише після відомого імені («Тетяно»): так само
+    закінчуються звичайні слова («Рівно», «Дивно»)."""
+    clean = _strip_word(word)
+    if not clean or not clean[0].isupper():
+        return False
+    form = analyze_patronymic(clean)
+    if form.gender == 'unknown':
+        return False
+    if form.case != VOCATIVE:
+        return True
+    prev = _strip_word(prev_word or "")
+    return bool(prev) and prev[0].isupper() and analyze_name(prev, form.gender).known
+
+
+def is_name_patronymic_pair(a: str, b: str) -> bool:
+    """«Олегу Петровичу», «Петре Івановичу», «Тетяно Петрівно» — ім'я з по
+    батькові без прізвища (звертання в листах, підписи). До 3.1.13 така пара
+    розбиралась як «прізвище + ім'я»: ім'я діставало маску прізвища з його
+    першими літерами, а по батькові — маску імені."""
+    ca, cb = _strip_word(a), _strip_word(b)
+    if not (ca and cb and ca[0].isupper() and looks_like_name(ca) and looks_like_name(cb)):
+        return False
+    if not is_patronymic_word(cb, ca) or is_patronymic_word(ca):
+        return False
+    return True
+
+
+def _known_name(word: str, gender: str) -> bool:
+    return analyze_name(_strip_word(word), gender).known
+
+
+def has_name_patronymic_pair(words: List[str]) -> bool:
+    """Відоме ім'я + по батькові поспіль — сильна ознака ПІБ, як і повне ПІБ."""
+    clean = [_strip_word(w) for w in words]
+    for a, b in zip(clean, clean[1:]):
+        if is_name_patronymic_pair(a, b) and _known_name(a, analyze_patronymic(b).gender):
+            return True
+    return False
+
+
+def assign_pib_roles(parts: List[str]) -> Tuple[Optional[str], str, str, List[str]]:
+    """Ролі слів ПІБ із 2–3 слів: (прізвище або None, ім'я, по батькові або "",
+    порядок ролей у тексті).
+
+    - «Петренко Олег Петрович» — звичайний порядок;
+    - «Олег ПЕТРЕНКО» — прізвище капсом після імені;
+    - «Олегу Петровичу» — ім'я з по батькові без прізвища (v3.1.13);
+    - «Олегу Петровичу Петренку» — ім'я, по батькові, прізвище (v3.1.13).
+    """
+    if len(parts) == 2 and is_name_patronymic_pair(parts[0], parts[1]):
+        return None, parts[0], parts[1], ['name', 'patronymic']
+    if len(parts) >= 3 and looks_like_name(parts[0]) and is_patronymic_word(parts[1], parts[0]):
+        gender = analyze_patronymic(_strip_word(parts[1])).gender
+        # «Олег Петрович Іванович»: третє слово теж схоже на по батькові —
+        # прізвищем є те, що не є відомим ім'ям
+        if not is_patronymic_word(parts[2]) or (_known_name(parts[0], gender) and not _known_name(parts[2], gender)):
+            return parts[2], parts[0], parts[1], ['name', 'patronymic', 'surname']
+    patronymic = parts[2] if len(parts) >= 3 else ""
+    if is_likely_surname_by_case(parts[1]) and not is_likely_surname_by_case(parts[0]):
+        return parts[1], parts[0], patronymic, ['name', 'surname', 'patronymic']
+    return parts[0], parts[1], patronymic, ['surname', 'name', 'patronymic']
+
+
 def has_full_pib(words: List[str]) -> bool:
     """Сильна ознака ПІБ: три слова поспіль схожі на імена, третє — по
-    батькові (-ович/-івна … у будь-якому відмінку). Такий рядок маскується
-    незалежно від евристик-фільтрів (капс, «Згідно…», «статуту», довжина):
-    до 3.1.7 вони відкидали весь рядок разом із ПІБ."""
+    батькові (-ович/-івна … у будь-якому відмінку), або друге — по батькові,
+    а перше — відоме ім'я («ОЛЕГУ ПЕТРОВИЧУ ПЕТРЕНКУ», v3.1.13). Такий рядок
+    маскується незалежно від евристик-фільтрів (капс, «Згідно…», «статуту»,
+    довжина): до 3.1.7 вони відкидали весь рядок разом із ПІБ."""
     clean = [_strip_word(w) for w in words]
     for i in range(len(clean) - 2):
         a, b, c = clean[i], clean[i + 1], clean[i + 2]
-        if (a and b and c and a[0].isupper() and b[0].isupper() and c[0].isupper()
-                and detect_gender_by_patronymic(c) != 'unknown'
+        if not (a and b and c and a[0].isupper() and b[0].isupper() and c[0].isupper()
                 and looks_like_name(a) and looks_like_name(b) and looks_like_name(c)):
+            continue
+        if detect_gender_by_patronymic(c) != 'unknown':
+            return True
+        if is_patronymic_word(b, a) and not is_patronymic_word(c) and _known_name(a, analyze_patronymic(b).gender):
             return True
     return False
 
@@ -167,6 +237,9 @@ def looks_like_pib_line(line: str) -> bool:
     # капсом («КОВАЛЬ ТЕТЯНА СЕРГІЇВНА» — підпис), і після «Згідно з рапортом»,
     # і поруч зі «статуту». До 3.1.7 такі рядки лишались відкритими
     if has_full_pib(words): return True
+    # Відоме ім'я + по батькові («Шановний Олегу Петровичу!», «Згідно … Петро
+    # Іванович») — теж сильна ознака (v3.1.13)
+    if has_name_patronymic_pair(words): return True
 
     if not has_rank:
         # Рядок капсом без звання і без ПІБ — заголовок («НАКАЗ КОМАНДИРА…»)
@@ -310,6 +383,18 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
         pib_words = _extract_pib_words(parts, start, after_rank)
         if not pib_words:
             continue
+        # «Заява Петренка Олега Петровича», «Характеристика Коваль Тетяни
+        # Сергіївни»: слово з великої перед ПІБ потрапляло у вікно з трьох
+        # слів, і справжнє по батькові лишалось відкритим, а прізвище
+        # маскувалось як ім'я. Якщо наступне за вікном слово — по батькові,
+        # вікно зсувається на нього (v3.1.13)
+        if (not after_rank and len(pib_words) == 3 and start + 3 < len(parts)
+                and not is_patronymic_word(pib_words[2], pib_words[1])
+                and not is_patronymic_word(pib_words[1], pib_words[0])
+                and looks_like_name(parts[start + 3]) and is_patronymic_word(parts[start + 3], pib_words[2])):
+            shifted = _extract_pib_words(parts, start + 1, after_rank)
+            if len(shifted) == 3:
+                pib_words = shifted
         candidate = " ".join(pib_words)
         if _BAD_WORD_RE.search(candidate):
             # Канцелярський зворот («Наказ Міністерства Оборони…») — не ПІБ.
@@ -318,8 +403,7 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
             # а «… капітан Петренко Іван Іванович» у тому ж рядку — маскувалось
             strong_only = True
             continue
-        if strong_only and not after_rank and not (
-                len(pib_words) == 3 and detect_gender_by_patronymic(pib_words[2]) != 'unknown'):
+        if strong_only and not after_rank and not _strong_pib_words(pib_words):
             continue
         # Одне слово приймаємо ЛИШЕ одразу після звання («рядовий Іванов прибув»,
         # «рядовий Кіт»): звання — сильний контекст, що далі стоїть прізвище
@@ -336,6 +420,16 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
     if rank and not pib and not identifier: return None, None, None
 
     return rank, pib, identifier
+
+
+def _strong_pib_words(pib_words: List[str]) -> bool:
+    """Кандидат із по батькові: повне ПІБ у будь-якому порядку або пара
+    «відоме ім'я + по батькові»."""
+    if len(pib_words) == 3:
+        return has_full_pib(pib_words)
+    if len(pib_words) == 2:
+        return has_name_patronymic_pair(pib_words)
+    return False
 
 
 def _adjacent_rank(parts: List[str], start: int, rank_matches) -> str:

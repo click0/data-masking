@@ -4,6 +4,43 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.13] - 2026-10
+
+### Fixed — names without a surname, name-first order, words in front of a name
+- **A first name with a patronymic and no surname** (`Шановний Олегу
+  Петровичу!`, `Шановна Тетяно Петрівно!`, `за підписом Олега Петровича`,
+  `Олег Петрович повідомив`) was parsed as "surname + first name": the first
+  name received a surname mask that kept its first letters, the patronymic
+  received a first-name mask. Such a pair is now masked as a first name and a
+  patronymic in the original case (`Шановний Омеляну Степановичу!`). A known
+  first name followed by a patronymic also marks the line as containing a
+  name, like a full name does (`Згідно … Петро Іванович` was skipped before).
+- **The order `Ім'я По батькові Прізвище`** (`Олегу Петровичу Петренку`,
+  `ОЛЕГУ ПЕТРОВИЧУ ПЕТРЕНКУ`, `Тетяні Петрівні Коваль`) is recognised; the
+  all-capitals form was not masked at all, the others were masked with the
+  roles mixed up (`Оляну Павлу Омелянівна`).
+- **A capitalised word in front of a full name** (`Заява Петренка Олега
+  Петровича`, `Рапорт …`, `Характеристика Коваль Тетяни Сергіївни`,
+  `Протокол Петренко Олег Петрович`) was taken as the surname: the real
+  surname got a first-name mask and the real patronymic stayed open
+  (`Заляша Пріска Лук'янівна Петровича`). The three-word window now moves
+  onto the name when the word after it is a patronymic.
+- Forms of address and document names before a name are in the built-in
+  list of non-name words (`config.yaml`, `dictionaries.non_name_words`):
+  `вельмишановний`, `високоповажний`, `пан / пане / пані / панове`,
+  `добродію`, `доповідь`, `рапорт`, `заява`, `характеристика`, `довідка`,
+  `подання`, `клопотання`, `звернення`, `повідомлення`, `витяг`, `протокол`,
+  `пропозиція`, `висновок`, `рішення`, `розпорядження`, `директива` (with
+  their common case forms). `Вельмишановний Іване Івановичу` was masked as
+  `Велуриний Ігорю Леонідовичу`.
+- Patronymics in the vocative (`Петрівно`) are recognised only after a known
+  first name (`Тетяно`), so ordinary words with the same ending (`Рівно`) are
+  not taken for a patronymic.
+- `context.assign_pib_roles()`, `is_name_patronymic_pair()`,
+  `is_patronymic_word()`, `has_name_patronymic_pair()`; `has_full_pib()`
+  accepts the name-first order. Masks of texts without these constructs are
+  unchanged. Tests: `tests/test_name_patronymic_pairs.py`.
+
 ## [3.1.12] - 2026-10
 
 ### Added — first-name and patronymic masks follow the grammatical case

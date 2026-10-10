@@ -155,7 +155,9 @@ class TestLoader:
 
 @needs_yaml
 class TestCli:
-    TEXT = "Доповідаю: ДШВ Петренко Іван Іванович прибув.\n"
+    # Без виключення «ДШВ» береться за прізвище (далі лише два слова імені);
+    # з повним ПІБ після абревіатури вікно з 3.1.13 саме зсувається на ПІБ
+    TEXT = "Доповідаю: ДШВ Петренко Іван прибув.\n"
 
     def _mask(self, tmp_path, capsys, *extra):
         (tmp_path / "in.txt").write_text(self.TEXT, encoding="utf-8")
