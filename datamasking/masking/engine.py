@@ -16,9 +16,10 @@ from datamasking.masking import constants as _cfg
 from datamasking.masking import surname as _surname
 from datamasking.masking import custom as _custom
 from datamasking.masking.context import (
-    analyze_number_sign_context, analyze_br_keyword,
+    analyze_number_sign_context, analyze_br_keyword, assign_pib_roles,
     looks_like_pib_line, parse_hybrid_line, WORD_SEPARATOR_RE,
 )
+from datamasking.masking.declension import analyze_patronymic
 from datamasking.masking.helpers import get_deterministic_seed, add_to_mapping
 from datamasking.masking.language import (
     is_likely_surname_by_case, detect_gender_by_patronymic, looks_like_name,
@@ -853,24 +854,23 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
                     iteration += 1
                     continue
                 if len(parts) >= 2:
-                    # «Іван ПЕТРЕНКО» (прізвище виділене капсом) → ім'я перше.
-                    # Але якщо ВЕСЬ ПІБ капсом — порядок стандартний
-                    # (прізвище перше), інакше «ІВАНОВ ПЕТРО» плуталось місцями
-                    name_first = is_likely_surname_by_case(parts[1]) and not is_likely_surname_by_case(parts[0])
-                    name, surname = (parts[0], parts[1]) if name_first else (parts[1], parts[0])
-                    patronymic = parts[2] if len(parts) >= 3 else ""
-                    # Рід і відмінок імені: по батькові, інакше — звання поруч (v3.1.12)
+                    # Ролі слів: «Петренко Олег Петрович», «Іван ПЕТРЕНКО»
+                    # (прізвище капсом після імені), «Олегу Петровичу» (без
+                    # прізвища), «Олегу Петровичу Петренку» (v3.1.13)
+                    surname, name, patronymic, order = assign_pib_roles(parts)
+                    # Рід і відмінок імені: по батькові (і в кличному —
+                    # «Тетяно Петрівно»), інакше — звання поруч (v3.1.12)
                     rank_case, rank_gender = _rank_hints(rank)
-                    gender_hint = detect_gender_by_patronymic(patronymic) if patronymic else rank_gender
-                    masked_surname = mask_surname(surname, masking_dict, instance_counters) if _cfg.MASK_SURNAMES else surname
-                    masked_name = mask_name(name, masking_dict, instance_counters, gender_hint=gender_hint,
-                                            patronymic_hint=patronymic, case_hint=rank_case) if _cfg.MASK_NAMES else name
-                    masked_parts = [masked_name, masked_surname] if name_first else [masked_surname, masked_name]
-
+                    pat_gender = analyze_patronymic(patronymic).gender if patronymic else 'unknown'
+                    gender_hint = pat_gender if pat_gender != 'unknown' else rank_gender
+                    masked_roles: Dict[str, str] = {}
+                    if surname:
+                        masked_roles['surname'] = mask_surname(surname, masking_dict, instance_counters) if _cfg.MASK_SURNAMES else surname
+                    masked_roles['name'] = mask_name(name, masking_dict, instance_counters, gender_hint=gender_hint,
+                                               patronymic_hint=patronymic, case_hint=rank_case) if _cfg.MASK_NAMES else name
                     if patronymic:
-                        gender = detect_gender_by_patronymic(patronymic) if patronymic else 'male'
-                        masked_patronymic = mask_patronymic(patronymic, gender, masking_dict, instance_counters)
-                        masked_parts.append(masked_patronymic)
+                        masked_roles['patronymic'] = mask_patronymic(patronymic, gender_hint or 'male', masking_dict, instance_counters)
+                    masked_parts = [masked_roles[role] for role in order if role in masked_roles]
 
                     # Роздільники між словами (таб, «|», подвійний пробіл) — як в оригіналі
                     masked_pib_str = join_with_separators(masked_parts, pib_span[2])
