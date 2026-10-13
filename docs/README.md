@@ -2,7 +2,7 @@
 
 # Data Masking & Unmasking Scripts
 
-Scripts for **consistent masking** of sensitive data in military documents with the ability to accurately restore the original.
+A tool for **consistent masking** of personal data in Ukrainian military documents with **exact restoration** of the original. It recognises names in every grammatical case and word order (including forms of address without a surname), ranks, tax IDs, passports and military IDs, military units, order and BR numbers and dates; one person gets one mask throughout a document, and the mask keeps the grammatical form of the original. Restoration works from a mapping file (optionally encrypted) and does not depend on the algorithm version. Available as a CLI (`data-mask` / `data-unmask`), a Python module or a stand-alone Windows build; behaviour is configured in `config.yaml` and a private `config_local.yaml`.
 
 Current version — see [CHANGELOG.md](../CHANGELOG.md) or `python data_masking.py -V`.
 
@@ -438,7 +438,7 @@ ID-паспорт 123947568, видано наказом №59/87/4249/Р від
 
 ```json
 {
-  "version": "3.1.13",
+  "version": "3.1.14",
   "mappings": {
     "rank": {
       "молодший сержант": {

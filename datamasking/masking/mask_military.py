@@ -394,6 +394,23 @@ def mask_rank(original: str, masking_dict: Dict, instance_counters: Dict) -> str
                 masked = alt
                 break
 
+    # Звання, що в документі стоїть і в жіночій формі («солдатки»), потребує
+    # маски з жіночою формою: «рядовий» її не має, і «солдатки» ставало
+    # «рядового», а unmask повертав «солдата» (v3.1.14). Беремо найближче
+    # звання ієрархії з жіночою формою
+    if search_key in _cfg.FEMININE_RANK_BASES and masked.lower() not in _cfg.RANK_FEMININE_MAP:
+        for distance in range(1, len(hierarchy)):
+            for alt_idx in (idx + distance, idx - distance):
+                if 0 <= alt_idx < len(hierarchy):
+                    alt = hierarchy[alt_idx]
+                    if (alt.lower() != search_key and alt.lower() in _cfg.RANK_FEMININE_MAP
+                            and alt.lower() not in _cfg.AVOID_RANK_MASKS):
+                        masked = alt
+                        break
+            else:
+                continue
+            break
+
 
     # Store mapping by base form (nominative) for consistency
     final_masked = add_to_mapping(masking_dict, instance_counters, "rank", lookup_key, masked)

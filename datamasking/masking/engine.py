@@ -560,17 +560,33 @@ def _mask_text_core(text: str, masking_dict: Dict, instance_counters: Dict,
     bom = text.startswith("\ufeff")
     if bom:
         text = text[1:]
-    # Звання і слова, що лишаться відкритими, — заборонені як маски (див. _unmasked_residue)
-    rank_residue, token_residue = _unmasked_residue(text, masking_dict, instance_counters, kept)
+    # Звання, вжиті в документі в жіночій формі, дістають маску з жіночою
+    # формою (див. mask_rank, v3.1.14) — і в пробному, і в основному прогоні
+    saved_feminine = _cfg.FEMININE_RANK_BASES
+    _cfg.FEMININE_RANK_BASES = _feminine_rank_bases(text)
     saved = _cfg.AVOID_RANK_MASKS
-    _cfg.AVOID_RANK_MASKS = frozenset(rank_residue)
-    _surname.set_residue(token_residue)
     try:
+        # Звання і слова, що лишаться відкритими, — заборонені як маски (див. _unmasked_residue)
+        rank_residue, token_residue = _unmasked_residue(text, masking_dict, instance_counters, kept)
+        _cfg.AVOID_RANK_MASKS = frozenset(rank_residue)
+        _surname.set_residue(token_residue)
         text = _mask_text_core_impl(text, masking_dict, instance_counters, kept)
     finally:
         _cfg.AVOID_RANK_MASKS = saved
+        _cfg.FEMININE_RANK_BASES = saved_feminine
         _surname.set_residue(None)
     return ("\ufeff" + text) if bom else text
+
+
+def _feminine_rank_bases(text: str) -> frozenset:
+    """Базові (чоловічі) звання, що зустрічаються в тексті в жіночій формі
+    («солдатки», «старшій сержантці»)."""
+    lowered = re.sub(r"\s+", " ", text.lower())
+    bases = set()
+    for form, (base, _case, gender) in _cfg.RANK_TO_NOMINATIVE.items():
+        if gender == 'female' and re.search(r"(?<![\w'])" + re.escape(form) + r"(?![\w'])", lowered):
+            bases.add(base.lower())
+    return frozenset(bases)
 
 
 def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
