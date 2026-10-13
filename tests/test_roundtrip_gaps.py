@@ -21,6 +21,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from datamasking.masking import constants as _cfg  # noqa: E402
 from datamasking.masking import surname as _surname  # noqa: E402
 from datamasking.masking.context import parse_hybrid_line  # noqa: E402
 from datamasking.unmasking.engine import unmask_text_v2  # noqa: E402
@@ -124,3 +125,35 @@ class TestAdjacentRank:
     def test_rank_with_modifier_adjacent(self):
         masked, _ = _rt("капітан у відставці Петренко Іван Іванович та Коваль Олег Петрович")
         assert "у відставці" in masked and "капітан" not in masked.split(" у відставці")[0]
+
+
+class TestFeminineRankMasks:
+    """v3.1.14: жіноча форма звання маскувалась званням без жіночої форми
+    («солдатки» → «рядового»), і unmask повертав «солдата»."""
+
+    def test_feminine_form_gets_mask_with_feminine_form(self):
+        text = ("солдата Іванова Петра Сергійовича\nсолдатки Петрової Марії Іванівни\n"
+                "солдатці Сидоровій Олені Петрівні\nСержантці Шевченко Тетяні Миколаївні")
+        masked, mapping = _rt(text)
+        for base in ("солдат", "сержант"):
+            assert mapping["mappings"]["rank"][base]["masked_as"] in _cfg.RANK_FEMININE_MAP, mapping["mappings"]["rank"]
+        lines = masked.split("\n")
+        assert lines[1].split()[0] in ("старшої",) or lines[1].split()[0].endswith("ки"), lines[1]
+        assert lines[3].split()[1].endswith("ці") or lines[3].split()[0].endswith("ці"), lines[3]
+
+    def test_masks_without_feminine_forms_unchanged(self):
+        # без жіночих форм у документі вибір маски — як раніше
+        _, mapping = _rt("солдат Іванов Петро Сергійович")
+        assert mapping["mappings"]["rank"]["солдат"]["masked_as"] == "рядовий"
+        assert _cfg.FEMININE_RANK_BASES == frozenset()
+
+    def test_two_passes_keep_gender(self, tmp_path, monkeypatch):
+        from datamasking.masking import cli as mask_cli
+        from datamasking.unmasking import cli as unmask_cli
+        monkeypatch.chdir(tmp_path)
+        src = "Видати відпустку солдатці Сидоровій Олені Петрівні 3333333333\nсолдат Іванов Петро Сергійович\n"
+        (tmp_path / "in.txt").write_text(src, encoding="utf-8")
+        assert mask_cli.main(["-i", "in.txt", "-o", "m.txt", "--no-report", "--re-mask", "2", "--no-local-config"]) == 0
+        chain = next(tmp_path.glob("masking_chain_*.json"))
+        assert unmask_cli.main(["m.txt", "--map", str(chain), "-o", "rec.txt", "--no-local-config"]) == 0
+        assert (tmp_path / "rec.txt").read_text(encoding="utf-8") == src

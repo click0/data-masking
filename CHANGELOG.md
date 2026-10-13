@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.14] - 2026-10
+
+### Changed — project description
+- README (EN/UK): the opening paragraph describes what the tool does today
+  — personal data recognised in Ukrainian military documents (names in every
+  grammatical case and word order, ranks, tax IDs, passports and military
+  IDs, units, order and BR numbers, dates), one mask per person with the
+  grammatical form of the original, restoration from a mapping file
+  independent of the algorithm version, CLI / Python module / Windows build,
+  `config.yaml` and `config_local.yaml`.
+- `pyproject.toml`: the package description on PyPI says the same in one line.
+- `input_example.txt` is now a short order and a letter that use what the
+  tool recognises (names in oblique cases, forms of address without a
+  surname, name-first order, a document word before a name, initials, a lone
+  surname, feminine rank forms, dates glued to letters, a legal act date that
+  stays); `input_example.2.txt` adds the cases of one person, forms of
+  address, name-first order and initials to the gender tests.
+
+### Fixed
+- **A feminine rank form masked by a rank without a feminine form** lost
+  its gender: `солдатки` became `рядового`, `сержантці` became `сержанту`
+  (the mask of `сержант` was `головний сержант`), and unmasking restored
+  `солдата` / `сержанту` — the round trip was not exact. When a document uses
+  a rank in a feminine form, its mask is now the nearest rank of the
+  hierarchy that has a feminine form. Masks of documents without feminine
+  rank forms are unchanged.
+
 ## [3.1.13] - 2026-10
 
 ### Fixed — names without a surname, name-first order, words in front of a name
