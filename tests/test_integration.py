@@ -34,6 +34,7 @@ DATA_MASKING_SCRIPT = PROJECT_ROOT / "data_masking.py"
 # Додаємо PROJECT_ROOT до sys.path для імпортів
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+from tests.conftest import child_python_env  # noqa: E402  (шлях модулів pytest для дочірнього python)
 # ============================================================================
 # FIXTURES
 # ============================================================================
@@ -114,9 +115,11 @@ class TestInitConfig:
                 capture_output=True,
                 encoding="utf-8",
                 errors="replace",
-                cwd=temp_dir
+                cwd=temp_dir,
+                env=child_python_env()
             )
 
+            assert result.returncode == 0, (result.stderr or "") + (result.stdout or "")
             config_path = temp_dir / "config.yaml"
             assert config_path.exists()
         finally:
@@ -400,7 +403,8 @@ class TestCliArguments:
                     encoding="utf-8",
                     errors="replace",
                     timeout=30,
-                    cwd=str(PROJECT_ROOT.resolve())
+                    cwd=str(PROJECT_ROOT.resolve()),
+                    env=child_python_env()
                 )
 
                 stdout = result.stdout or ""
@@ -434,7 +438,8 @@ class TestCliArguments:
                     encoding="utf-8",
                     errors="replace",
                     timeout=30,
-                    cwd=str(PROJECT_ROOT.resolve())
+                    cwd=str(PROJECT_ROOT.resolve()),
+                    env=child_python_env()
                 )
 
                 stdout = result.stdout or ""
@@ -469,6 +474,7 @@ class TestCliBasicCommands:
                 errors="replace",
                 timeout=60,
                 cwd=str(PROJECT_ROOT.resolve()),
+                env=child_python_env(),
                 input=input_text
             )
             if expect_success:
@@ -537,7 +543,8 @@ class TestCliMasking:
                 encoding="utf-8",
                 errors="replace",
                 timeout=60,
-                cwd=str(temp_dir)
+                cwd=str(temp_dir),
+                env=child_python_env()
             )
             return result
         return _run
@@ -809,7 +816,8 @@ class TestCliErrorHandling:
             encoding="utf-8",
             errors="replace",
             timeout=30,
-            cwd=str(temp_dir)
+            cwd=str(temp_dir),
+            env=child_python_env()
         )
 
         stdout = (result.stdout or "").lower()

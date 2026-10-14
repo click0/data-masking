@@ -134,7 +134,7 @@ python diagnose_mapping.py              # in a folder with input.txt + input_rec
 - **Military IDs** — МТ123456, мт-123456, мт №123456
 
 ### Military Data
-- **Ranks** — all grammatical cases, masculine/feminine forms, with "retired"/"reserve" modifiers
+- **Ranks** — all grammatical cases, with "retired"/"reserve" modifiers; ranks have the masculine form only, for women as well (`сержанту Коваль Тетяні Сергіївні`), and the mask keeps it. A feminine form that happens to be in the input (`сержантці`) is recognised and restored as it was
 - **Brigades** — "123 окрема механізована бригада"
 - **Military units** — "в/ч А1234"
 - **Order numbers** — "наказ №123 від 01.01.2025"
@@ -184,10 +184,10 @@ Ranks are recognised next to a name (or in quotes as a standalone value); a rank
 ```
 The gender and case of a first name are taken from the patronymic (`Петра Івановича` is a masculine genitive, not the feminine name Петра; `Наталі Петрівни` is genitive, `Наталі Петрівні` dative); without a patronymic — from the adjacent rank (`рядового Петренка Богуслава` → genitive of Богуслав). Forms in `-ові` (`Петрові → Павлові`), the vocative (`Петре`), the third declension (`Любові → Лариси`) and consonant alternations (`Ользі → Ольга`) are recognised. Unmasking does not depend on this: it restores by the mapping.
 
-**Gender:**
+**Women** (the rank keeps its masculine form, as in documents; the first name and patronymic follow the gender):
 ```
-"молодшою сержанткою Коваленко Марією …"  → "старшою солдаткою Котвиненко Марусею …"
-"капітанці Коваленко Марії …"             → "лейтенантці Котвиненко Марусі …"
+"молодшим сержантом Коваленко Марією Петрівною"  → "старшим солдатом Котвиненко Марусею Гордіївною"
+"капітану Коваленко Марії Петрівні"              → "лейтенанту Котвиненко Марусі Гордіївні"
 ```
 
 **Additional modifiers:**
@@ -438,7 +438,7 @@ ID-паспорт 123947568, видано наказом №59/87/4249/Р від
 
 ```json
 {
-  "version": "3.1.14",
+  "version": "3.1.15",
   "mappings": {
     "rank": {
       "молодший сержант": {

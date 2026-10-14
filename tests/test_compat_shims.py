@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tests.conftest import child_python_env  # noqa: E402
 
 
 def _fresh_import(name):
@@ -139,6 +140,7 @@ class TestDiagnoseStaysLight:
             [sys.executable, "-c", code],
             capture_output=True, text=True,
             cwd=str(Path(__file__).resolve().parent.parent),
+            env=child_python_env(),
         )
         assert result.returncode == 0, result.stderr
 
