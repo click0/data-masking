@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.15] - 2026-10
+
+### Fixed — tests
+- The tests that start the CLI in a child Python (`tests/test_integration.py`,
+  `tests/test_compat_shims.py`) failed on a machine where `faker` was
+  importable by the pytest process but not by a plain `python` — the IDE or
+  `PYTHONPATH` had added its location to `sys.path` of pytest only
+  (`ModuleNotFoundError: No module named 'faker'` from `data_masking.py -V`,
+  `--init-config` wrote no file). The child interpreter now receives the
+  module search path of pytest through `PYTHONPATH`
+  (`conftest.child_python_env()`), and `--init-config` reports the child's
+  error instead of a bare "file does not exist".
+
+### Changed — ranks have the masculine form only
+- Military ranks are written in the masculine form for everyone (`сержанту
+  Коваль Тетяні Сергіївні`), so the examples and the README no longer show
+  feminine rank forms: `input_example.2.txt` uses masculine ranks with
+  female names, `input_example.txt` says `Сержанту`, the README "Gender"
+  block shows a woman with a masculine rank and the list of masked data says
+  so. A feminine form that happens to be in the input (`сержантці`) is still
+  recognised and restored as it was (the 3.1.14 fix stays).
+
 ## [3.1.14] - 2026-10
 
 ### Changed — project description

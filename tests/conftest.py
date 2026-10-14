@@ -101,6 +101,19 @@ def restore_environment():
 # GENERAL FIXTURES
 # ============================================================================
 
+def child_python_env() -> dict:
+    """Середовище для дочірнього інтерпретатора (subprocess з sys.executable):
+    той самий шлях пошуку модулів, що й у процесі pytest.
+
+    Залежності можуть бути видимі лише pytest — через шляхи, які IDE (PyCharm)
+    додає до sys.path, через PYTHONPATH чи встановлення в нестандартну теку.
+    Дочірній python без них не імпортує faker і падає з трейсбеком, хоча
+    in-process тести проходять (v3.1.15)."""
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(p for p in sys.path if p)
+    return env
+
+
 @pytest.fixture
 def run_cli():
     """Run a CLI command with UTF-8 encoding (cross-platform).
@@ -115,6 +128,7 @@ def run_cli():
         kwargs.setdefault("errors", "replace")
         kwargs.setdefault("capture_output", True)
         kwargs.setdefault("cwd", str(PROJECT_ROOT))
+        kwargs.setdefault("env", child_python_env())
         return subprocess.run(cmd, **kwargs)
     return _run
 
