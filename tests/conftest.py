@@ -88,6 +88,29 @@ def isolate_user_config_dir(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def hide_repo_root_local_config():
+    """Приватний config_local.yaml розробника в корені репозиторію (він у
+    .gitignore) не має впливати на тести: завантажувач читає config_local.yaml
+    поруч із файлом конфігурації, тож тест із `--config <repo>/config_example.yaml`
+    чи `<repo>/config.yaml` підхоплював його і давав інші маски (v3.1.16).
+    Локальні файли, які тести створюють у своїх tmp_path, і далі читаються."""
+    from datamasking.extras import config as _config
+
+    root_local = os.path.normcase(str((PROJECT_ROOT / _config.LOCAL_CONFIG_NAME).resolve()))
+    original = _config.ConfigLoader.local_config_paths
+
+    def without_repo_root(self):
+        return [p for p in original(self)
+                if os.path.normcase(str(Path(p).resolve())) != root_local]
+
+    _config.ConfigLoader.local_config_paths = without_repo_root  # type: ignore[method-assign]
+    try:
+        yield
+    finally:
+        _config.ConfigLoader.local_config_paths = original  # type: ignore[method-assign]
+
+
+@pytest.fixture(autouse=True)
 def restore_environment():
     """Відновлює os.environ після тесту (замість видалення всіх DM_*/DATA_MASKING_*,
     включно з тими, що встановив розробник до запуску pytest)."""

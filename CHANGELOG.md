@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.16] - 2026-10
+
+### Fixed — tests
+- `test_full_example_config_changes_nothing` (and any test that loads a
+  configuration file from the repository) picked up the developer's private
+  `config_local.yaml` lying next to it in the repository root — the loader
+  reads `config_local.yaml` beside the configuration file, so with a local
+  file that sets e.g. `hash_algorithm` the masks differed from a run without
+  configuration and the test failed on that machine only. The test fixtures
+  now hide the repository-root `config_local.yaml` from the loader, as they
+  already hide the one in the user's configuration directory. Local files
+  that tests create in their own temporary directories are still honoured.
+
 ## [3.1.15] - 2026-10
 
 ### Fixed — tests
