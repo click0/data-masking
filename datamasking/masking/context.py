@@ -242,9 +242,12 @@ def looks_like_pib_line(line: str) -> bool:
     if has_name_patronymic_pair(words): return True
 
     if not has_rank:
-        # Рядок капсом без звання і без ПІБ — заголовок («НАКАЗ КОМАНДИРА…»)
+        # Рядок капсом без звання і без ПІБ — заголовок («НАКАЗ КОМАНДИРА…»);
+        # але «КОВАЛЬ ТЕТЯНА — ІВАНОВ ПЕТРО» містить відомі імена (v3.1.17)
         if line_clean.isupper() and len(words) >= 3:
-            if not re.search(r'\b\d{10}\b|\b\d{9}\b|[А-ЯA-Z]{2}\s*-?\s*\d{6}\b', line_clean): return False
+            if (not re.search(r'\b\d{10}\b|\b\d{9}\b|[А-ЯA-Z]{2}\s*-?\s*\d{6}\b', line_clean)
+                    and not _caps_line_has_known_name(words)):
+                return False
 
     # Звання — сильний контекст: «Відповідно до рапорту старшого сержанта
     # Мазуренка…», «Згідно з наказом №12 лейтенант Петренко…» — типові
@@ -275,6 +278,19 @@ def looks_like_pib_line(line: str) -> bool:
     if max_sequence >= 2: return True
     if re.search(r'\b\d{10}\b|\b\d{9}\b|[А-ЯA-Z]{2}\s*-?\s*\d{6}\b', line_clean): return True
     return False
+
+def _caps_line_has_known_name(words: List[str]) -> bool:
+    """У рядку капсом є відоме ім'я поруч із іншим словом-кандидатом
+    («КОВАЛЬ ТЕТЯНА — ІВАНОВ ПЕТРО») — це перелік осіб, а не заголовок."""
+    clean = [_strip_word(w) for w in words]
+    for i, w in enumerate(clean):
+        if len(w) < 3 or not looks_like_name(w) or not analyze_name(w).known:
+            continue
+        neighbours = [clean[j] for j in (i - 1, i + 1) if 0 <= j < len(clean)]
+        if any(n and looks_like_name(n) and _caps_word(n) for n in neighbours):
+            return True
+    return False
+
 
 def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     line = line.strip()
@@ -400,7 +416,7 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
                 pib_words = shifted
         # Закінчення слів не відповідають ролям («Маскувальником Імітаційного»,
         # «Старшого Петро») — не ПІБ (v3.1.17)
-        if not roles_plausible(pib_words):
+        if not roles_plausible(pib_words, after_rank):
             continue
         candidate = " ".join(pib_words)
         if _BAD_WORD_RE.search(candidate):
@@ -435,13 +451,17 @@ def _caps_block_without_patronymic(parts: List[str], start: int) -> bool:
     МАСКУВАЛЬНОГО ВЗВОДУ»), а не ПІБ: справжнє ПІБ капсом має по батькові
     («ПЕТРЕНКО ОЛЕГ ПЕТРОВИЧ», «ОЛЕГУ ПЕТРОВИЧУ ПЕТРЕНКУ») або звання перед
     собою. До 3.1.17 назва посади маскувалась як «МАСАҐАНИКОМ ІГОР ОРЕСТОВИЧ»."""
+    # Блок рахується в обидва боки від початку кандидата: «СТАРШОГО ОПЕРАТОРА
+    # РОЗРАХУНКУ» відкидалось із першого слова, а з другого («ОПЕРАТОРА
+    # РОЗРАХУНКУ») знову бралось за ПІБ
+    begin = start
+    while begin > 0 and _caps_word(parts[begin - 1]) and parts[begin - 1].rstrip(_cfg.QUOTE_CHARS)[-1:] not in ',.;:!?':
+        begin -= 1
     run: List[str] = []
-    for word in parts[start:]:
-        clean = _strip_word(word)
-        letters = re.sub(r"[-']", "", clean)
-        if not letters or not letters.isalpha() or not letters.isupper():
+    for word in parts[begin:]:
+        if not _caps_word(word):
             break
-        run.append(clean)
+        run.append(_strip_word(word))
         if word.rstrip(_cfg.QUOTE_CHARS)[-1:] in ',.;:!?':
             break
     if len(run) < 3:
@@ -449,23 +469,40 @@ def _caps_block_without_patronymic(parts: List[str], start: int) -> bool:
     return not any(is_patronymic_word(w, run[i - 1]) for i, w in enumerate(run) if i >= 1)
 
 
+def _caps_word(word: str) -> bool:
+    letters = re.sub(r"[-']", "", _strip_word(word))
+    return bool(letters) and letters.isalpha() and letters.isupper()
+
+
 _NOT_A_FIRST_NAME_ENDINGS = ('ого', 'ому', 'ього', 'ьому')
+# -их/-ів — множина прикметників та іменників («Авіаційних», «Комплексів»);
+# імена з такими закінченнями є (Яків), тож вони мають бути відомими
+_PLURAL_LIKE_ENDINGS = ('их', 'іх', 'ів', 'їв')
 _INSTRUMENTAL_NAME_ENDINGS = ('ом', 'ем', 'єм', 'ою', 'ею', 'єю')
 
 
-def roles_plausible(pib_words: List[str]) -> bool:
+def roles_plausible(pib_words: List[str], after_rank: bool = False) -> bool:
     """Морфологія слів ПІБ відповідає їхнім ролям (v3.1.17):
 
-    - ім'я не закінчується на -ого/-ому («ІМІТАЦІЙНОГО», «Старшого»);
+    - ім'я не закінчується на -ого/-ому («ІМІТАЦІЙНОГО», «Старшого»), а на
+      -их/-ів («Авіаційних», «Комплексів») — лише якщо це відоме ім'я (Яків);
     - прізвище в орудному відмінку (-ом/-ем, «Маскувальником», «Начальником»)
       потребує імені в орудному («Петренком Олегом»); прізвище-прикметник
-      у родовому/давальному («Ковальського») — імені не в називному.
+      у родовому/давальному («Ковальського») — імені не в називному;
+    - два слова КАПСОМ без звання і без по батькові («ПОМІЧНИКА
+      ГРАНАТОМЕТНИКА», «ЗАХИСНИКУ ВІТЧИЗНИ») — ПІБ лише з відомим іменем
+      («КОВАЛЬ ТЕТЯНА»): капс не дає інших ознак.
     Одне слово (прізвище після звання) не перевіряється."""
     if len(pib_words) < 2:
         return True
-    surname, name, _patronymic, _order = assign_pib_roles(pib_words)
+    surname, name, patronymic, _order = assign_pib_roles(pib_words)
     name_low = _strip_word(name).lower()
     if name_low.endswith(_NOT_A_FIRST_NAME_ENDINGS):
+        return False
+    if name_low.endswith(_PLURAL_LIKE_ENDINGS) and not analyze_name(name_low).known:
+        return False
+    if (not after_rank and not patronymic and len(pib_words) == 2 and all(_caps_word(w) for w in pib_words)
+            and not analyze_name(name_low).known):
         return False
     if surname:
         surname_low = _strip_word(surname).lower()
