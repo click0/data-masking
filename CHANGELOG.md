@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.18] - 2026-10
+
+### Fixed — more position titles in capitals, with a wider test set
+- The 3.1.17 rule for a block of capitals counted the words only from the
+  candidate onwards: `з посади СТАРШОГО ОПЕРАТОРА РОЗРАХУНКУ` was rejected
+  from the first word and then taken again from the second (`ОПЕРАТОРА
+  РОЗРАХУНКУ` → `ОПЕРІЙЧА РОМАНУ`). The block is now counted in both
+  directions, so any candidate inside a run of three or more words in
+  capitals without a patronymic is a title.
+- A first name in `-их` / `-ів` (`Авіаційних`, `Комплексів`) must be a known
+  name (`Яків`), otherwise the candidate is not a name: `Оператора
+  Відділення Безпілотних Авіаційних Комплексів` stays as it is in capitals
+  and in title case.
+- **Two words in capitals without a rank and without a patronymic** are a
+  name only when the second word is a known first name (`КОВАЛЬ ТЕТЯНА`,
+  `ПЕТРЕНКО ЗИНОВІЙ`): `ПОМІЧНИКА ГРАНАТОМЕТНИКА`, `ЗАХИСНИКУ ВІТЧИЗНИ`,
+  `ЗА ВІЙСЬКОВУ ДОБЛЕСТЬ` were masked as surname + first name. Trade-off:
+  `ПЕТРЕНКО АЙДЕР` (a rare first name, capitals, no rank, no patronymic) is
+  no longer masked; `Петренко Айдер` and `рядового ПЕТРЕНКА АЙДЕРА` still are.
+- A line in capitals is a heading only when it has no known first name next
+  to another word (`КОВАЛЬ ТЕТЯНА — ІВАНОВ ПЕТРО` is masked; `НАКАЗ
+  КОМАНДИРА ВІЙСЬКОВОЇ ЧАСТИНИ`, `ВІРА НАДІЯ ЛЮБОВ` are not).
+- Known limitation: in `ВРУЧИТИ ГРАМОТУ ОЛЕГУ ПЕТРОВИЧУ ПЕТРЕНКУ` the first
+  name and patronymic are masked, the surname `ПЕТРЕНКУ` is not — a word in
+  capitals before a name-first order cannot be told from a surname.
+- `tests/test_position_titles.py`: 90+ cases — position titles and unit
+  names in capitals and title case, headings, award names, a whole order,
+  real names in capitals in tables, with tabs, quotes, labels, dates and
+  IDs, initials, name-first order, shifted windows, two-word names, ranks.
+
 ## [3.1.17] - 2026-10
 
 ### Fixed — position titles in capitals were taken for a name
