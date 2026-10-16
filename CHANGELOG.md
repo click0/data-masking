@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.17] - 2026-10
+
+### Fixed — position titles in capitals were taken for a name
+- `на посаду МАСКУВАЛЬНИКОМ ІМІТАЦІЙНОГО ВІДДІЛЕННЯ ІНЖЕНЕРНО-МАСКУВАЛЬНОГО
+  ВЗВОДУ` became `на посаду МАСАҐАНИКОМ ІГОР ОРЕСТОВИЧ ІНЖЕНЕРНО-…`: three
+  capitalised words in a row were enough for a name, and in capitals
+  nothing told a position title from a surname. Two rules now reject such
+  candidates (the real name on the same line is still masked):
+  - **three or more words in capitals in a row without a patronymic and
+    without a rank in front** are a position or a unit name, not a name
+    (`ПЕТРЕНКО ОЛЕГ ПЕТРОВИЧ`, `ОЛЕГУ ПЕТРОВИЧУ ПЕТРЕНКУ`, `ПІДПИС КОВАЛЬ
+    ТЕТЯНА СЕРГІЇВНА` and `солдата ПЕТРЕНКА ОЛЕГА` are unaffected);
+  - **the word endings must fit the roles**: a first name never ends in
+    `-ого`/`-ому` (`Імітаційного`, `Старшого`); a surname in the
+    instrumental (`Маскувальником`, `Начальником`) needs a first name in the
+    instrumental (`Петренком Олегом`); an adjective surname in the genitive
+    (`Ковальського`) needs a first name that is not in the nominative;
+    words in `-ння`/`-ття`/`-ість` (`Відділення`, `Призначення`,
+    `Відповідальність`) are neither names nor surnames.
+- Masks of ordinary documents are unchanged. Tests:
+  `tests/test_position_titles.py`.
+
 ## [3.1.16] - 2026-10
 
 ### Fixed — tests
