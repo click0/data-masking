@@ -36,6 +36,10 @@ def looks_like_name(word: str) -> bool:
     # ніколи не імена/прізвища
     if clean_word.lower().endswith(('ємо', 'имо', 'емо', 'єте', 'ите', 'ете')):
         return False
+    # Віддієслівні та абстрактні іменники (-ння/-ття/-ість: Відділення,
+    # Призначення, Відповідальність) — ні імена, ні прізвища (v3.1.17)
+    if len(clean_word) >= 5 and clean_word.lower().endswith(('ння', 'ття', 'ість')):
+        return False
     if clean_word.lower() in _cfg.EXCLUDE_WORDS_LOWER: return False
     # Абревіатури (ЗСУ, ТВО, ТРО …) — не частина ПІБ: інакше «ТРО Петренко
     # Іван Іванович» розбиралось як прізвище «ТРО» + ім'я «Петренко» + по
