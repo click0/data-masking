@@ -73,7 +73,8 @@ Since v3.0 all code lives in a single top-level package **`datamasking`**
 
 ### Install (v3.0+)
 ```bash
-pip install '.[full]'        # from a repository checkout
+cd data-masking              # repository checkout
+pip install ".[full]"        # double quotes work in bash, PowerShell and cmd alike
 data-mask -i input.txt       # console scripts appear on PATH
 data-unmask masked_file.txt
 ```
@@ -441,7 +442,7 @@ ID-паспорт 123947568, видано наказом №59/87/4249/Р від
 
 ```json
 {
-  "version": "3.1.19",
+  "version": "3.1.20",
   "mappings": {
     "rank": {
       "молодший сержант": {

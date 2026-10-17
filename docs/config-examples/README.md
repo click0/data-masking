@@ -23,7 +23,7 @@ data-mask -i input.txt -o output.txt --config docs/config-examples/share.yaml
   do not combine them with `strict.yaml`.
   `--only` / `--exclude` на час запуску замінюють прапорці `enable_*` —
   не поєднуйте їх зі `strict.yaml`.
-- Encrypted mappings need `cryptography` (`pip install 'data-masking[full]'`;
+- Encrypted mappings need `cryptography` (`pip install "data-masking[full]"`;
   the Windows binaries include it). Password: `$DATA_MASKING_PASSWORD`,
   `--password-env VAR`, or generated and shown once.
 - `pii.yaml` leaves unit and brigade numbers open — internal use only.

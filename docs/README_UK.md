@@ -73,7 +73,8 @@
 
 ### Встановлення (v3.0+)
 ```bash
-pip install '.[full]'        # з checkout репозиторію
+cd data-masking              # checkout репозиторію
+pip install ".[full]"        # подвійні лапки працюють і в bash, і в PowerShell, і в cmd
 data-mask -i input.txt       # консольні команди з'являються в PATH
 data-unmask masked_file.txt
 ```
@@ -441,7 +442,7 @@ ID-паспорт 123947568, видано наказом №59/87/4249/Р від
 
 ```json
 {
-  "version": "3.1.19",
+  "version": "3.1.20",
   "mappings": {
     "rank": {
       "молодший сержант": {

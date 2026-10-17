@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.20] - 2026-10
+
+### Changed — documentation
+- `pip install ".[full]"` and the other extras are written with double
+  quotes in README (EN/UK), INSTALL.md, `requirements.txt`, the
+  config-examples README, the CLI hints and CI: single quotes are not
+  quoting characters in Windows `cmd.exe`, where `pip install '.[full]'`
+  fails with "Invalid requirement"; double quotes work in bash, zsh,
+  PowerShell and cmd alike. The README install snippet says the command is
+  run from the repository root.
+
 ## [3.1.19] - 2026-10
 
 ### Changed — documentation

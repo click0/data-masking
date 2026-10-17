@@ -1,5 +1,5 @@
 # Data Masking System 3.x — залежності для запуску з сирців
-# (еквівалент `pip install '.[full]'`). Python 3.9+
+# (еквівалент `pip install ".[full]"`). Python 3.9+
 #
 # Ядро:
 faker>=20.0.0

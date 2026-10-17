@@ -1326,7 +1326,7 @@ def main(argv=None) -> int:
     if getattr(args, 'encrypt', False) and not is_encryption_available():
         # Ядро без extras: чиста помилка ДО запису файлів, а не traceback
         print("Error: --encrypt requires the 'cryptography' package "
-              "(pip install 'data-masking[security]')")
+              '(pip install "data-masking[security]")')
         return EXIT_ERROR
     if SECURITY_AVAILABLE and getattr(args, 'encrypt', False):
         password, pw_error = _resolve_password(args, config, logger)
@@ -1336,7 +1336,7 @@ def main(argv=None) -> int:
                 logger.error(pw_error)
             return EXIT_USAGE
     elif getattr(args, 'encrypt', False):
-        print("Error: --encrypt requires the 'cryptography' package (pip install 'data-masking[security]')")
+        print('Error: --encrypt requires the \'cryptography\' package (pip install "data-masking[security]")')
         return EXIT_ERROR
 
     is_json = input_path.suffix.lower() == '.json'

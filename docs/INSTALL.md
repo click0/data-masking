@@ -13,9 +13,9 @@
 git clone https://github.com/click0/data-masking.git
 cd data-masking
 pip install .                 # core (faker only)
-pip install '.[full]'         # + encryption (cryptography) + YAML config (pyyaml)
-pip install '.[security]'     # + encryption only
-pip install '.[yaml]'         # + YAML config only
+pip install ".[full]"         # + encryption (cryptography) + YAML config (pyyaml)
+pip install ".[security]"     # + encryption only
+pip install ".[yaml]"         # + YAML config only
 ```
 
 ### Run (console scripts)
