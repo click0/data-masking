@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.1.19] - 2026-10
+
+### Changed — documentation
+- README (EN/UK) describes the 3.1.17–3.1.18 rules for position titles and
+  unit names in capitals: a block of three or more words in capitals without
+  a patronymic and without a rank, word endings that must fit the roles, two
+  words in capitals needing a known first name, headings in capitals; the
+  trade-off (`ПЕТРЕНКО АЙДЕР`) and the known limitation (`ВРУЧИТИ ГРАМОТУ
+  ОЛЕГУ ПЕТРОВИЧУ ПЕТРЕНКУ`) are stated. The exceptions list gets a bullet
+  for them.
+
 ## [3.1.18] - 2026-10
 
 ### Fixed — more position titles in capitals, with a wider test set
