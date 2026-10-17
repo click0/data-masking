@@ -146,6 +146,7 @@ python diagnose_mapping.py              # in a folder with input.txt + input_rec
 ### Exceptions
 - **Abbreviations** (never masked as a surname) — ЗСУ, МОУ, ВСУ, ДПСУ, НГУ, ДСНС, СБУ, ГУР, ТЦК, СП, КМУ, ОТЦКСП, ТВО, ТРО
 - **Words that are never part of a name** — legal and service terms (Згідно, Відповідно, Закону, Статуту …), positions (Командир, Начальник …), labels (ПІБ, ІПН, РНОКПП …), "Кабінет Міністрів" in every case
+- **Position titles and unit names in capitals** — three or more words in capitals without a patronymic and without a rank (`МАСКУВАЛЬНИКОМ ІМІТАЦІЙНОГО ВІДДІЛЕННЯ`), two words in capitals whose second word is not a known first name (`ЗАХИСНИКУ ВІТЧИЗНИ`), words whose endings do not fit a name (`Імітаційного`, `Відділення`); headings in capitals (`НАКАЗ КОМАНДИРА ВІЙСЬКОВОЇ ЧАСТИНИ`)
 - **Dates of legal acts** — a date after "Закону / Кодексу / Конституції / Указу Президента / постанови Кабінету Міністрів, Верховної Ради, КМУ … від" is not shifted
 
 The full lists are in [`config.yaml`](../config.yaml) (section `dictionaries`, editable; the program keeps a built-in copy for when the key is missing); the `exclusions` section of the configuration adds to them (abbreviations, words, phrases, legal acts, words that are always masked) or removes entries. `data-mask --list-exclusions` prints what is in effect.
@@ -161,6 +162,8 @@ Each occurrence is tracked individually:
 Маска: "Івенов Павло Леонідович і Пергов Омелян Степанович. Потім Івенов пішов, а Пергов лишився."
 ```
 A surname is recognised as part of a name (`Прізвище Ім'я По батькові`, `Ім'я По батькові Прізвище`, or after a rank); once it is known in the document, every other occurrence of it — including other case forms — gets the same synthetic stem, and unmask restores each occurrence by its instance number. A first name with a patronymic and no surname is masked too (3.1.13): `Шановний Олегу Петровичу! → Шановний Омеляну Степановичу!`, `за підписом Олега Петровича → за підписом Омеляна Степановича`. A capitalised word in front of a full name (`Заява Петренка Олега Петровича`, `Характеристика Коваль Тетяни Сергіївни`) is left alone and the name after it is masked in full.
+
+Position titles and unit names written in capitals are not names (3.1.17–3.1.18): three or more words in capitals in a row without a patronymic and without a rank in front (`на посаду МАСКУВАЛЬНИКОМ ІМІТАЦІЙНОГО ВІДДІЛЕННЯ ІНЖЕНЕРНО-МАСКУВАЛЬНОГО ВЗВОДУ`, `з посади СТАРШОГО ОПЕРАТОРА РОЗРАХУНКУ`) stay as they are, and the real name next to them (`… солдата ПЕТРЕНКА ОЛЕГА ПЕТРОВИЧА`) is still masked. Word endings must fit the roles: a first name never ends in `-ого`/`-ому` (`Імітаційного`, `Старшого`) and ends in `-их`/`-ів` only if it is a known name (`Яків`); a surname in the instrumental (`Начальником`) needs a first name in the instrumental; words in `-ння`/`-ття`/`-ість` (`Відділення`, `Відповідальність`) are neither names nor surnames. Two words in capitals without a rank and without a patronymic are a name only when the second word is a known first name (`КОВАЛЬ ТЕТЯНА` yes, `ПОМІЧНИКА ГРАНАТОМЕТНИКА` and a rare `ПЕТРЕНКО АЙДЕР` no; `Петренко Айдер` and `рядового ПЕТРЕНКА АЙДЕРА` are masked). Known limitation: in `ВРУЧИТИ ГРАМОТУ ОЛЕГУ ПЕТРОВИЧУ ПЕТРЕНКУ` the first name and patronymic are masked, the surname after them is not — a word in capitals before a name-first order cannot be told from a surname.
 
 ### Preserving Grammatical Forms
 
@@ -438,7 +441,7 @@ ID-паспорт 123947568, видано наказом №59/87/4249/Р від
 
 ```json
 {
-  "version": "3.1.18",
+  "version": "3.1.19",
   "mappings": {
     "rank": {
       "молодший сержант": {
