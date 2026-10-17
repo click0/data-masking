@@ -4,7 +4,7 @@
 
 ```bash
 git config core.hooksPath .githooks        # хук дописує блок атрибуції до комітів із Claude Code
-pip install -e '.[full]' && pip install -r requirements-dev.txt
+pip install -e ".[full]" && pip install -r requirements-dev.txt
 ```
 
 У хмарному контейнері системний `cryptography` буває зламаний (`_cffi_backend`
