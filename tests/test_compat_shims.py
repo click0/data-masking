@@ -36,6 +36,7 @@ class TestDeprecationWarnings:
         _, dep_warnings = _fresh_import(name)
         assert dep_warnings, f"import {name} не видав DeprecationWarning"
         assert "datamasking" in str(dep_warnings[0].message)
+        assert "will be removed in 4.0.0" in str(dep_warnings[0].message)
 
 
 class TestSameModuleObjects:

@@ -16,6 +16,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   holds entries (`release_notes.py --strict`) or when the tag's version has
   no section.
 
+### Deprecated
+- The root compatibility shims (`masking/`, `unmasking/`, `modules/`,
+  `rank_data.py`), deprecated since 3.0, now name the version that removes
+  them: their `DeprecationWarning` says they will be removed in **4.0.0**,
+  the next major version. Use `datamasking.*` imports; README (EN/UK) says
+  the same.
+
 ## [3.1.20] - 2026-10
 
 ### Changed — documentation

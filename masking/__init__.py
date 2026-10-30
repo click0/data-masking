@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-DEPRECATED compatibility shim (v3.0): пакет переїхав у datamasking.masking.
+DEPRECATED compatibility shim (v3.0, видаляється у 4.0.0): пакет переїхав у datamasking.masking.
 
 Старі імпорти (import masking / from masking.engine import ...) працюють,
 але видадуть DeprecationWarning. Використовуйте datamasking.masking.
@@ -13,7 +13,7 @@ import sys as _sys
 import warnings as _warnings
 
 _warnings.warn(
-    "top-level package 'masking' is deprecated since 3.0; "
+    "top-level package 'masking' is deprecated since 3.0 and will be removed in 4.0.0; "
     "use 'datamasking.masking' instead",
     DeprecationWarning,
     stacklevel=2,

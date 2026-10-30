@@ -76,7 +76,8 @@ pip install -e ".[full]" && pip install -r requirements-dev.txt
   префіксом оригіналу), `unmasking/`, `extras/` (config, security, selective,
   re_mask, tools, logger, password_generator), `rank_data.py`, `diagnose.py`.
 - Кореневі `masking/`, `unmasking/`, `modules/`, `rank_data.py` — **shim-и**
-  зворотної сумісності (DeprecationWarning), у wheel не потрапляють.
+  зворотної сумісності (DeprecationWarning), у wheel не потрапляють;
+  видаляються у 4.0.0 (так і сказано в тексті попередження).
 - `datamasking/__init__.py` навмисно легкий (без faker) — `diagnose` має
   лишатись stdlib-only.
 - Mapping-файли: unmask залежить лише від mapping, не від алгоритму маскування,

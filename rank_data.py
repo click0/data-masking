@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-DEPRECATED compatibility shim (v3.0): модуль переїхав у datamasking.rank_data.
+DEPRECATED compatibility shim (v3.0, видаляється у 4.0.0): модуль переїхав у datamasking.rank_data.
 
 Старий імпорт (from rank_data import RANKS_LIST) працює, але видасть
 DeprecationWarning. Використовуйте datamasking.rank_data.
@@ -13,7 +13,7 @@ import sys as _sys
 import warnings as _warnings
 
 _warnings.warn(
-    "top-level module 'rank_data' is deprecated since 3.0; "
+    "top-level module 'rank_data' is deprecated since 3.0 and will be removed in 4.0.0; "
     "use 'datamasking.rank_data' instead",
     DeprecationWarning,
     stacklevel=2,
