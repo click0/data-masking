@@ -17,9 +17,13 @@ pip install -e ".[full]" && pip install -r requirements-dev.txt
 
 ## Правила комітів
 
-- **Кожен коміт бампає patch-версію** у двох місцях: `datamasking/_version.py`
-  та літерал `__version__` у `data_masking.py` (CI звіряє їх). Плюс запис у
-  `CHANGELOG.md` під новим `## [X.Y.Z]`.
+- **Версія бампається на реліз, не на коміт.** Між релізами кожна помітна
+  зміна — запис у `CHANGELOG.md` під `## [Unreleased]` (одна така секція,
+  нагорі; версію не чіпати). Реліз — окремий коміт: нова версія у двох
+  місцях, `datamasking/_version.py` і літерал `__version__` у
+  `data_masking.py` (CI звіряє їх), і `## [Unreleased]` →
+  `## [X.Y.Z] - YYYY-MM`. Patch — виправлення, minor — нові можливості,
+  major — несумісні зміни (видалення shim-ів — у 4.0.0).
 - Трейлери в кінці повідомлення — повний блок атрибуції:
   ```
   Co-Authored-By: Claude <Model> <noreply@anthropic.com>
@@ -60,8 +64,11 @@ pip install -e ".[full]" && pip install -r requirements-dev.txt
    `CHANGELOG.md` (усі записи після попереднього тегу,
    `.github/scripts/release_notes.py`). Опис, написаний у формі вручну, не
    перезаписується. Тому **CHANGELOG — це і є реліз-нотес**: записи пишемо
-   англійською так, щоб їх можна було читати користувачу. Без запису для
-   поточної версії тест падає на кожному push, а реліз — до публікації.
+   англійською так, щоб їх можна було читати користувачу. Тест на кожному
+   push вимагає секції `## [X.Y.Z]` для версії з `_version.py` і не більше
+   однієї `## [Unreleased]`, нагорі; реліз із тега падає до публікації, якщо
+   секції для версії тега немає або під `[Unreleased]` ще лишилися записи
+   (секцію забули перейменувати).
 
 ## Архітектура (коротко)
 
@@ -69,7 +76,8 @@ pip install -e ".[full]" && pip install -r requirements-dev.txt
   префіксом оригіналу), `unmasking/`, `extras/` (config, security, selective,
   re_mask, tools, logger, password_generator), `rank_data.py`, `diagnose.py`.
 - Кореневі `masking/`, `unmasking/`, `modules/`, `rank_data.py` — **shim-и**
-  зворотної сумісності (DeprecationWarning), у wheel не потрапляють.
+  зворотної сумісності (DeprecationWarning), у wheel не потрапляють;
+  видаляються у 4.0.0 (так і сказано в тексті попередження).
 - `datamasking/__init__.py` навмисно легкий (без faker) — `diagnose` має
   лишатись stdlib-only.
 - Mapping-файли: unmask залежить лише від mapping, не від алгоритму маскування,

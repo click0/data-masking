@@ -4,16 +4,19 @@
 Release notes from CHANGELOG.md (stdlib only).
 
 Збирає опис GitHub Release з усіх записів CHANGELOG.md між попереднім
-релізним тегом (не включно) і поточною версією (включно): реліз зазвичай
-охоплює кілька patch-версій (кожен коміт бампає версію), а теги ставляться
-рідше. Користувачу лишається тільки поставити тег — текст пише пайплайн.
+релізним тегом (не включно) і поточною версією (включно). Між релізами зміни
+збираються під `## [Unreleased]`, а релізний коміт перейменовує її на
+`## [X.Y.Z]`; до 3.1.20 кожен коміт бампав версію, тож реліз міг охоплювати
+кілька записів — їх скрипт так само збирає. Користувачу лишається тільки
+поставити тег — текст пише пайплайн.
 
     python .github/scripts/release_notes.py --version 3.0.18 --since v3.0.16 \
         --repo click0/data-masking --output release-notes.md
 
 Без --since — лише запис поточної версії. Якщо для --version у CHANGELOG
 немає запису, скрипт завершується з кодом 1 (реліз не публікується з
-порожнім описом).
+порожнім описом). З --strict (реліз із тега) так само код 1, якщо під
+`## [Unreleased]` ще є записи: секцію забули перейменувати на версію.
 """
 import argparse
 import re
@@ -68,6 +71,14 @@ def select(entries, version: str, since: Optional[str]):
         elif low < key <= top:
             chosen.append((ver, date, body))
     return chosen
+
+
+def unreleased_body(entries) -> str:
+    """Тіло секції `## [Unreleased]` ('' — якщо її немає або вона порожня)."""
+    for ver, _date, body in entries:
+        if ver.strip().lower() == "unreleased":
+            return body
+    return ""
 
 
 def _demote(body: str) -> str:
@@ -145,6 +156,8 @@ def main(argv=None) -> int:
     ap.add_argument("--changelog", default="CHANGELOG.md")
     ap.add_argument("--repo", help="owner/name for links")
     ap.add_argument("--output", help="write here instead of stdout")
+    ap.add_argument("--strict", action="store_true",
+                    help="fail if '## [Unreleased]' still holds entries (a release from a tag)")
     ap.add_argument("--check-replaceable", metavar="BODY_FILE",
                     help="exit 0 if the release body in BODY_FILE may be replaced, 3 if hand-written")
     args = ap.parse_args(argv)
@@ -164,7 +177,12 @@ def main(argv=None) -> int:
         return 2
     if since_key is not None and since_key >= version_key_:
         since = None  # перший реліз або тег поза послідовністю — лише поточна версія
-    chosen = select(parse_changelog(text), version, since)
+    entries = parse_changelog(text)
+    if args.strict and unreleased_body(entries):
+        print(f"error: CHANGELOG still has entries under '## [Unreleased]': "
+              f"rename it to '## [{version}]' before releasing", file=sys.stderr)
+        return 1
+    chosen = select(entries, version, since)
     if not any(version_key(v) == version_key(version) for v, _, _ in chosen):
         print(f"error: CHANGELOG has no entry '## [{version}]'", file=sys.stderr)
         return 1

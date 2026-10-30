@@ -38,7 +38,7 @@ jobs:
 
   test:
     name: Tests (${{ matrix.os }}, py${{ matrix.python-version }})
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner || matrix.os }}
     needs: lint
     strategy:
       fail-fast: false
@@ -46,6 +46,12 @@ jobs:
         os: [ubuntu-latest]
         python-version: ['3.9', '3.11', '3.13']
         include:
+          # ubuntu-latest — це вже Ubuntu 26.04, для якої setup-python не має
+          # 3.9 (нижня межа requires-python): 3.9 ганяємо на 24.04. Назва
+          # джоба лишається «ubuntu-latest, py3.9».
+          - os: ubuntu-latest
+            python-version: '3.9'
+            runner: ubuntu-24.04
           # Windows — ціль релізу (PyInstaller exe), тому тести мають
           # проходити й там, а не лише збиратись
           - os: windows-latest

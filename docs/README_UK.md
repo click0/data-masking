@@ -23,8 +23,9 @@
 
 > **Сумісність:** старі пласкі шляхи імпорту (`import masking`, `import unmasking`,
 > `from modules.tools import …`, `from rank_data import …`) досі працюють з checkout
-> репозиторію через shim-и, але видають `DeprecationWarning`. Через `pip install`
-> вони не встановлюються — у новому коді використовуйте `datamasking.*`.
+> репозиторію через shim-и, але видають `DeprecationWarning`; у **4.0.0** shim-и
+> буде видалено. Через `pip install` вони не встановлюються — у новому коді
+> використовуйте `datamasking.*`.
 
 ### Пакет `datamasking.masking` (ядро маскування, v2.5.0+)
 | Модуль | Опис |

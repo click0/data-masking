@@ -23,8 +23,9 @@ Since v3.0 all code lives in a single top-level package **`datamasking`**
 
 > **Compatibility:** the old flat import paths (`import masking`, `import unmasking`,
 > `from modules.tools import …`, `from rank_data import …`) still work from a
-> repository checkout via shims, but emit a `DeprecationWarning`. They are not
-> installed by `pip install` — use `datamasking.*` in new code.
+> repository checkout via shims, but emit a `DeprecationWarning`; the shims will
+> be removed in **4.0.0**. They are not installed by `pip install` — use
+> `datamasking.*` in new code.
 
 ### `datamasking.masking` Package (masking core, v2.5.0+)
 | Module | Description |

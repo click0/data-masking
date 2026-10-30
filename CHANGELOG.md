@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed — release process
+- The version is bumped at release time, not on every commit. Changes
+  collect under `## [Unreleased]`, and the release commit sets the version
+  in `datamasking/_version.py` and `data_masking.py` and renames the section
+  to `## [X.Y.Z]`. The test run on every push accepts one `[Unreleased]`
+  section at the top and still requires a section for the current version.
+  A release from a tag stops before publishing when `[Unreleased]` still
+  holds entries (`release_notes.py --strict`) or when the tag's version has
+  no section.
+
+### Deprecated
+- The root compatibility shims (`masking/`, `unmasking/`, `modules/`,
+  `rank_data.py`), deprecated since 3.0, now name the version that removes
+  them: their `DeprecationWarning` says they will be removed in **4.0.0**,
+  the next major version. Use `datamasking.*` imports; README (EN/UK) says
+  the same.
+
 ## [3.1.20] - 2026-10
 
 ### Changed — documentation

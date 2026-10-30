@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-DEPRECATED compatibility shim (v3.0): пакет переїхав у datamasking.extras.
+DEPRECATED compatibility shim (v3.0, видаляється у 4.0.0): пакет переїхав у datamasking.extras.
 
 Старі імпорти (from modules.tools import ... / from modules.security
 import ...) працюють, але видадуть DeprecationWarning.
@@ -14,7 +14,7 @@ import sys as _sys
 import warnings as _warnings
 
 _warnings.warn(
-    "top-level package 'modules' is deprecated since 3.0; "
+    "top-level package 'modules' is deprecated since 3.0 and will be removed in 4.0.0; "
     "use 'datamasking.extras' instead",
     DeprecationWarning,
     stacklevel=2,
