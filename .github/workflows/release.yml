@@ -6,6 +6,11 @@ name: Release
 # текстом із CHANGELOG.md (усі записи після попереднього тегу). Текст,
 # написаний у формі вручну, не перезаписується. Те саме — при `git push`
 # тегу (реліз створює пайплайн). Dry-run: Actions → Release → Run workflow.
+#
+# Перед тегом — релізний коміт: версія в datamasking/_version.py і
+# data_masking.py, `## [Unreleased]` у CHANGELOG.md → `## [X.Y.Z] - YYYY-MM`.
+# Реліз із тега падає до публікації, якщо секції для версії немає або під
+# [Unreleased] ще лишилися записи (release_notes.py --strict).
 
 on:
   push:
@@ -82,7 +87,9 @@ jobs:
         run: |
           PREV_TAG=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude "v${VERSION}" HEAD 2>/dev/null || echo "")
           echo "Previous release tag: ${PREV_TAG:-<none>}"
-          python .github/scripts/release_notes.py \
+          STRICT=""
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then STRICT="--strict"; fi
+          python .github/scripts/release_notes.py $STRICT \
             --version "$VERSION" ${PREV_TAG:+--since "$PREV_TAG"} \
             --repo "${GITHUB_REPOSITORY}" --output release-notes.md
           {

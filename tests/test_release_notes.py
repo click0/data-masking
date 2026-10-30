@@ -3,9 +3,11 @@
 """
 .github/scripts/release_notes.py — опис GitHub Release з CHANGELOG.md (v3.0.19).
 
-Реліз зазвичай охоплює кілька patch-версій (кожен коміт бампає версію),
-тому опис — усі записи між попереднім релізним тегом і поточною версією.
-Опис, написаний вручну у формі релізу, пайплайн не перезаписує.
+Опис — усі записи між попереднім релізним тегом і поточною версією. Між
+релізами зміни збираються під `## [Unreleased]`, а релізний коміт
+перейменовує її на версію; реліз із тега (--strict) не публікується, поки
+під [Unreleased] щось лишилось. Опис, написаний вручну у формі релізу,
+пайплайн не перезаписує.
 """
 import importlib.util
 import sys
@@ -58,9 +60,51 @@ class TestRealChangelog:
         assert any(v == __version__ for v, _, _ in entries), \
             f"CHANGELOG.md has no '## [{__version__}]' entry"
 
-    def test_newest_entry_is_current_version(self):
+    def test_newest_release_is_current_version(self):
+        # Версія бампається на реліз: найновіша версійна секція — поточна
         entries = rn.parse_changelog((ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
-        assert entries[0][0] == __version__
+        released = [v for v, _, _ in entries if rn.version_key(v) is not None]
+        assert released[0] == __version__
+
+    def test_unreleased_at_most_once_and_on_top(self):
+        entries = rn.parse_changelog((ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
+        positions = [i for i, (v, _, _) in enumerate(entries) if v.lower() == "unreleased"]
+        assert len(positions) <= 1, "CHANGELOG.md has more than one '## [Unreleased]'"
+        assert positions in ([], [0]), "'## [Unreleased]' must be the first section"
+
+
+UNRELEASED = """# Changelog
+
+## [Unreleased]
+### Added
+- pending
+
+## [1.2.0] - 2026-10
+### Fixed
+- three
+"""
+
+
+class TestStrict:
+    def test_unreleased_entries_block_a_strict_release(self, tmp_path, capsys):
+        cl = _write(tmp_path, UNRELEASED)
+        assert rn.main(["--strict", "--version", "1.2.0", "--changelog", cl]) == 1
+        assert "[Unreleased]" in capsys.readouterr().err
+
+    def test_without_strict_unreleased_is_left_out(self, tmp_path, capsys):
+        cl = _write(tmp_path, UNRELEASED)
+        assert rn.main(["--version", "1.2.0", "--changelog", cl]) == 0
+        out = capsys.readouterr().out
+        assert "- three" in out and "pending" not in out
+
+    def test_empty_unreleased_passes_strict(self, tmp_path, capsys):
+        cl = _write(tmp_path, UNRELEASED.replace("### Added\n- pending\n", ""))
+        assert rn.main(["--strict", "--version", "1.2.0", "--changelog", cl]) == 0
+
+    def test_strict_still_needs_the_version_section(self, tmp_path, capsys):
+        cl = _write(tmp_path, UNRELEASED.replace("### Added\n- pending\n", ""))
+        assert rn.main(["--strict", "--version", "1.3.0", "--changelog", cl]) == 1
+        assert "no entry" in capsys.readouterr().err
 
 
 class TestSelection:
