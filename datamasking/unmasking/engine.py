@@ -55,6 +55,13 @@ def _reapply_separators(raw: str, restored: str) -> str:
     return "".join(out)
 
 
+def _rank_pattern(rank_form: str) -> str:
+    """Регулярний вираз звання: слова через будь-які пробільні роздільники,
+    межі — не літера/цифра і не дефіс («майор» у «генерал-майор» — не звання)."""
+    return (r'(?<![\w-])' + r'\s+'.join(re.escape(w) for w in rank_form.split())
+            + r'(?![\w-])')
+
+
 def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
     """
     Відновлення звань з урахуванням гендеру та граматичних відмінків.
@@ -82,8 +89,11 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
     covered = bytearray(len(restored_text) + 1)
     for rank_form in ALL_RANK_FORMS:
         # Між словами звання — будь-який пробільний роздільник (маскування
-        # зберігає таб/подвійний пробіл оригіналу, v3.1.7)
-        pattern = r'\b' + r'\s+'.join(re.escape(w) for w in rank_form.split()) + r'\b'
+        # зберігає таб/подвійний пробіл оригіналу, v3.1.7). Межа — не лише
+        # \b: звання не починається й не закінчується на дефісі, інакше
+        # «майор медичної служби» знаходилось усередині «генерал-майор
+        # медичної служби», перекривало його, і маска лишалась у тексті
+        pattern = _rank_pattern(rank_form)
         for match in re.finditer(pattern, restored_text, re.IGNORECASE):
             if 1 in covered[match.start():match.end()]:
                 continue
@@ -96,7 +106,7 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
 
     # Fallback: звання-маски, які відсутні у словнику
     for masked_rank in all_masked_ranks:
-        pattern = r'\b' + r'\s+'.join(re.escape(w) for w in masked_rank.split()) + r'\b'
+        pattern = _rank_pattern(masked_rank)
         for match in re.finditer(pattern, restored_text, re.IGNORECASE):
             overlaps = any(
                 match.start() < found["end"] and match.end() > found["start"]

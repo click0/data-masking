@@ -240,6 +240,10 @@ def _female_form(f: str, names: Set[str], strict: bool) -> Optional[Tuple[str, s
         return _pick([f[:-1] + 'а'], VOCATIVE, names, strict)
     if n >= 3 and f.endswith('є'):
         return _pick([f[:-1] + 'я'], VOCATIVE, names, strict)
+    if n >= 4 and f.endswith('е') and f[:-1] in names:
+        # Любове (III відміна) — кличний; лише відоме ім'я: іншомовні на -е
+        # (Рене) лишаються в називному
+        return f[:-1], VOCATIVE, True
     if f.endswith(('а', 'я')):
         return None if strict else (f, NOMINATIVE, False)
     # Любов, Нінель — не відмінюються тут
