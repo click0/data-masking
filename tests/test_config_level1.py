@@ -189,7 +189,7 @@ class TestEngineToggles:
     def test_rank_line_break_fix_off(self, run, monkeypatch):
         from datamasking.masking import engine
         calls = []
-        monkeypatch.setattr(engine, "normalize_broken_ranks", lambda t: calls.append(t) or t)
+        monkeypatch.setattr(engine, "normalize_broken_ranks", lambda t, *a: calls.append(t) or t)
         run({"masking_rules": {"rank_line_break_fix": False}})
         assert calls == []
         run({"masking_rules": {"rank_line_break_fix": True}}, out="o2.txt")

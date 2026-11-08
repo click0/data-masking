@@ -7,17 +7,19 @@ Main masking engine: context-aware text masking and JSON processing.
 Extracted from data_masking.py during the package refactoring (v2.5.0).
 """
 
+import bisect
+import functools
 import json
 import random
 import re
-from typing import Any, Dict, List, Optional, Pattern, Tuple
+from typing import Any, Callable, Dict, List, Optional, Pattern, Tuple, Union
 
 from datamasking.masking import constants as _cfg
 from datamasking.masking import surname as _surname
 from datamasking.masking import custom as _custom
 from datamasking.masking.context import (
     analyze_number_sign_context, analyze_br_keyword, assign_pib_roles,
-    looks_like_pib_line, parse_hybrid_line, WORD_SEPARATOR_RE,
+    is_name_patronymic_pair, looks_like_pib_line, parse_hybrid_line, WORD_SEPARATOR_RE,
 )
 from datamasking.masking.declension import analyze_patronymic
 from datamasking.masking.helpers import get_deterministic_seed, add_to_mapping
@@ -53,8 +55,13 @@ _UA_UPPER = "АБВГҐДЕЖЗІЙКЛМНОПРСТУФХЦЧШЩЮЯЄІЇҐ"
 # Прізвище у Title Case, зокрема подвійне з великої після дефіса
 # (Петренко-Іванова, Нечуй-Левицький)
 _SURNAME_RE = r'[А-ЯІЇЄҐ][а-яіїєґ\'ʼ’]{2,}(?:-[А-ЯІЇЄҐ]?[а-яіїєґ\'ʼ’]{2,})?'
-_SURNAME_UPPER_RE = r'[А-ЯІЇЄҐ]{3,}'
+# КАПСОМ, зокрема подвійне (ПЕТРЕНКО-КОВАЛЬ): до 3.1.20 включно бралась лише одна
+# частина, і друга (чи перша — «ПЕТРЕНКО» у «ПЕТРЕНКО-КОВАЛЬ І.М.») лишалась
+_SURNAME_UPPER_RE = r'[А-ЯІЇЄҐ][А-ЯІЇЄҐ\'ʼ’]{2,}(?:-[А-ЯІЇЄҐ][А-ЯІЇЄҐ\'ʼ’]+)?'
 _NAME_RE = r'(?:' + _SURNAME_RE + r'|' + _SURNAME_UPPER_RE + r')'
+# Прізвище перед ініціалами починається з початку слова (не з «КОВАЛЬ»
+# усередині «ПЕТРЕНКО-КОВАЛЬ»)
+_NAME_START = r"(?<![А-ЯІЇЄҐа-яіїєґA-Za-z'ʼ’-])"
 
 # Пробіл у межах рядка (НЕ \s — щоб ініціали не склеювались
 # з наступним рядком через \n)
@@ -63,7 +70,7 @@ _SP = r'[  ]'
 # Прізвище + 2 ініціали: Іванов П.А. / Іванов П. А. / ІВАНОВ П.А. / Іванов П.А (без
 # останньої крапки — лише якщо далі не літера)
 _RE_NAME_INI2 = re.compile(
-    r'(' + _NAME_RE + r')' + _SP + r'+([А-ЯІЇЄҐ])\.' + _SP + r'*([А-ЯІЇЄҐ])(?:\.|(?![а-яіїєґА-ЯІЇЄҐa-zA-Z\'ʼ’]))'
+    _NAME_START + r'(' + _NAME_RE + r')' + _SP + r'+([А-ЯІЇЄҐ])\.' + _SP + r'*([А-ЯІЇЄҐ])(?:\.|(?![а-яіїєґА-ЯІЇЄҐa-zA-Z\'ʼ’]))'
 )
 # 2 ініціали + Прізвище: П.А. Іванов / П. А. Іванов
 _RE_INI2_NAME = re.compile(
@@ -72,12 +79,24 @@ _RE_INI2_NAME = re.compile(
 )
 # Прізвище + 1 ініціал: Іванов П.
 _RE_NAME_INI1 = re.compile(
-    r'(' + _NAME_RE + r')' + _SP + r'+([А-ЯІЇЄҐ])\.(?![а-яіїєґА-ЯІЇЄҐa-zA-Z])'
+    _NAME_START + r'(' + _NAME_RE + r')' + _SP + r'+([А-ЯІЇЄҐ])\.(?![а-яіїєґА-ЯІЇЄҐa-zA-Z])'
 )
 # 1 ініціал + Прізвище: П. Іванов
 _RE_INI1_NAME = re.compile(
     r'(?<![а-яіїєґА-ЯІЇЄҐa-zA-Z])'
     r'([А-ЯІЇЄҐ])\.' + _SP + r'*(' + _NAME_RE + r')'
+)
+# Те саме з переносом рядка між прізвищем і двома ініціалами (жорстко
+# перенесений текст: «… Л.І.\nКоваль»): до 3.1.20 включно прізвище лишалось
+# відкритим. Лише два ініціали — один («Додаток А.») надто часто не ініціал;
+# рівному збігу в межах рядка програє (див. _non_overlapping)
+_SP_BREAK = _SP + r'*\r?\n' + _SP + r'*'
+_RE_NAME_BREAK_INI2 = re.compile(
+    _NAME_START + r'(' + _NAME_RE + r')' + _SP_BREAK + r'([А-ЯІЇЄҐ])\.' + _SP + r'*([А-ЯІЇЄҐ])\.'
+)
+_RE_INI2_BREAK_NAME = re.compile(
+    r'(?<![а-яіїєґА-ЯІЇЄҐa-zA-Z])'
+    r'([А-ЯІЇЄҐ])\.' + _SP + r'*([А-ЯІЇЄҐ])\.' + _SP_BREAK + r'(' + _NAME_RE + r')'
 )
 
 
@@ -144,6 +163,41 @@ def _left_token(text: str, pos: int) -> str:
     return tok
 
 
+def _non_overlapping(candidates: List[Any], penalized: frozenset = frozenset()) -> List[Any]:
+    """Неперекривні кандидати (start = [0], end = [1]) з найбільшою
+    кількістю; за рівної — з меншою кількістю *penalized* (індекси), далі —
+    з найбільшою сумарною довжиною, далі — раніші в списку. Для одного
+    перекриття без штрафів — те саме, що «найдовший перший»."""
+    order = sorted(range(len(candidates)), key=lambda i: candidates[i][1])
+    ends = [candidates[i][1] for i in order]
+    # best[k] — найкращий вибір серед перших k (за кінцем) кандидатів:
+    # (кількість, -штрафи, довжина, -сума індексів), попередній стан, узятий кандидат
+    best: List[Tuple[Tuple[int, int, int, int], int, int]] = [((0, 0, 0, 0), -1, -1)]
+    for k, i in enumerate(order):
+        start, end = candidates[i][0], candidates[i][1]
+        j = bisect.bisect_right(ends, start, 0, k)
+        prev = best[j][0]
+        take = (prev[0] + 1, prev[1] - (i in penalized), prev[2] + end - start, prev[3] - i)
+        best.append((take, j, i) if take > best[k][0] else (best[k][0], k, -1))
+    chosen = []
+    k = len(order)
+    while k > 0:
+        _score, back, taken = best[k]
+        if taken >= 0:
+            chosen.append(candidates[taken])
+        k = back
+    return chosen
+
+
+def _patronymic_after_name(text: str, pos: int, word: str) -> bool:
+    """Слово перед ініціалами — по батькові після імені («Мороз Ольги
+    Богданівни Л.А. Мороз»), а не прізвище: до 3.1.20 включно «Богданівни» маскувалось
+    як прізвище, далі основний розбір маскував маску ще раз, і unmask
+    повертав «Богимовичи»."""
+    before = text[:pos].split()
+    return bool(before) and is_name_patronymic_pair(before[-1], word)
+
+
 def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -> str:
     """
     Знаходить ПІБ з ініціалами та маскує їх.
@@ -167,7 +221,7 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
     # до 3.1.9 вони зводились до одного пробілу, і unmask повертав не оригінал
     for m in _RE_NAME_INI2.finditer(text):
         surname, i1, i2 = m.group(1), m.group(2), m.group(3)
-        if _is_surname_candidate(surname):
+        if _is_surname_candidate(surname) and not _patronymic_after_name(text, m.start(1), surname):
             mid_gap = text[m.end(2) + 1:m.start(3)]
             sur_gap = text[m.end(1):m.start(2)]
             # «Петренко О.П» без останньої крапки — маска теж без неї
@@ -183,7 +237,7 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
 
     for m in _RE_NAME_INI1.finditer(text):
         surname, i1 = m.group(1), m.group(2)
-        if _is_surname_candidate(surname):
+        if _is_surname_candidate(surname) and not _patronymic_after_name(text, m.start(1), surname):
             candidates.append((m.start(), m.end(), surname, [i1], "", text[m.end(1):m.start(2)], False, True))
 
     for m in _RE_INI1_NAME.finditer(text):
@@ -191,12 +245,29 @@ def _mask_initials_pib(text: str, masking_dict: Dict, instance_counters: Dict) -
         if _is_surname_candidate(surname) and _left_token(text, m.start()) not in _NON_INITIAL_LEFT:
             candidates.append((m.start(), m.end(), surname, [i1], "", text[m.end(1) + 1:m.start(2)], True, True))
 
-    # Довші патерни мають пріоритет; знімаємо перекриття
-    candidates.sort(key=lambda x: (x[1] - x[0]), reverse=True)
-    kept: List[Tuple[int, int, str, List[str], str, str, bool, bool]] = []
-    for c in candidates:
-        if not any(c[0] < k[1] and c[1] > k[0] for k in kept):
-            kept.append(c)
+    # Через перенос рядка — програють рівному кандидатові в межах рядка, але
+    # беруться, коли дають ще одне ПІБ («Ю.А. ЗІНЧЕНКО Н.І.\nСАВЧУК»)
+    crossing_from = len(candidates)
+    if '\n' in text:
+        for m in _RE_NAME_BREAK_INI2.finditer(text):
+            surname, i1, i2 = m.group(1), m.group(2), m.group(3)
+            if (_is_surname_candidate(surname)
+                    and not _patronymic_after_name(text, m.start(1), surname)):
+                candidates.append((m.start(), m.end(), surname, [i1, i2], text[m.end(2) + 1:m.start(3)],
+                                   text[m.end(1):m.start(2)], False, True))
+        for m in _RE_INI2_BREAK_NAME.finditer(text):
+            i1, i2, surname = m.group(1), m.group(2), m.group(3)
+            if (_is_surname_candidate(surname)
+                    and _left_token(text, m.start()) not in _NON_INITIAL_LEFT):
+                candidates.append((m.start(), m.end(), surname, [i1, i2], text[m.end(1) + 1:m.start(2)],
+                                   text[m.end(2) + 1:m.start(3)], True, True))
+
+    # Знімаємо перекриття: якомога більше ПІБ, за рівної кількості — довші,
+    # далі — у порядку пошуку. До 3.1.20 включно брався найдовший першим:
+    # у «Ю.А. Зінченко Н.І. Савчук» перемагало «Зінченко Н.І.», і «Ю.А.» та
+    # «Савчук» лишались відкритими
+    kept: List[Tuple[int, int, str, List[str], str, str, bool, bool]] = _non_overlapping(
+        candidates, frozenset(range(crossing_from, len(candidates))))
 
     # Фаза 2: у порядку документа маскуємо, записуємо mapping
     # і збираємо результат сегментами (O(n))
@@ -272,7 +343,12 @@ def _unmasked_residue(text: str, masking_dict: Dict, instance_counters: Dict,
         for m in _get_rank_forms_re().finditer(text):
             info = _cfg.RANK_TO_NOMINATIVE.get(" ".join(m.group(0).split()).lower())
             if info:
-                rank_counts[info[0]] = rank_counts.get(info[0], 0) + 1
+                # Ключ — як у mapping: без «медичної служби» / «юстиції»
+                # (mask_rank отримує базове звання). До 3.1.20 включно відкрите
+                # «капітан медичної служби» рахувалось окремо від «капітан»,
+                # могло стати маскою іншого звання, і unmask його підміняв
+                base = extract_base_rank(info[0])[0].lower()
+                rank_counts[base] = rank_counts.get(base, 0) + 1
     token_counts: Dict[str, int] = {}
     for m in _TOKEN_RE.finditer(text):
         tok = m.group(0).lower()
@@ -308,12 +384,16 @@ def _get_broken_ranks_re() -> Optional[Pattern[str]]:
             _BROKEN_RANKS_RE = re.compile(r'(?i)\b(' + '|'.join(patterns) + r')\b')
     return _BROKEN_RANKS_RE
 
-def normalize_broken_ranks(text: str) -> str:
+def normalize_broken_ranks(text: str, line_joiner: Optional[str] = None) -> str:
     """
     Нормалізує розірвані звання у тексті (Bug Fix #15).
 
     Звання може бути розірване переносом рядка в документах:
     - "старшого\nсержанта" -> "старшого сержанта"
+
+    *line_joiner* (рушій, після 3.1.20): перенос замінюється цим символом, а
+    пробіли довкола лишаються — після маскування рушій повертає перенос, і
+    розмаскований текст збігається з оригіналом.
     """
     pattern = _get_broken_ranks_re()
     if pattern is None:
@@ -323,9 +403,85 @@ def normalize_broken_ranks(text: str) -> str:
         # Лише розрив переносом рядка; таб чи подвійний пробіл між словами
         # звання лишаються (до 3.1.7 стискались безповоротно — unmask не
         # відновлював оригінальні роздільники)
+        if line_joiner is not None:
+            return match.group(0).replace('\n', line_joiner)
         return re.sub(r'\s*\n\s*', ' ', match.group(0))
 
     return pattern.sub(replace_match, text)
+
+
+# Службовий пробіл на місці переносу рядка всередині звання чи ПІБ на час
+# розбору (рядок розбирається цілком): для str.split() і \s це пробіл, але
+# не межа рядка; після маскування знову стає '\n' (після 3.1.20)
+_LINE_JOIN = "\x1f"
+
+
+_RANK_TAIL_WORDS: Optional[frozenset] = None
+
+
+def _rank_tail_words() -> frozenset:
+    """Слова, якими може закінчуватись звання перед ПІБ («сержанта»,
+    «служби», «відставці»)."""
+    global _RANK_TAIL_WORDS
+    if _RANK_TAIL_WORDS is None:
+        words = {w for form in _cfg.ALL_RANK_FORMS for w in form.split()}
+        words |= {"служби", "юстиції", "відставці", "запасі", "запасу", "резерві", "пенсії"}
+        _RANK_TAIL_WORDS = frozenset(words)
+    return _RANK_TAIL_WORDS
+
+
+def _pib_crosses_break(prev: str, nxt: str) -> bool:
+    """Чи розриває перенос між *prev* і *nxt* ПІБ із по батькові («Петренка
+    Івана\\nІвановича», «Шановний Олегу\\nПетровичу!») або відділяє звання
+    від ПІБ («старшого сержанта\\nПетренка Івана Івановича»).
+
+    Рядки розбираються разом, як основний цикл: знайдений ПІБ (і звання
+    перед ним) замінюється підкресленнями тієї самої довжини, далі —
+    наступний, поки не знайдеться той, що перетинає межу."""
+    tail, head = prev.split()[-1:], nxt.split()[:1]
+    if not tail or not head or not head[0][:1].isupper():
+        return False
+    last = tail[0].strip(".,;:!?»\"'()").lower()
+    if not (tail[0][:1].isupper() or last in _rank_tail_words()):
+        return False
+    fragment = prev + " " + nxt
+    boundary = len(prev)
+    if not looks_like_pib_line(fragment):
+        return False
+    for _ in range(50):
+        rank, pib, _ = parse_hybrid_line(fragment)
+        if not pib or "___" in pib:
+            return False
+        rank_span, span = locate_rank_and_pib(fragment, rank or "", pib)
+        if span is None:
+            return False
+        if span[0] < boundary < span[1]:
+            return bool(assign_pib_roles(pib.split())[2])
+        if rank_span is not None and rank_span[1] <= boundary < span[0]:
+            return True
+        start = rank_span[0] if rank_span is not None else span[0]
+        replaced = fragment[:start] + "_" * (span[1] - start) + fragment[span[1]:]
+        if replaced == fragment:
+            return False
+        fragment = replaced
+    return False
+
+
+def _join_broken_pib_lines(text: str) -> str:
+    """Рядки, між якими перенос розриває ПІБ (див. _pib_crosses_break),
+    склеюються через _LINE_JOIN: інакше частина ПІБ на іншому рядку лишалась
+    відкритою («Петренка\\nІвана Івановича» — прізвище, «Петренка Івана\\n
+    Івановича» — по батькові)."""
+    if '\n' not in text:
+        return text
+    lines = text.split('\n')
+    out = [lines[0]]
+    for nxt in lines[1:]:
+        if _pib_crosses_break(out[-1], nxt):
+            out[-1] = out[-1] + _LINE_JOIN + nxt
+        else:
+            out.append(nxt)
+    return '\n'.join(out)
 
 
 # Лапки (відкриваючі/закриваючі будь-якого стилю) для пошуку значень у лапках
@@ -498,6 +654,71 @@ def locate_words_before(line: str, phrase: str, before: int) -> Optional[Tuple[i
     return best.start(), best.end(), list(best.groups())
 
 
+def _words_pattern(phrase: str) -> str:
+    return (r"(?<![\w'’ʼ-])" + r"([\s|]+)".join(re.escape(w) for w in phrase.split())
+            + r"(?![\w'’ʼ-])")
+
+
+_RANK_PIB_GAP_RE = re.compile(r"[\s|«»\"„“”']*")
+
+
+def locate_rank_and_pib(line: str, rank: str, pib: str) -> Tuple[Optional[Tuple[int, int, List[str]]],
+                                                                  Optional[Tuple[int, int, List[str]]]]:
+    """(звання, ПІБ) — входження ПІБ, перед яким упритул (через пробіли чи
+    лапки) стоїть звання, як їх і знаходить розбір. Немає такої пари — (None,
+    перше входження ПІБ). До 3.1.20 включно ПІБ брався за першим входженням у рядку:
+    у «М.О. Ткачук Адмірал Ткачук» звання діставалось першому «Ткачук»."""
+    if rank and rank.split() and pib.split():
+        rank_matches = list(re.finditer(_words_pattern(rank), line))
+        for m in re.finditer(_words_pattern(pib), line):
+            for r in reversed(rank_matches):
+                if r.end() <= m.start():
+                    if _RANK_PIB_GAP_RE.fullmatch(line[r.end():m.start()]):
+                        return ((r.start(), r.end(), list(r.groups())),
+                                (m.start(), m.end(), list(m.groups())))
+                    break
+    return None, locate_words(line, pib)
+
+
+def _locate_from(line: str, phrase: str, pos: int) -> Optional[Tuple[int, int, List[str]]]:
+    """Перше входження *phrase*, що починається не раніше *pos*."""
+    if not phrase.split():
+        return None
+    m = re.compile(_words_pattern(phrase)).search(line, pos)
+    return (m.start(), m.end(), list(m.groups())) if m else None
+
+
+def _mask_rank_in_line(rank: str, separators: List[str], masking_dict: Dict,
+                       instance_counters: Dict) -> str:
+    """Маска звання з роздільниками оригіналу (відкладене маскування рядка)."""
+    masked = mask_rank_preserve_case(rank, masking_dict, instance_counters)
+    return join_with_separators(masked.split(), separators)
+
+
+def _mask_pib_in_line(parts: List[str], rank: Optional[str], separators: List[str],
+                      masking_dict: Dict, instance_counters: Dict) -> str:
+    """Маска ПІБ із 2+ слів (відкладене маскування рядка)."""
+    # Ролі слів: «Петренко Олег Петрович», «Іван ПЕТРЕНКО» (прізвище капсом
+    # після імені), «Олегу Петровичу» (без прізвища), «Олегу Петровичу
+    # Петренку» (v3.1.13)
+    surname, name, patronymic, order = assign_pib_roles(parts)
+    # Рід і відмінок імені: по батькові (і в кличному — «Тетяно Петрівно»),
+    # інакше — звання поруч (v3.1.12)
+    rank_case, rank_gender = _rank_hints(rank)
+    pat_gender = analyze_patronymic(patronymic).gender if patronymic else 'unknown'
+    gender_hint = pat_gender if pat_gender != 'unknown' else rank_gender
+    masked_roles: Dict[str, str] = {}
+    if surname:
+        masked_roles['surname'] = mask_surname(surname, masking_dict, instance_counters) if _cfg.MASK_SURNAMES else surname
+    masked_roles['name'] = mask_name(name, masking_dict, instance_counters, gender_hint=gender_hint,
+                                     patronymic_hint=patronymic, case_hint=rank_case) if _cfg.MASK_NAMES else name
+    if patronymic:
+        masked_roles['patronymic'] = mask_patronymic(patronymic, gender_hint or 'male', masking_dict, instance_counters)
+    masked_parts = [masked_roles[role] for role in order if role in masked_roles]
+    # Роздільники між словами (таб, «|», подвійний пробіл) — як в оригіналі
+    return join_with_separators(masked_parts, separators)
+
+
 def join_with_separators(words: List[str], separators: List[str]) -> str:
     """Склеює слова оригінальними роздільниками (їх на 1 менше, ніж слів;
     якщо кількість слів змінилась — одинарні пробіли)."""
@@ -564,6 +785,8 @@ def _mask_text_core(text: str, masking_dict: Dict, instance_counters: Dict,
     # формою (див. mask_rank, v3.1.14) — і в пробному, і в основному прогоні
     saved_feminine = _cfg.FEMININE_RANK_BASES
     _cfg.FEMININE_RANK_BASES = _feminine_rank_bases(text)
+    saved_spaced = _cfg.SPACED_RANK_BASES
+    _cfg.SPACED_RANK_BASES = _spaced_rank_bases(text)
     saved = _cfg.AVOID_RANK_MASKS
     try:
         # Звання і слова, що лишаться відкритими, — заборонені як маски (див. _unmasked_residue)
@@ -574,6 +797,7 @@ def _mask_text_core(text: str, masking_dict: Dict, instance_counters: Dict,
     finally:
         _cfg.AVOID_RANK_MASKS = saved
         _cfg.FEMININE_RANK_BASES = saved_feminine
+        _cfg.SPACED_RANK_BASES = saved_spaced
         _surname.set_residue(None)
     return ("\ufeff" + text) if bom else text
 
@@ -589,11 +813,54 @@ def _feminine_rank_bases(text: str) -> frozenset:
     return frozenset(bases)
 
 
+# Роздільник між словами, який не є одним звичайним пробілом
+_IRREGULAR_SPACE = re.compile(r"[^\S ]| {2,}")
+
+
+_RANK_SPAN_CACHE: Dict[int, Pattern] = {}
+
+
+def _rank_span_regex() -> Pattern:
+    """Будь-яка форма звання (довші — першими) з необов'язковими «медичної
+    служби» / «юстиції» і «у відставці» / «в запасі» …; слова — через будь-які
+    пробільні роздільники."""
+    key = id(_cfg.RANK_TO_NOMINATIVE)
+    if key not in _RANK_SPAN_CACHE:
+        forms = sorted(_cfg.RANK_TO_NOMINATIVE, key=len, reverse=True)
+        alternatives = "|".join(r"\s+".join(re.escape(w) for w in f.split()) for f in forms)
+        _RANK_SPAN_CACHE[key] = re.compile(
+            r"(?<![\w-])(?:" + alternatives + r")"
+            r"(?:\s+(?:медичної\s+служби|юстиції))?"
+            r"(?:\s+(?:(?:у|в)\s+(?:відставці|запасі|резерві)|на\s+пенсії))?"
+            r"(?![\w-])", re.IGNORECASE)
+    return _RANK_SPAN_CACHE[key]
+
+
+def _spaced_rank_bases(text: str) -> frozenset:
+    """Базові звання (як їх отримує mask_rank: без «медичної служби» /
+    «юстиції»), записані в тексті з нестандартним роздільником між словами
+    («старший\\xa0сержант», «сержант\\xa0медичної служби»)."""
+    if not _IRREGULAR_SPACE.search(text):
+        return frozenset()
+    bases = set()
+    for match in _rank_span_regex().finditer(text):
+        if _IRREGULAR_SPACE.search(match.group(0)):
+            base_text = extract_base_rank(" ".join(match.group(0).split()))[0]
+            base = get_rank_info(base_text)[0]
+            if base:
+                bases.add(base.lower())
+    return frozenset(bases)
+
+
 def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
                          kept: Optional[List[Tuple[str, str]]] = None) -> str:
+    # Переноси всередині звання чи ПІБ — службовий пробіл на час розбору
+    # (у кінці знову '\n'); якщо цей символ уже є в тексті — як у 3.1.20
+    line_join = _LINE_JOIN not in text
+
     # === ШАГ 0: Нормалізація розірваних звань
     if _cfg.RANK_LINE_BREAK_FIX:
-        text = normalize_broken_ranks(text)
+        text = normalize_broken_ranks(text, _LINE_JOIN if line_join else None)
 
     # === ШАГ 0.5: ПІБ з ініціалами (Іванов П.А., П. Іванов тощо)
     # Запускаємо ДО основного парсера, щоб ініціали не плутали looks_like_pib_line
@@ -786,6 +1053,8 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
         segments.append(text[prev_end:])
         text = ''.join(segments)
 
+    if line_join:
+        text = _join_broken_pib_lines(text)
     lines = text.split('\n')
     masked_lines = []
     for line in lines:
@@ -802,9 +1071,11 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
         # щойно вставленого «старшого солдата» → «старшого рядового» (такого
         # звання немає), а справжнє «солдата» лишалось відкритим.
         current_line_for_parsing = line
-        placeholders: List[Tuple[str, str]] = []
+        # Значення — рядок або відкладене маскування: маски обчислюються
+        # після розбору рядка в порядку позицій (див. нижче)
+        placeholders: List[Tuple[str, Union[str, Callable[[], str]]]] = []
 
-        def _hold(kind: str, value: str) -> str:
+        def _hold(kind: str, value: Union[str, Callable[[], str]]) -> str:
             token = f"___{kind}_MASKED_{len(placeholders) + 1}___"
             placeholders.append((token, value))
             return token
@@ -830,13 +1101,18 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
                 break
 
             if rank and _cfg.MASK_RANKS:
-                rank_span = locate_words_before(current_line_for_parsing, rank, pib_span[0])
+                # Звання й ПІБ — пара, що стоїть упритул (як її знаходить
+                # розбір), а не перше входження ПІБ у рядку
+                rank_span, adjacent_pib = locate_rank_and_pib(current_line_for_parsing, rank, pib)
+                if rank_span is None:
+                    rank_span = locate_words_before(current_line_for_parsing, rank, pib_span[0])
                 if rank_span is not None:
-                    masked_rank_val = mask_rank_preserve_case(rank, masking_dict, instance_counters)
-                    masked_rank_val = join_with_separators(masked_rank_val.split(), rank_span[2])
-                    current_line_for_parsing = _replace_span(current_line_for_parsing, rank_span,
-                                                             _hold("RANK", masked_rank_val))
-                    pib_span = locate_words(current_line_for_parsing, pib)
+                    token = _hold("RANK", functools.partial(_mask_rank_in_line, rank, rank_span[2],
+                                                            masking_dict, instance_counters))
+                    current_line_for_parsing = _replace_span(current_line_for_parsing, rank_span, token)
+                    after_rank = rank_span[0] + len(token)
+                    pib_span = ((_locate_from(current_line_for_parsing, pib, after_rank) if adjacent_pib else None)
+                                or locate_words(current_line_for_parsing, pib))
                     if pib_span is None:
                         break
 
@@ -870,34 +1146,18 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
                     iteration += 1
                     continue
                 if len(parts) >= 2:
-                    # Ролі слів: «Петренко Олег Петрович», «Іван ПЕТРЕНКО»
-                    # (прізвище капсом після імені), «Олегу Петровичу» (без
-                    # прізвища), «Олегу Петровичу Петренку» (v3.1.13)
-                    surname, name, patronymic, order = assign_pib_roles(parts)
-                    # Рід і відмінок імені: по батькові (і в кличному —
-                    # «Тетяно Петрівно»), інакше — звання поруч (v3.1.12)
-                    rank_case, rank_gender = _rank_hints(rank)
-                    pat_gender = analyze_patronymic(patronymic).gender if patronymic else 'unknown'
-                    gender_hint = pat_gender if pat_gender != 'unknown' else rank_gender
-                    masked_roles: Dict[str, str] = {}
-                    if surname:
-                        masked_roles['surname'] = mask_surname(surname, masking_dict, instance_counters) if _cfg.MASK_SURNAMES else surname
-                    masked_roles['name'] = mask_name(name, masking_dict, instance_counters, gender_hint=gender_hint,
-                                               patronymic_hint=patronymic, case_hint=rank_case) if _cfg.MASK_NAMES else name
-                    if patronymic:
-                        masked_roles['patronymic'] = mask_patronymic(patronymic, gender_hint or 'male', masking_dict, instance_counters)
-                    masked_parts = [masked_roles[role] for role in order if role in masked_roles]
-
-                    # Роздільники між словами (таб, «|», подвійний пробіл) — як в оригіналі
-                    masked_pib_str = join_with_separators(masked_parts, pib_span[2])
-                    current_line_for_parsing = _replace_span(current_line_for_parsing, pib_span,
-                                                             _hold("PIB", masked_pib_str))
+                    current_line_for_parsing = _replace_span(
+                        current_line_for_parsing, pib_span,
+                        _hold("PIB", functools.partial(_mask_pib_in_line, parts, rank, pib_span[2],
+                                                       masking_dict, instance_counters)))
                 elif len(parts) == 1 and rank:
                     # Звання + лише прізвище («рядовий Іванов прибув») —
                     # раніше такий ПІБ узагалі не маскувався
-                    masked_surname = mask_surname(parts[0], masking_dict, instance_counters) if _cfg.MASK_SURNAMES else parts[0]
-                    current_line_for_parsing = _replace_span(current_line_for_parsing, pib_span,
-                                                             _hold("PIB", masked_surname))
+                    lone = parts[0]
+                    current_line_for_parsing = _replace_span(
+                        current_line_for_parsing, pib_span,
+                        _hold("PIB", (functools.partial(mask_surname, lone, masking_dict, instance_counters)
+                                      if _cfg.MASK_SURNAMES else lone)))
                 else:
                     # Нічого не замінено (напр. один ПІБ-кандидат без звання) —
                     # сховати фрагмент, щоб цикл не крутився на тому ж місці
@@ -908,11 +1168,19 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
                                                          _hold("PIB", current_line_for_parsing[pib_span[0]:pib_span[1]]))
             iteration += 1
 
+        final_line = current_line_for_parsing
+        # Маски — у порядку позицій у рядку, а не розбору: розбір бере ПІБ
+        # після звання раніше за ПІБ перед ним, а unmask роздає номери
+        # входжень маски в порядку тексту. Коли дві різні форми дістають
+        # однакову маску («Іване» і «Івану» → «Ігорю»), до 3.1.20 включно вони
+        # розмасковувались навпаки
+        values: Dict[str, str] = {}
+        for token, value in sorted(placeholders, key=lambda tv: final_line.find(tv[0])):
+            values[token] = value() if callable(value) else value
         # У зворотному порядку: значення пізнішого плейсхолдера може містити
         # раніший токен (перестраховка — див. перевірку "___" вище)
-        final_line = current_line_for_parsing
-        for token, value in reversed(placeholders):
-            final_line = final_line.replace(token, value, 1)
+        for token, _value in reversed(placeholders):
+            final_line = final_line.replace(token, values[token], 1)
         masked_lines.append(final_line)
 
     text = '\n'.join(masked_lines)
@@ -924,6 +1192,8 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
     # основного циклу, з пропуском уже замаскованих форм
     text = _mask_quoted_ranks(text, masking_dict, instance_counters)
 
+    if line_join:
+        text = text.replace(_LINE_JOIN, '\n')
     return text
 
 def mask_json_recursive(data: Any, masking_dict: Dict, instance_counters: Dict) -> Any:

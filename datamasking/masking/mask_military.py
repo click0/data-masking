@@ -155,7 +155,9 @@ def mask_brigade_number(original: str, masking_dict: Dict, instance_counters: Di
     if original in masking_dict["mappings"]["brigade_number"]:
         masked = masking_dict["mappings"]["brigade_number"][original]["masked_as"]
     else:
-        match = re.match(r'(\d+)((?:-[а-яіїєґА-ЯІЇЄҐ]{1,2})?\s+.+)', original)
+        # DOTALL: назва бригади може бути розірвана переносом рядка; без нього
+        # «.+» зупинялось на \n, і решта назви зникала з маски (після 3.1.20)
+        match = re.match(r'(\d+)((?:-[а-яіїєґА-ЯІЇЄҐ]{1,2})?\s+.+)', original, re.DOTALL)
         if not match: return original
         number, rest = match.group(1), match.group(2)
         seed = get_deterministic_seed(original)
@@ -306,11 +308,17 @@ _mask_date_text = mask_date_text
 # ============================================================================
 
 def get_rank_category_and_match(text: str) -> Tuple[Optional[str], Optional[str]]:
+    """Категорія звання та збіг. Найдовший збіг серед усіх категорій (за
+    рівної довжини — перша категорія): до 3.1.20 включно армійський шаблон знаходив
+    «капітан» у «капітан 1-го рангу» і «капітан-лейтенант», і флотське
+    звання маскувалось армійським («майор»)."""
     text_lower = text.lower()
+    best: Tuple[Optional[str], Optional[str]] = (None, None)
     for category, pattern in _cfg.RANK_PATTERNS.items():
         match = re.search(pattern, text_lower, re.IGNORECASE)
-        if match: return category, match.group(0)
-    return None, None
+        if match and (best[1] is None or len(match.group(0)) > len(best[1])):
+            best = (category, match.group(0))
+    return best
 
 def get_rank_info(rank_form: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     rank_lower = rank_form.lower()
@@ -411,6 +419,26 @@ def mask_rank(original: str, masking_dict: Dict, instance_counters: Dict) -> str
                 continue
             break
 
+    # Звання, записане в документі з нерозривним пробілом, табом чи
+    # подвійним пробілом між словами, потребує маски з тією самою кількістю
+    # слів: роздільники переносяться в маску лише слово в слово, і
+    # «старший\xa0майстер-сержант» → «майстер-сержант» розмасковувався зі
+    # звичайним пробілом (після 3.1.20)
+    if search_key in _cfg.SPACED_RANK_BASES and len(masked.split()) != len(search_key.split()):
+        need_feminine = search_key in _cfg.FEMININE_RANK_BASES
+        n_words = len(search_key.split())
+        for distance in range(1, len(hierarchy)):
+            for alt_idx in (idx + distance, idx - distance):
+                if 0 <= alt_idx < len(hierarchy):
+                    alt = hierarchy[alt_idx]
+                    if (alt.lower() != search_key and len(alt.split()) == n_words
+                            and alt.lower() not in _cfg.AVOID_RANK_MASKS
+                            and (not need_feminine or alt.lower() in _cfg.RANK_FEMININE_MAP)):
+                        masked = alt
+                        break
+            else:
+                continue
+            break
 
     # Store mapping by base form (nominative) for consistency
     final_masked = add_to_mapping(masking_dict, instance_counters, "rank", lookup_key, masked)

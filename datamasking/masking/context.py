@@ -375,11 +375,18 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
     # якір у рядку. Раніше брався лише ПЕРШИЙ якір; якщо за ним не було
     # ≥2 слів імені (наприклад, «Сірченко Е.Г.» — уже замаскована фаза
     # ініціалів), увесь рядок кидався і справжній ПІБ далі лишався відкритим.
+    # Якорі — по всьому рядку, крім слів звань: до 3.1.20 включно бралися лише
+    # якорі ПІСЛЯ першого звання, і «Петренко Іван Іванович доповів
+    # капітану про виконання» лишалось відкритим цілком (звання знайдено,
+    # після нього ПІБ немає, а ПІБ перед ним не розглядався)
+    rank_tokens: Set[int] = set()
+    for _r_index, _r_form, r_first, r_count in rank_matches:
+        rank_tokens.update(range(r_first, r_first + r_count))
     starts = []
     if pib_start_index != -1:
         starts.append((pib_start_index, True))
     for i, part in enumerate(parts):
-        if i > pib_start_index and is_pib_anchor(part):
+        if i != pib_start_index and i not in rank_tokens and is_pib_anchor(part):
             starts.append((i, False))
     if not starts: return None, None, identifier
 
@@ -399,8 +406,11 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
         pib_words = _extract_pib_words(parts, start, after_rank)
         if not pib_words:
             continue
-        # Посада чи назва підрозділу капсом без по батькові — не ПІБ (v3.1.17)
-        if not after_rank and _caps_block_without_patronymic(parts, start):
+        # Посада чи назва підрозділу капсом без по батькові — не ПІБ (v3.1.17).
+        # Кандидат із по батькові у вікні («НАКАЗУ БІЛИЙ Тарас Васильович») —
+        # не назва, навіть коли капсом стоїть і заголовок перед ним (після 3.1.20)
+        if (not after_rank and _caps_block_without_patronymic(parts, start)
+                and not _strong_pib_words(pib_words)):
             continue
         # «Заява Петренка Олега Петровича», «Характеристика Коваль Тетяни
         # Сергіївни»: слово з великої перед ПІБ потрапляло у вікно з трьох
@@ -453,7 +463,11 @@ def _caps_block_without_patronymic(parts: List[str], start: int) -> bool:
     собою. До 3.1.17 назва посади маскувалась як «МАСАҐАНИКОМ ІГОР ОРЕСТОВИЧ»."""
     # Блок рахується в обидва боки від початку кандидата: «СТАРШОГО ОПЕРАТОРА
     # РОЗРАХУНКУ» відкидалось із першого слова, а з другого («ОПЕРАТОРА
-    # РОЗРАХУНКУ») знову бралось за ПІБ
+    # РОЗРАХУНКУ») знову бралось за ПІБ. Кандидат не капсом — не частина
+    # блоку: «ВИТЯГ З НАКАЗУ Коваль Сергій Васильович» (до 3.1.20 включно прізвище
+    # лишалось відкритим, бо капсом стояв заголовок перед ним)
+    if not _caps_word(parts[start]):
+        return False
     begin = start
     while begin > 0 and _caps_word(parts[begin - 1]) and parts[begin - 1].rstrip(_cfg.QUOTE_CHARS)[-1:] not in ',.;:!?':
         begin -= 1
@@ -509,8 +523,13 @@ def roles_plausible(pib_words: List[str], after_rank: bool = False) -> bool:
         if len(surname_low) >= 7 and surname_low.endswith(('ом', 'ем')) \
                 and not name_low.endswith(_INSTRUMENTAL_NAME_ENDINGS):
             return False
-        if surname_low.endswith(('ого', 'ього', 'ому', 'ьому')) and analyze_name(name_low).case == 'nominative':
-            return False
+        if surname_low.endswith(('ого', 'ього', 'ому', 'ьому')):
+            # Відмінок імені — за по батькові, якщо воно є: «Білого Ярослава
+            # Миколайовича» — родовий від Ярослав, а не жіноче «Ярослава» в
+            # називному (до 3.1.20 включно прізвище лишалось відкритим)
+            pat_case = analyze_patronymic(patronymic).case if patronymic else None
+            if (pat_case or analyze_name(name_low).case) == 'nominative':
+                return False
     return True
 
 

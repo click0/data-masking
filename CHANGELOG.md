@@ -6,6 +6,56 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed — names left unmasked
+- A full name before a rank that is followed by more words was not masked
+  at all: `Петренко Іван Іванович доповів капітану про виконання.`,
+  `Петренко Іван Іванович, 1990 р.н., солдат за контрактом`. The parser
+  looked for a name only after the first rank of the line.
+- A line break inside a name left part of it open: the surname in
+  `Петренка\nІвана Івановича`, the patronymic in `Петренка Івана\nІвановича`,
+  `Шановний Віталію\nРомановичу!`, the rank in `старшого сержанта\nПетренка …`.
+  Such lines are now parsed together, and the line break stays where it was.
+- Initials and a surname on adjacent lines (`… Л.І.\nКоваль`,
+  `Петренко\nО.П.`) are masked; one initial at the end of a line
+  (`Додаток А.`) is still not taken for a name.
+- In a run of initials and surnames (`Ю.А. Зінченко Н.І. Савчук`) only the
+  middle pair was masked, and `Ю.А.` and `Савчук` stayed open; the masker now
+  takes the set of matches that covers the most names.
+- A double surname in capitals with initials (`ПЕТРЕНКО-КОВАЛЬ І.М.`) kept
+  one part open; a surname in capitals with an apostrophe (`ПИЛИП'ЮК О.І.`)
+  was not masked.
+- The surname stayed open after a heading in capitals (`ВИТЯГ З НАКАЗУ
+  Коваль Сергій Васильович`) and for an adjective surname in an oblique case
+  (`Рапорт Білого Ярослава Миколайовича`).
+- `Шановна Любове Андріївно!`: the vocative `Любове` was not recognised, so
+  the name got a surname mask and the patronymic a male name.
+
+### Fixed — unmasking did not restore the original
+- A rank `… медичної служби` masked as `генерал-майор медичної служби` was
+  not restored (the unmasker found `майор медичної служби` inside it).
+- A rank written with a non-breaking space, a tab or several spaces between
+  its words (`старший майстер-сержант`) came back with a plain space when
+  the mask had a different number of words. The mask now keeps the number of
+  words, so the separators carry over and back.
+- A rank broken across lines (`старшого\nсержанта`) came back joined with a
+  space; the line break is now restored. `normalize_broken_ranks()` itself
+  is unchanged.
+- An open rank `… медичної служби` (one without a name) could become the
+  mask of another rank, and unmasking then replaced it.
+- A patronymic before initials (`Мороз Ольги Богданівни Л.А. Мороз`) was
+  masked as a surname and then masked again.
+- Two different forms with the same mask in one line (`Іване` and `Івану`
+  both masked as `Ігорю`) were restored the wrong way round: masks in a line
+  are now recorded in text order.
+- A brigade number broken across lines lost the rest of its name in the
+  masked text (`60 окремої\nмеханізованої бригади` → `30 окремої`).
+
+### Changed — masks
+- Naval ranks get naval masks: `капітан 1-го рангу` and `капітан-лейтенант`
+  were masked as army ranks (`майор`, `лейтенант`).
+- The feminine genitive of an adjective surname (`Білої`) gets the same
+  synthetic stem as its other forms (`Біла`, `Білій`).
+
 ### Changed — release process
 - The version is bumped at release time, not on every commit. Changes
   collect under `## [Unreleased]`, and the release commit sets the version
