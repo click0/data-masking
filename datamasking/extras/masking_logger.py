@@ -131,7 +131,7 @@ class MaskingLogger:
             log_file: Optional path to a log file.
         """
         self.logger = logging.getLogger(name)
-        self.logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+        self.logger.setLevel(getattr(logging, str(level).strip().upper(), logging.INFO))
         self.format_type = format_type
 
         # Internal statistics counters

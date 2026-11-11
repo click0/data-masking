@@ -337,6 +337,11 @@ def apply_filter_to_globals(
     # Тип «date» охоплює і цифрові, і текстові дати
     if "MASK_DATES" in globals_dict:
         globals_dict["MASK_DATE_TEXT"] = globals_dict["MASK_DATES"]
+    # «order_number» — і номери інших документів («довідка № 4567»): до
+    # 3.1.21 --only surname їх усе одно маскувало, а --exclude order_number
+    # не вимикало
+    if "MASK_ORDERS" in globals_dict:
+        globals_dict["MASK_DOCUMENT_NUMBERS"] = globals_dict["MASK_ORDERS"]
 
 
 # ============================================================================

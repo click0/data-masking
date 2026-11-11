@@ -8,12 +8,14 @@ Extracted from data_masking.py during the package refactoring (v2.5.0).
 """
 
 import bisect
+import copy
 import functools
 import json
 import random
 import re
 from typing import Any, Callable, Dict, List, Optional, Pattern, Tuple, Union
 
+from datamasking import _jsontext
 from datamasking.masking import constants as _cfg
 from datamasking.masking import surname as _surname
 from datamasking.masking import custom as _custom
@@ -337,7 +339,6 @@ def _unmasked_residue(text: str, masking_dict: Dict, instance_counters: Dict,
 
     Пробний прогін на копіях mapping і лічильників: скільки разів слово
     трапляється в тексті, мінус скільки разів його замасковано."""
-    import copy
     rank_counts: Dict[str, int] = {}
     if _cfg.MASK_RANKS:
         for m in _get_rank_forms_re().finditer(text):
@@ -370,6 +371,12 @@ def _unmasked_residue(text: str, masking_dict: Dict, instance_counters: Dict,
 
     rank_residue = {base for base, n in rank_counts.items() if n > masked.get(base, 0)}
     token_residue = {tok for tok, n in token_counts.items() if n > masked.get(tok, 0)}
+    # Числова маска шукається при unmask з межею «не цифра», тож «1» знаходиться
+    # і всередині відкритого «п. 1.2» / «2024-2025». До 3.1.21 тут був лише
+    # токен цілком, маска наказу «№ 1» могла збігтися з частиною такого числа,
+    # і unmask віддавав її номер не тому входженню
+    for tok in [t for t in token_residue if t[:1].isdigit()]:
+        token_residue.update(re.findall(r'\d+', tok))
     return rank_residue, token_residue
 
 
@@ -894,6 +901,14 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
         items_to_skip.append(item)
         covered_skip[item['start']:item['end']] = b'\x01' * (item['end'] - item['start'])
 
+    # Захищені фрази (___KEEP…___) не маскуються жодною фазою: до 3.1.21
+    # custom-шаблон «[A-Z]{3,}» знаходив «KEEPA» в токені, і фраза зникала
+    for token, _original in kept or ():
+        pos = text.find(token)
+        while pos != -1:
+            covered_skip[pos:pos + len(token)] = b'\x01' * len(token)
+            pos = text.find(token, pos + len(token))
+
     if not _cfg.MASK_DATES:
         for match in re.finditer(_cfg.UKRAINIAN_DATE_PATTERN, text):
             _add_skip({'start': match.start(), 'end': match.end(), 'text': match.group(0), 'reason': 'full_date', 'type': 'date'})
@@ -1017,6 +1032,10 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
 
     segments = []
     prev_end = 0
+    # Маски custom-шаблонів і always_mask — за токенами до кінця розбору
+    # ПІБ: до 3.1.21 «сержант Сокіл» → «сержант Цуліж», далі фаза ПІБ
+    # маскувала маску ще раз («Цулій»), і unmask не повертав «Сокіл»
+    custom_held: List[Tuple[str, str]] = []
     for item in items_to_mask:
         if item['start'] < prev_end: continue  # перекриття — пропускаємо
         if text[item['start']:item['end']] != item['full_text']: continue
@@ -1034,6 +1053,10 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
             replacement = _mask_date_text(item['full_text'], masking_dict, instance_counters)
         elif item['type'] == 'custom':
             replacement = _custom.mask_custom(item['full_text'], masking_dict, instance_counters, text)
+            if replacement and replacement != item['full_text']:
+                token = "___CMASK" + _letters(len(custom_held)) + "___"
+                custom_held.append((token, replacement))
+                replacement = token
         elif item['type'] == 'order_simple':
             masked = mask_order_number(item['number_part'], masking_dict, instance_counters)
             replacement = item['full_text'].replace(item['number_part'], masked, 1)
@@ -1192,6 +1215,8 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
     # основного циклу, з пропуском уже замаскованих форм
     text = _mask_quoted_ranks(text, masking_dict, instance_counters)
 
+    for token, value in custom_held:
+        text = text.replace(token, value, 1)
     if line_join:
         text = text.replace(_LINE_JOIN, '\n')
     return text
@@ -1201,6 +1226,21 @@ def mask_json_recursive(data: Any, masking_dict: Dict, instance_counters: Dict) 
     # не збіглась зі словом з іншого поля
     _surname.enter_document(json.dumps(data, ensure_ascii=False) if isinstance(data, (dict, list)) else str(data))
     try:
+        # Усі рядки — одним текстом (див. datamasking/_jsontext.py): так
+        # unmask рахує входження масок так само, а маска не збігається з
+        # відкритим словом іншого рядка
+        strings = _jsontext.collect_strings(data)
+        sep = _jsontext.separator(strings) if len(strings) > 1 else None
+        if sep is not None:
+            saved = copy.deepcopy(masking_dict), dict(instance_counters)
+            parts = mask_text_context_aware(sep.join(strings), masking_dict, instance_counters).split(sep)
+            if len(parts) == len(strings):
+                return _jsontext.replace_strings(data, iter(parts))
+            # Маскування зачепило роздільник (не мало б статися) — по рядку
+            masking_dict.clear()
+            masking_dict.update(saved[0])
+            instance_counters.clear()
+            instance_counters.update(saved[1])
         return _mask_json_recursive_impl(data, masking_dict, instance_counters)
     finally:
         _surname.exit_document()

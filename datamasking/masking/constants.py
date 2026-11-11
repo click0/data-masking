@@ -188,10 +188,10 @@ _MONTHS_UA = (
 )
 DATE_TEXT_PATTERN = re.compile(
     r'(?:["\u201c\u201e«]?\s*)?'         # optional opening quote
-    r'(\d{1,2})'                          # day
+    r'(?<!\d)(\d{1,2})'                   # day (не хвіст числа: «123 травня»)
     r'(?:\s*["\u201d\u201c»]?\s*)'        # optional closing quote + space
     r'(' + _MONTHS_UA + r')'              # month name
-    r'\s+(\d{4})'                         # year
+    r'\s+(\d{4})(?!\d)'                   # year
     r'(?:\s+року)?',                      # optional "року"
     re.IGNORECASE
 )
@@ -266,10 +266,15 @@ MONTHS_GENITIVE_PATTERN = '|'.join(re.escape(m) for m in MONTHS_GENITIVE.keys())
 # Лапки всіх стилів (українські «», німецькі „“, англійські "" '', ‟).
 # Значення в лапках («сержант», «Петренко») мають розпізнаватись і маскуватись.
 QUOTE_CHARS = '«»„“”‟“”„"\''
+# Дужки та інші обрамлення слова: «(Петренко Іван Петрович)», «/Коваль/».
+# До 3.1.21 «(Петренко» не вважалось словом ПІБ (прізвище лишалось
+# відкритим), а «Петрович)» вважалось — разом із дужкою, що зникала з тексту
+BRACKET_CHARS = '()[]{}<>'
+WRAP_CHARS = QUOTE_CHARS + BRACKET_CHARS + '*/'
 
 MAX_INPUT_FILE_SIZE = 100 * 1024 * 1024
 
-EXCLUDE_WORDS_LOWER = frozenset(w.lower() for w in EXCLUDE_WORDS)
+EXCLUDE_WORDS_LOWER = _exclusions.apostrophe_variants(w.lower() for w in EXCLUDE_WORDS)
 RANKS_LIST_LOWER = frozenset(r.lower() for r in RANKS_LIST)
 # Усі граматичні форми звань (для точного збігу вмісту лапок «...»)
 ALL_RANK_FORMS_LOWER = frozenset(f.lower() for f in ALL_RANK_FORMS)

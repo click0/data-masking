@@ -388,6 +388,11 @@ def _unknown_leaf_keys(data: Any) -> List[str]:
 
     out: List[str] = []
     for section, values in data.items():
+        # Порожня відома секція («exclusions:» із самими коментарями,
+        # «masking_rules: {}») — нічого не задає, але й не помилка (до
+        # 3.1.21 strict_mode через неї завершувався з кодом 1)
+        if str(section) in EFFECTIVE_KEYS and values in (None, {}):
+            continue
         out += leaves(values, str(section))
     return out
 
@@ -439,6 +444,13 @@ def format_ignored_keys_warning(source: str, keys: List[str], limit: int = 10) -
     return (f"Warning: {source}: {len(keys)} key(s) have no effect and were ignored: "
             f"{shown}{more}. The file may come from an older version — compare with "
             f"config_example.yaml or regenerate it: data-mask --init-config")
+
+
+def _has_field(obj: Any, key: Any) -> bool:
+    """Ключ — поле dataclass-секції. До 3.1.21 тут був hasattr(): ключ-число
+    чи булеве (YAML «on:», «yes:») давав TypeError з traceback, а «__class__»
+    чи назва методу вважались полем."""
+    return isinstance(key, str) and key in getattr(obj, "__dataclass_fields__", {})
 
 
 _TRUE_WORDS = frozenset({"true", "yes", "on", "1"})
@@ -532,12 +544,12 @@ class Config:
 
         if "system" in data and isinstance(data["system"], dict):
             for k, v in data["system"].items():
-                if hasattr(cfg.system, k):
+                if _has_field(cfg.system, k):
                     _set(cfg.system, k, v, "system")
 
         if "password_generation" in data and isinstance(data["password_generation"], dict):
             for k, v in data["password_generation"].items():
-                if hasattr(cfg.password_generation, k):
+                if _has_field(cfg.password_generation, k):
                     _set(cfg.password_generation, k, v, "password_generation")
 
         if "security" in data and isinstance(data["security"], dict):
@@ -545,48 +557,50 @@ class Config:
             for k, v in sec.items():
                 if k == "password_generation" and isinstance(v, dict):
                     for pk, pv in v.items():
-                        if hasattr(cfg.security.password_generation, pk):
+                        if _has_field(cfg.security.password_generation, pk):
                             _set(cfg.security.password_generation, pk, pv, "security.password_generation")
-                elif k == "password_generation" and isinstance(v, bool):
+                elif k == "password_generation" and v is not None:
                     # Шаблон 2.x писав `password_generation: true` — bool
-                    # замість секції; не підміняємо dataclass булевим
-                    cfg.security.password_generation.enabled = v
-                elif hasattr(cfg.security, k):
+                    # замість секції; не підміняємо dataclass булевим (і
+                    # рядком: до 3.1.21 "false" у лапках замінював секцію,
+                    # і пароль усе одно генерувався)
+                    _set(cfg.security.password_generation, "enabled", v, "security.password_generation")
+                elif _has_field(cfg.security, k):
                     _set(cfg.security, k, v, "security")
 
         if "masking_rules" in data and isinstance(data["masking_rules"], dict):
             for k, v in data["masking_rules"].items():
-                if hasattr(cfg.masking_rules, k):
+                if _has_field(cfg.masking_rules, k):
                     _set(cfg.masking_rules, k, v, "masking_rules")
 
         if "validation" in data and isinstance(data["validation"], dict):
             for k, v in data["validation"].items():
-                if hasattr(cfg.validation, k):
+                if _has_field(cfg.validation, k):
                     _set(cfg.validation, k, v, "validation")
 
         if "router_rules" in data and isinstance(data["router_rules"], dict):
             for k, v in data["router_rules"].items():
-                if hasattr(cfg.router_rules, k):
+                if _has_field(cfg.router_rules, k):
                     _set(cfg.router_rules, k, v, "router_rules")
 
         if "logging" in data and isinstance(data["logging"], dict):
             for k, v in data["logging"].items():
-                if hasattr(cfg.logging, k):
+                if _has_field(cfg.logging, k):
                     _set(cfg.logging, k, v, "logging")
 
         if "remask" in data and isinstance(data["remask"], dict):
             for k, v in data["remask"].items():
-                if hasattr(cfg.remask, k):
+                if _has_field(cfg.remask, k):
                     _set(cfg.remask, k, v, "remask")
 
         if "exclusions" in data and isinstance(data["exclusions"], dict):
             for k, v in data["exclusions"].items():
-                if hasattr(cfg.exclusions, k):
+                if _has_field(cfg.exclusions, k):
                     _set(cfg.exclusions, k, v, "exclusions")
 
         if "dictionaries" in data and isinstance(data["dictionaries"], dict):
             for k, v in data["dictionaries"].items():
-                if hasattr(cfg.dictionaries, k):
+                if _has_field(cfg.dictionaries, k):
                     _set(cfg.dictionaries, k, v, "dictionaries")
 
         return cfg
@@ -800,7 +814,19 @@ class ConfigLoader:
 
             value: Any
             if typ is bool:
-                value = raw.lower() in ("1", "true", "yes", "on")
+                # Як у файлі (_set_coerced): невідоме слово не є false. До
+                # 3.1.21 DATA_MASKING_ENCRYPT_OUTPUT=y вимикало шифрування,
+                # навіть коли у файлі стояло true
+                word = raw.strip().lower()
+                if word in _TRUE_WORDS:
+                    value = True
+                elif word in _FALSE_WORDS:
+                    value = False
+                else:
+                    logger.warning(
+                        "Invalid boolean for %s=%r (use true/false) — skipped", env_var, raw
+                    )
+                    continue
             elif typ is int:
                 try:
                     value = int(raw)
@@ -816,6 +842,10 @@ class ConfigLoader:
             if section_obj is not None and hasattr(section_obj, attr):
                 setattr(section_obj, attr, value)
                 logger.debug("ENV override: %s.%s = %r", section, attr, value)
+                if env_var == "DATA_MASKING_PRESERVE_CASE":
+                    # masking_rules.preserve_case з файлу перекриває
+                    # system.preserve_case — але не ENV (до 3.1.21 перекривав)
+                    self._config.masking_rules.preserve_case = None
 
     # ----- CLI argument overlay -----
 

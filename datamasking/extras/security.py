@@ -130,8 +130,11 @@ class MappingSecurityManager:
                          r=int(header["r"]), p=int(header["p"]))
             return kdf.derive(password.encode("utf-8"))
         if header.get("kdf") == "pbkdf2":
-            iterations = int(header.get("iterations", cls.ITERATIONS))
-            if not 100_000 <= iterations <= 10_000_000:
+            # Заголовок читається з файлу: [1] чи 1e400 до 3.1.21 давали
+            # TypeError/OverflowError з traceback замість помилки файлу
+            iterations = header.get("iterations", cls.ITERATIONS)
+            if isinstance(iterations, bool) or not isinstance(iterations, int) \
+                    or not 100_000 <= iterations <= 10_000_000:
                 raise ValueError("Encrypted file header has an invalid PBKDF2 iteration count")
             return PBKDF2HMAC(algorithm=hashes.SHA256(), length=cls.KEY_LENGTH,
                               salt=salt, iterations=iterations).derive(password.encode("utf-8"))
@@ -262,7 +265,12 @@ class MappingSecurityManager:
         nonce_end = salt_end + self.NONCE_LENGTH
         if len(raw) < nonce_end + 16:
             raise ValueError("Encrypted file is too short.")
-        key = self._derive_key_v2(password, raw[prefix_end:salt_end], header)
+        # Параметри — перевірені check_kdf, а не сирий заголовок (у ньому могло
+        # не бути «n» для scrypt: KeyError з traceback до 3.1.21)
+        kdf_params: Dict[str, Any] = dict(params)
+        if "iterations" in header:
+            kdf_params["iterations"] = header["iterations"]
+        key = self._derive_key_v2(password, raw[prefix_end:salt_end], kdf_params)
         try:
             plaintext = AESGCM(key).decrypt(raw[salt_end:nonce_end], raw[nonce_end:], raw[:prefix_end])
         except Exception as exc:

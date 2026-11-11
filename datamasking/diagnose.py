@@ -91,10 +91,24 @@ def load_json(path: Path) -> Optional[Dict]:
     try:
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        return data if isinstance(data, dict) else None
     except (FileNotFoundError, PermissionError, OSError, json.JSONDecodeError, UnicodeDecodeError) as e:
         print(f"❌ Помилка читання JSON {path}: {e}")
+        if Path(path).suffix.lower() == '.enc':
+            print("   Це зашифрований mapping: diagnose читає лише .json")
         return None
+    # Поле mappings — словник категорій, кожна категорія — словник (до 3.1.21
+    # {"mappings": null} чи масив замість об'єкта давали traceback або exit 0)
+    mappings = data.get("mappings", {}) if isinstance(data, dict) else None
+    if not isinstance(mappings, dict) or not all(isinstance(v, dict) for v in mappings.values()):
+        print(f"❌ {path}: це не файл маппінгу (очікується об'єкт із полем mappings)")
+        return None
+    result: Dict = data
+    return result
+
+
+def _masked_as(value: Any) -> Any:
+    """Маска запису v1 (рядок) або v2 (словник; без masked_as — None)."""
+    return value.get("masked_as") if isinstance(value, dict) else value
 
 
 def analyze_category_structure(category_name: str, items: Dict[str, Any]) -> Dict[str, Any]:
@@ -142,7 +156,7 @@ def analyze_category_structure(category_name: str, items: Dict[str, Any]) -> Dic
     return {"count": len(items), "format": "unknown", "has_instances": False}
 
 
-def compare_mappings(file1: Path, file2: Path) -> None:
+def compare_mappings(file1: Path, file2: Path) -> bool:
     """
     Порівнює два JSON файли маппінгу (Drift Check).
 
@@ -157,8 +171,8 @@ def compare_mappings(file1: Path, file2: Path) -> None:
     data1 = load_json(file1)
     data2 = load_json(file2)
 
-    if not data1 or not data2:
-        return
+    if data1 is None or data2 is None:
+        return False
 
     # Отримання метаданих
     t1 = datetime.fromtimestamp(file1.stat().st_mtime).strftime('%Y-%m-%d %H:%M:%S')
@@ -198,8 +212,8 @@ def compare_mappings(file1: Path, file2: Path) -> None:
         common_keys = set(items1.keys()) & set(items2.keys())
         for key in common_keys:
             # Нормалізація для порівняння v1 та v2
-            val1 = items1[key]["masked_as"] if isinstance(items1[key], dict) else items1[key]
-            val2 = items2[key]["masked_as"] if isinstance(items2[key], dict) else items2[key]
+            val1 = _masked_as(items1[key])
+            val2 = _masked_as(items2[key])
             if val1 != val2:
                 drift_count += 1
 
@@ -214,9 +228,10 @@ def compare_mappings(file1: Path, file2: Path) -> None:
         print("   Це означає, що детермінованість порушена (або змінено seed/hash/алгоритм).")
     else:
         print("✅ Маски стабільні (для спільних ключів значення однакові).")
+    return True
 
 
-def diagnose_single_file(map_path: str) -> None:
+def diagnose_single_file(map_path: str) -> bool:
     """
     Виводить детальну інформацію про один файл маппінгу без порівняння.
     Використовується, коли в історії знайдено лише один файл.
@@ -224,7 +239,7 @@ def diagnose_single_file(map_path: str) -> None:
     map_file = Path(map_path)
     if not map_file.exists():
         print(f"❌ ПОМИЛКА: Файл не знайдено: {map_file}")
-        return
+        return False
 
     print("=" * 80)
     print("📋 ДІАГНОСТИКА MASKING MAP")
@@ -232,7 +247,8 @@ def diagnose_single_file(map_path: str) -> None:
     print(f"\n📂 Файл: {map_file}")
 
     data = load_json(map_file)
-    if not data: return
+    if data is None:
+        return False
 
     print(f"🔢 Версія:      {data.get('version', 'N/A')}")
     print(f"🕐 Timestamp:   {data.get('timestamp', 'N/A')}")
@@ -251,6 +267,7 @@ def diagnose_single_file(map_path: str) -> None:
         if analysis.get("has_instances"):
             stats = analysis.get("instance_stats", {})
             print(f"     ✓ Instance tracking: {stats.get('total_instances', 0)} посилань")
+    return True
 
 
 # ============================================================================
@@ -449,7 +466,7 @@ def main() -> int:
         # АВТОМАТИЧНИЙ РЕЖИМ: Порівняти останній (0) з передостаннім (1)
         if len(latest_maps) < 2:
             if latest_maps:
-                diagnose_single_file(str(latest_maps[0]))
+                return 0 if diagnose_single_file(str(latest_maps[0])) else 1
             else:
                 print("❌ Файлів masking_map_*.json не знайдено.")
                 return 1
@@ -474,8 +491,7 @@ def main() -> int:
             if not Path(arg).is_file():
                 print(f"❌ Файл не знайдено: {arg}")
                 return 1
-            diagnose_single_file(arg)
-            return 0
+            return 0 if diagnose_single_file(arg) else 1
 
     elif len(files_input) >= 2:
         # Явне порівняння двох вказаних файлів
@@ -488,7 +504,8 @@ def main() -> int:
         if not target_file_a.exists() or not target_file_b.exists():
             print("❌ Один з файлів маппінгу не існує.")
             return 1
-        compare_mappings(target_file_a, target_file_b)
+        if not compare_mappings(target_file_a, target_file_b):
+            return 1
     return 0
 
 

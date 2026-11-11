@@ -29,6 +29,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`Рапорт Білого Ярослава Миколайовича`).
 - `Шановна Любове Андріївно!`: the vocative `Любове` was not recognised, so
   the name got a surname mask and the patronymic a male name.
+- A name in brackets, slashes or asterisks (`(Петренко Іван Петрович)`,
+  `/Петренко І.П./`) kept the surname open, masked the name as a surname and
+  dropped the closing bracket from the masked text. The rank in
+  `(сержант Петренко)` was not masked either.
+- An infinitive opening an order item was taken for a surname when no
+  patronymic followed: `Видати Петренку Івану` became
+  `Вильчи Павлу Хомович`, with the surname masked as a first name.
+
+### Fixed — numbers left unmasked
+- A mask could equal the original, and the number stayed open. Masks of
+  military IDs change two digits out of six, so about one ID in a hundred
+  (`АА 585285`) was not masked. A one-digit BR number (`№5дск`) was not
+  masked one time in ten. Passport numbers, tax numbers (ІПН) and military
+  units were also affected, more rarely. Each of these masks is now
+  regenerated until it differs from the original and from the open text.
+  Masks that already differed stay the same as before.
 
 ### Fixed — unmasking did not restore the original
 - A rank `… медичної служби` masked as `генерал-майор медичної служби` was
@@ -49,6 +65,109 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   are now recorded in text order.
 - A brigade number broken across lines lost the rest of its name in the
   masked text (`60 окремої\nмеханізованої бригади` → `30 окремої`).
+- JSON files: unmasking counted the occurrences of each mask anew in every
+  string, while masking numbers them across the whole document. When two
+  different values in different strings got the same mask (`№ 2` and `№ 6`
+  both masked as `№ 4`), the second one came back as the first. Masking also
+  checked a new mask only against the open words of its own string. Both now
+  treat all the strings of a file as one text.
+- An order number mask could equal part of an open number (`№ 2` masked as
+  `1` next to `п. 1.2`), and unmasking gave its value to the wrong place.
+- A naval rank after `*` or `/` (`*старший матрос Кравченко …*`) was masked
+  without its first word, and the result (`*старший моряк`) was not restored.
+- A text date with a capitalised month came back in lower case
+  (`06 Жовтня 2025` → `06 жовтня 2025`). A month in capitals is now masked in
+  capitals and restored in capitals too. The end of a longer number was taken
+  for a day (`123 травня 2025` masked as `125 серпня 2026`) and was not
+  restored.
+- A value listed in `exclusions.always_mask` or matched by a custom pattern
+  with `action: mask` was masked once more as a surname (`сержант Сокіл` →
+  `Цуліж` → `Цулій`), and unmasking returned the first mask instead of
+  `Сокіл`. A custom pattern such as `[A-Z]{3,}` also matched the placeholder
+  of a protected phrase, which then disappeared from both texts.
+
+### Fixed — configuration
+- `exclusions` (words, phrases, always_mask, remove) now match every
+  apostrophe: `Дем'ян` in the list also covers `Дем’ян` and `Демʼян`. Before,
+  `always_mask` left those spellings open, and `phrases`/`words` did not
+  protect them.
+- `config_local.example.yaml` set every `exclusions` list to `[]`. A copy of
+  the template therefore erased the lists from the shared `config.yaml`,
+  `always_mask` included. The template now uses `null`, which keeps the
+  shared value.
+- `config.yaml` and `config_example.yaml` set `validation.max_name_length: 50`,
+  so with them a longer double surname stayed open, while without a
+  configuration it was masked. The value is now `null` (no limit), and masks
+  with the shared file are again the same as without it.
+- An environment variable with an unknown boolean word turned the option off:
+  `DATA_MASKING_ENCRYPT_OUTPUT=y` wrote a plaintext mapping even with
+  `encrypt_output: true` in the file. Such a value is now skipped with a
+  warning, like an invalid number.
+- `DATA_MASKING_PRESERVE_CASE` lost to `masking_rules.preserve_case` from the
+  file; the environment now wins, as for every other key.
+- `router_rules.skip_types` / `only_types` in a file made the same file's
+  `masking_rules.enable_*` switches ignored. Both now apply: a type is masked
+  only when neither turns it off. `--only` / `--exclude` on the command line
+  still override `enable_*`.
+- `security.password_generation: "false"` (a quoted string) was ignored and
+  replaced the whole section. It is now read as a boolean, and any other
+  string is an error.
+- A fractional value of an integer key (`hash_digest_size: 2.9`) was cut down
+  silently; it is now an error.
+- With `--re-mask N`, the count of matches left open by a custom pattern with
+  `action: warn` was multiplied by N.
+- An empty section (`exclusions:` with only comments, `masking_rules: {}`)
+  was reported as a key with no effect, and `strict_mode` stopped the run.
+- Configuration errors that ended in a traceback now give a message and exit
+  code 1: `system.hash_algorithm` in capitals (`SHA256`), `backup_suffix`
+  with a path separator, `logging.level` that is not a string, and a section
+  key that is not a string (YAML `on:`, `yes:`, a number). An unknown
+  `logging.level` (`verbose`) now gives a warning instead of silently
+  becoming `INFO`.
+- `python -m datamasking.diagnose` returned 0 for an unreadable or encrypted
+  file and for a JSON array, and stopped with a traceback on
+  `{"mappings": null}` or on an entry without `masked_as`. It now reports the
+  problem and returns 1.
+
+### Fixed — command line and files
+- With `system.encoding: auto`, a UTF-16 file was read as cp1251, so nothing
+  was masked and the run still exited with 0. A byte order mark (UTF-8,
+  UTF-16, UTF-32) now decides the encoding, and the output and the restored
+  file keep it byte for byte. Text that decodes only with NUL characters
+  (UTF-16 without a BOM) is now an error instead of being guessed as cp1251.
+- `--only` / `--exclude` did not control the numbers of other documents
+  (`довідку № 4567`): `--only surname` still masked them, and
+  `--exclude order_number` did not stop it. They now follow `order_number`,
+  as with `enable_orders` in the configuration.
+- Unmasking chose between JSON and text by the masked file's extension, while
+  masking chose by the input's extension. Masked text saved as `out.json`
+  could not be unmasked, and JSON saved as `.txt` came back only in part. The
+  mapping now records the input format (`input_format`); older mappings
+  still use the extension.
+- A JSON input with a UTF-8 BOM was rejected; it is now read like a text
+  file with a BOM.
+- `unmask` could not read files over 100 MB even when
+  `validation.max_input_size_mb` allowed them, while `mask` did read them.
+  Both now apply the same limit.
+- `--password` (or `--password-env`) with `security.encrypt_output: true` in
+  the configuration was rejected as if `--encrypt` were missing.
+- A password that is not valid UTF-8 (from a terminal in another encoding)
+  failed only when the mapping was being encrypted. By then the masked file
+  was already written, and its mapping was not. Such a password is now
+  rejected before any file is written.
+- `-o` pointing to a hard link of the input, with `--force`, overwrote the
+  original document; it is now refused like `-o` equal to the input.
+- A mapping entry with an empty mask made unmasking insert the original
+  value between all characters of the text; such a mapping is now rejected.
+- With `--re-mask 50`, the report said 50 passes, although the run was capped
+  at `remask.max_passes` (10). It now shows the passes actually made.
+- Tracebacks replaced with error messages (exit code 1): a damaged header of a
+  format-2 `.enc` file, and `--init-config -c` with a missing folder or a
+  folder as the target.
+- `unmask` now exits with 2 (wrong usage), as `mask` does, when
+  `--password-env` names an unset variable, when no `--map` is given for a
+  file that is not named `output_*`, and when `--to-version` is out of range
+  or used with a mapping that is not a chain. Before, it exited with 1.
 
 ### Changed — masks
 - Naval ranks get naval masks: `капітан 1-го рангу` and `капітан-лейтенант`

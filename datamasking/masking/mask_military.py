@@ -31,22 +31,34 @@ def mask_military_unit(original: str, masking_dict: Dict, instance_counters: Dic
         match = re.match(r'^([А-ЯA-Z])( ?)(\d{4})$', original)
         if not match: return original
         letter, sep = match.group(1), match.group(2)
-        seed = get_deterministic_seed(original)
-        random.seed(seed)
-        digits = ''.join([str(random.randint(0, 9)) for _ in range(4)])
-        masked = letter + sep + digits
+
+        def _gen(attempt: int) -> str:
+            _reseed(original, attempt)
+            return letter + sep + ''.join(str(random.randint(0, 9)) for _ in range(4))
+        masked = _distinct_mask(original, _gen)
     return add_to_mapping(masking_dict, instance_counters, "military_unit", original, masked)
+
+
+def _reseed(original: str, attempt: int) -> None:
+    """Seed генератора для спроби *attempt* (0 — як до появи повторних спроб,
+    тож перша маска не змінюється)."""
+    random.seed(get_deterministic_seed(original) if attempt == 0 else get_deterministic_seed(f"{original}\x00{attempt}"))
+
 
 def _redigit(original: str, attempt: int = 0) -> str:
     """Замінює всі цифри випадковими (детерміновано від оригіналу й номера спроби)."""
-    random.seed(get_deterministic_seed(original) if attempt == 0 else get_deterministic_seed(f"{original}\x00{attempt}"))
+    _reseed(original, attempt)
     return re.sub(r'\d', lambda _: str(random.randint(0, 9)), original)
 
 
 def _distinct_mask(original: str, generate: "Callable[[int], str]", attempts: int = 10) -> str:
     """Маска, що не дорівнює оригіналу і не збігається з числом/словом
     документа (інакше unmask мінял би їх місцями, v3.1.9). *generate(attempt)*
-    — детермінований генератор; після *attempts* спроб — остання маска."""
+    — детермінований генератор; після *attempts* спроб — остання маска.
+
+    Потрібна кожному генератору, що міняє лише частину цифр: до 3.1.21
+    військовий квиток (змінюються 2 цифри з 6) маскувався сам у себе в ~1 %
+    випадків, «№5дск» — у кожному десятому, і номер лишався відкритим."""
     masked = generate(0)
     for attempt in range(1, attempts + 1):
         if masked != original and not _surname.document_contains(masked):
@@ -83,9 +95,6 @@ def mask_br_number(original: str, masking_dict: Dict, instance_counters: Dict) -
     if original in masking_dict["mappings"]["br_number"]:
         masked = masking_dict["mappings"]["br_number"][original]["masked_as"]
     else:
-        seed = get_deterministic_seed(original)
-        random.seed(seed)
-
         # Витягуємо суфікс (дск, п, к)
         suffix_match = re.search(r'(дск|п|к)$', original)
         suffix = suffix_match.group(1) if suffix_match else ""
@@ -102,27 +111,29 @@ def mask_br_number(original: str, masking_dict: Dict, instance_counters: Dict) -
 
         # Обробляємо частини розділені слешами
         parts = re.split(r'(/)', number_part)
-        masked_parts = []
-        for part in parts:
-            if part == '/': masked_parts.append(part)
-            elif part and re.match(r'^\d', part):
-                digit_match = re.match(r'(\d+)(.*)', part)
-                if digit_match:
-                    digits = digit_match.group(1)
-                    rest = digit_match.group(2)
-                    masked_digits = ''.join([str(random.randint(0, 9)) for _ in range(len(digits))])
-                    masked_parts.append(masked_digits + rest)
+
+        def _gen(attempt: int) -> str:
+            _reseed(original, attempt)
+            masked_parts = []
+            for part in parts:
+                if part == '/': masked_parts.append(part)
+                elif part and re.match(r'^\d', part):
+                    digit_match = re.match(r'(\d+)(.*)', part)
+                    if digit_match:
+                        digits = digit_match.group(1)
+                        rest = digit_match.group(2)
+                        masked_digits = ''.join([str(random.randint(0, 9)) for _ in range(len(digits))])
+                        masked_parts.append(masked_digits + rest)
+                    else: masked_parts.append(part)
                 else: masked_parts.append(part)
-            else: masked_parts.append(part)
-        masked = prefix + ''.join(masked_parts) + suffix
+            return prefix + ''.join(masked_parts) + suffix
+        masked = _distinct_mask(original, _gen)
     return add_to_mapping(masking_dict, instance_counters, "br_number", original, masked)
 
 def mask_br_number_slash(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
     if original in masking_dict["mappings"]["br_number_slash"]:
         masked = masking_dict["mappings"]["br_number_slash"][original]["masked_as"]
     else:
-        seed = get_deterministic_seed(original)
-        random.seed(seed)
         suffix_match = re.search(r'(дск|п|к)$', original)
         suffix = suffix_match.group(1) if suffix_match else ""
         prefix = ""
@@ -135,13 +146,17 @@ def mask_br_number_slash(original: str, masking_dict: Dict, instance_counters: D
         if suffix: number_part = number_part[:-len(suffix)]
 
         parts = number_part.split('/')
-        masked_parts = []
-        for part in parts:
-            if part.strip().isdigit():
-                masked_parts.append(''.join([str(random.randint(0, 9)) for _ in range(len(part.strip()))]))
-            else:
-                masked_parts.append(part)
-        masked = prefix + '/'.join(masked_parts) + suffix
+
+        def _gen(attempt: int) -> str:
+            _reseed(original, attempt)
+            masked_parts = []
+            for part in parts:
+                if part.strip().isdigit():
+                    masked_parts.append(''.join([str(random.randint(0, 9)) for _ in range(len(part.strip()))]))
+                else:
+                    masked_parts.append(part)
+            return prefix + '/'.join(masked_parts) + suffix
+        masked = _distinct_mask(original, _gen)
     return add_to_mapping(masking_dict, instance_counters, "br_number_slash", original, masked)
 
 def mask_br_number_complex(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
@@ -292,9 +307,10 @@ def mask_date_text(original: str, masking_dict: Dict, instance_counters: Dict) -
     parts = masked_key.split()
     if len(parts) < 3:
         return original
-    # Місяць — у регістрі оригіналу («Жовтня» → «Грудня»); unmask порівнює
-    # без урахування регістру й повертає оригінальний
-    new_month_text = parts[1].capitalize() if month_name[:1].isupper() else parts[1]
+    # Місяць — у регістрі оригіналу («Жовтня» → «Грудня», «ЖОВТНЯ» →
+    # «ГРУДНЯ»): mapping зберігає дату в нижньому регістрі, і unmask бере
+    # регістр місяця з маски (до 3.1.21 капс ставав «Грудня»)
+    new_month_text = _apply_original_case(month_name, parts[1])
     return original.replace(day, parts[0], 1).replace(
         month_name, new_month_text, 1).replace(year, parts[2], 1)
 

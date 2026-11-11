@@ -95,15 +95,21 @@ def _unmask_encoding(config, masking_map) -> Tuple[str, List[str]]:
 
 
 def _size_limit(config: Any) -> int:
-    """Ліміт розміру файлу: менший із system.max_file_size_mb і
-    validation.max_input_size_mb (до 3.1.10 unmask їх не читав)."""
+    """Ліміт розміру файлу — як у mask: validation.max_input_size_mb (або
+    100 МБ), але не більше за system.max_file_size_mb (до 3.1.10 unmask їх
+    не читав, до 3.1.21 не дозволяв підняти ліміт понад 100 МБ, хоча mask
+    дозволяв — і завеликий для unmask файл уже був замаскований)."""
     from datamasking.unmasking.helpers import MAX_INPUT_FILE_SIZE
-    limit = MAX_INPUT_FILE_SIZE
-    for section, key in (("system", "max_file_size_mb"), ("validation", "max_input_size_mb")):
+
+    def mb(section: str, key: str) -> Optional[int]:
         value = getattr(getattr(config, section, None), key, None)
         if isinstance(value, int) and not isinstance(value, bool) and value > 0:
-            limit = min(limit, value * 1024 * 1024)
-    return limit
+            return value * 1024 * 1024
+        return None
+
+    limit = mb("validation", "max_input_size_mb") or MAX_INPUT_FILE_SIZE
+    system_limit = mb("system", "max_file_size_mb")
+    return min(limit, system_limit) if system_limit else limit
 
 
 def _expected_instances(masking_map: Dict) -> int:
@@ -281,7 +287,7 @@ Examples:
             if not password:
                 print(f"❌ Змінна оточення '{args.password_env}' не встановлена або порожня")
                 log_error(f"Environment variable '{args.password_env}' is not set or empty")
-                return EXIT_ERROR
+                return EXIT_USAGE  # як у mask (до 3.1.21 тут був 1)
         else:
             password = _config_password(config)
             # security.password_env_var / password_generation.env_var — назва
@@ -328,7 +334,7 @@ Examples:
             else:
                 print("❌ Будь ласка, вкажіть файл маппінгу через --map")
                 log_error("Файл маппінгу не вказано")
-                return EXIT_ERROR
+                return EXIT_USAGE
 
         if not map_path.exists():
             print(f"❌ Файл маппінгу не знайдено: {map_path}")
@@ -379,18 +385,25 @@ Examples:
             if not is_chain_mapping(masking_map):
                 print("❌ --to-version працює лише з chain mapping (--re-mask)")
                 log_error("--to-version on a non-chain mapping")
-                return EXIT_ERROR
+                return EXIT_USAGE
             if to_version < 0 or to_version > len(masking_map.get("passes", [])):
+                # Неправильне використання — код 2, як і всюди (до 3.1.21 — 1)
                 print(f"❌ --to-version має бути в межах 0..{len(masking_map.get('passes', []))}")
-                return EXIT_ERROR
+                return EXIT_USAGE
 
         validate_file_size(masked_path, max_size=_size_limit(config))
         # Кодування: з mapping (mask записує його, якщо вхід був не в utf-8);
         # system.encoding у конфігурації, якщо задано явно, має пріоритет
         file_encoding, allowed = _unmask_encoding(config, masking_map)
         masked_text, file_encoding = read_text(masked_path, file_encoding, allowed)
-        if masked_path.suffix.lower() == '.json':
-            masked_data = json.loads(masked_text)
+        # JSON чи текст — як при маскуванні (input_format у mapping, з
+        # 3.1.21); у старих mapping цього поля немає — за суфіксом файлу
+        if isinstance(masking_map, dict) and masking_map.get("input_format") in ("json", "text"):
+            is_json = masking_map["input_format"] == "json"
+        else:
+            is_json = masked_path.suffix.lower() == '.json'
+        if is_json:
+            masked_data = json.loads(masked_text[1:] if masked_text.startswith("\ufeff") else masked_text)
         else:
             masked_data = masked_text
 
@@ -415,7 +428,7 @@ Examples:
         print(f"🔄 Розмаскування {masked_path.name} (ланцюг з {total_passes} проходів)...")
         log_info(f"Розмаскування ланцюга з {total_passes} проходів")
 
-        if masked_path.suffix.lower() == '.json':
+        if is_json:
             restored_data, stats = unmask_json_chain_with_stats(
                 masked_data, masking_map, to_version=getattr(args, 'to_version', None) or 0)
         else:
@@ -426,7 +439,7 @@ Examples:
         print(f"🔄 Розмаскування {masked_path.name} (логіка {map_version})...")
         log_info(f"Розмаскування {masked_path.name} (логіка {map_version})")
 
-        if masked_path.suffix.lower() == '.json':
+        if is_json:
             restored_data, stats = unmask_json_with_stats(masked_data, masking_map, map_version)
         else:
             if map_version.startswith("v2"):
@@ -440,8 +453,9 @@ Examples:
 
     try:
         # Відновлений текст чутливіший за mapping: атомарно, 0600 (v3.1.10)
-        out_text = json.dumps(restored_data, ensure_ascii=False, indent=2) \
-            if masked_path.suffix.lower() == '.json' else restored_data
+        out_text = json.dumps(restored_data, ensure_ascii=False, indent=2) if is_json else restored_data
+        if is_json and file_encoding.startswith(("utf-16-", "utf-32-")):
+            out_text = "\ufeff" + out_text
         atomic_write_private(output_path, out_text.encode(file_encoding))
 
         elapsed = time.time() - start_time

@@ -360,6 +360,14 @@ def _setup_logger(args, config) -> Optional[Any]:
 
     if log_level is None:
         log_level = "INFO"
+    # logging.level / DATA_MASKING_LOG_LEVEL: до 3.1.21 число чи true давали
+    # traceback, а невідоме слово («verbose») мовчки ставало INFO
+    levels = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+    if str(log_level).strip().upper() not in levels:
+        _config_warning(args, f"logging.level must be one of {', '.join(levels)}, "
+                              f"got {log_level!r} — using INFO")
+        log_level = "INFO"
+    log_level = str(log_level).strip().upper()
     console = getattr(log_cfg, 'log_to_console', True) is not False
 
     # logging.format (рядок у файлі логу), max_log_size_mb + log_rotation_count
@@ -498,7 +506,8 @@ def _or_default(value, default):
 
 def _int_setting(value, name: str, lo: int, hi: int) -> int:
     """Ціле в межах [lo, hi]; інакше ValueError з текстом для користувача."""
-    if isinstance(value, bool):
+    # 2.9 — не ціле (до 3.1.21 мовчки ставало 2)
+    if isinstance(value, bool) or (isinstance(value, float) and not value.is_integer()):
         raise ValueError(f"{name} must be an integer, got {value!r}")
     try:
         n = int(value)
@@ -580,14 +589,19 @@ def _apply_level1_settings_impl(args, config, logger) -> Optional[str]:
 
     # Текстові дати, прізвища, по батькові, номери документів: окремо або
     # «як відповідний загальний прапорець»
-    if not getattr(args, 'only', None) and not getattr(args, 'exclude', None):
-        def follow(key: str, base: bool) -> bool:
+    # (router_rules.only_types / skip_types — разом з ними, як enable_* вище)
+    selective = getattr(args, 'only', None) or getattr(args, 'exclude', None)
+    narrow = getattr(args, '_selective_source', None) is not None
+    if not selective or narrow:
+        def follow(key: str, base: bool, current: bool) -> bool:
             value = getattr(rules, key, None)
-            return base if value is None else bool(value)
-        _cfg.MASK_DATE_TEXT = follow('enable_date_text', _cfg.MASK_DATES)
-        _cfg.MASK_SURNAMES = follow('enable_surnames', _cfg.MASK_NAMES)
-        _cfg.MASK_PATRONYMICS = follow('enable_patronymics', _cfg.MASK_NAMES)
-        _cfg.MASK_DOCUMENT_NUMBERS = follow('enable_document_numbers', _cfg.MASK_ORDERS)
+            result = base if value is None else bool(value)
+            return result and current if narrow else result
+        _cfg.MASK_DATE_TEXT = follow('enable_date_text', _cfg.MASK_DATES, _cfg.MASK_DATE_TEXT)
+        _cfg.MASK_SURNAMES = follow('enable_surnames', _cfg.MASK_NAMES, _cfg.MASK_SURNAMES)
+        _cfg.MASK_PATRONYMICS = follow('enable_patronymics', _cfg.MASK_NAMES, _cfg.MASK_PATRONYMICS)
+        _cfg.MASK_DOCUMENT_NUMBERS = follow('enable_document_numbers', _cfg.MASK_ORDERS,
+                                            _cfg.MASK_DOCUMENT_NUMBERS)
 
     # Перемаскування
     if remask is not None:
@@ -702,7 +716,13 @@ def _apply_config_settings(args, config, logger) -> Optional[str]:
         only_types = getattr(args, 'only', None) if SELECTIVE_AVAILABLE else None
         exclude_types = getattr(args, 'exclude', None) if SELECTIVE_AVAILABLE else None
 
-        if not only_types and not exclude_types:
+        # --only / --exclude з командного рядка важать більше за enable_*.
+        # router_rules.only_types / skip_types — того самого рівня, що й
+        # enable_*: діють обидва (тип маскується, лише якщо його не вимкнено
+        # ні там, ні там). До 3.1.21 skip_types у файлі вимикав дію всіх
+        # enable_* того самого файлу
+        from_config = getattr(args, '_selective_source', None) is not None
+        if (not only_types and not exclude_types) or from_config:
             config_rules_map = {
                 'enable_ranks': 'MASK_RANKS',
                 'enable_names': 'MASK_NAMES',
@@ -718,7 +738,7 @@ def _apply_config_settings(args, config, logger) -> Optional[str]:
             for config_key, global_var in config_rules_map.items():
                 value = getattr(masking_rules, config_key, None)
                 if value is not None:
-                    setattr(_cfg, global_var, bool(value))
+                    setattr(_cfg, global_var, bool(value) and (getattr(_cfg, global_var) or not from_config))
                     if logger:
                         logger.debug(f"Config: {config_key} = {value}")
 
@@ -733,12 +753,22 @@ def _apply_config_settings(args, config, logger) -> Optional[str]:
         if cfg_preserve_case is not None:
             _cfg.PRESERVE_CASE = bool(cfg_preserve_case)
 
+        # Суфікс копії — частина імені файлу: «/x» до 3.1.21 давав traceback
+        # (Path.with_name) лише в момент запису, коли вихідний файл уже існував
+        cfg_suffix = getattr(system_cfg, 'backup_suffix', None)
+        if cfg_suffix is not None and (not isinstance(cfg_suffix, str)
+                                       or any(c in cfg_suffix for c in '/\\\0')):
+            return (f"system.backup_suffix must be a file name suffix without path separators, "
+                    f"got {cfg_suffix!r}")
+
         cfg_hash = getattr(system_cfg, 'hash_algorithm', None)
-        if cfg_hash is not None and str(cfg_hash).lower() not in ('blake2b', 'md5', 'sha1', 'sha256', 'sha512'):
+        if cfg_hash is not None and str(cfg_hash).strip().lower() not in ('blake2b', 'md5', 'sha1', 'sha256', 'sha512'):
             return (f"system.hash_algorithm must be one of blake2b, md5, sha1, sha256, sha512, "
                     f"got {cfg_hash!r}")
         if cfg_hash is not None:
-            _cfg.HASH_ALGORITHM = str(cfg_hash)
+            # Як перевірено — без урахування регістру: до 3.1.21 «SHA256»
+            # проходило перевірку, а get_deterministic_seed падав з traceback
+            _cfg.HASH_ALGORITHM = str(cfg_hash).strip().lower()
 
         # system.faker_locale — словники faker для синтетичних прізвищ/імен
         locale = getattr(system_cfg, 'faker_locale', None)
@@ -816,6 +846,10 @@ def _validate_output_paths(args, input_path: Path, output_path: Path) -> Optiona
     перезаписує існуючий файл без --force. Повертає текст помилки або None."""
     try:
         same = output_path.resolve() == input_path.resolve()
+        # Жорстке посилання на вхід — той самий файл (до 3.1.21 «-o» на
+        # нього з --force перезаписував оригінал)
+        if not same and output_path.exists():
+            same = os.path.samefile(output_path, input_path)
     except OSError:
         same = False
     if same:
@@ -826,6 +860,21 @@ def _validate_output_paths(args, input_path: Path, output_path: Path) -> Optiona
 
 
 def _resolve_password(args, config, logger) -> Tuple[Optional[str], Optional[str]]:
+    """Пароль для --encrypt (див. _resolve_password_impl) — і перевірка, що
+    його можна закодувати: пароль із байтами не в UTF-8 (з оболонки в іншому
+    кодуванні) до 3.1.21 виявлявся лише під час шифрування mapping, коли
+    замаскований файл уже був записаний, а mapping — ні."""
+    password, error = _resolve_password_impl(args, config, logger)
+    if password is not None:
+        try:
+            password.encode("utf-8")
+        except UnicodeEncodeError:
+            return None, ("the password is not valid UTF-8 text (check the terminal or "
+                          "environment encoding)")
+    return password, error
+
+
+def _resolve_password_impl(args, config, logger) -> Tuple[Optional[str], Optional[str]]:
     """Визначає пароль для --encrypt ДО запису будь-яких файлів.
 
     Пріоритет: --password → --password-env VAR → $DATA_MASKING_PASSWORD →
@@ -890,7 +939,13 @@ def _read_input(input_path: Path, is_json: bool, logger, masking_dict: Optional[
                 masking_dict["input_encoding"] = used
         if logger:
             logger.info(f"Input encoding: {used}")
-        return json.loads(text) if is_json else text
+        if masking_dict is not None:
+            # unmask читає вихід як JSON чи текст за цим полем, а не за
+            # суфіксом файлу (до 3.1.21 «-o out.json» для тексту не
+            # розмасковувався, а JSON у «.txt» відновлювався частково)
+            masking_dict["input_format"] = "json" if is_json else "text"
+        # BOM перед JSON (Блокнот Windows) — не помилка, як і для тексту
+        return json.loads(text[1:] if text.startswith("\ufeff") else text) if is_json else text
     except (FileNotFoundError, PermissionError, OSError, json.JSONDecodeError,
             UnicodeDecodeError, ValueError) as e:
         print(f"Error reading file: {e}")
@@ -948,6 +1003,10 @@ def _run_multi_pass_masking(input_data, is_json: bool, masking_dict: Dict,
 
     chain = MappingChain()
     masked_data = input_data
+    # Збіги шаблонів з action: warn — за документом, а не × проходи (до
+    # 3.1.21 кожен прохід знаходив ті самі збіги ще раз)
+    from datamasking.masking import custom as _custom
+    warn_counts: Dict[str, int] = {}
 
     for pass_num in range(1, re_mask_passes + 1):
         print(f"  Прохід {pass_num}/{re_mask_passes}...")
@@ -966,6 +1025,11 @@ def _run_multi_pass_masking(input_data, is_json: bool, masking_dict: Dict,
         for category, mappings in pass_dict["mappings"].items():
             pass_dict["statistics"][category] = len(mappings)
         chain.add_pass(pass_dict)
+        if pass_num == 1:
+            warn_counts = dict(_custom.WARN_COUNTS)
+
+    _custom.WARN_COUNTS.clear()
+    _custom.WARN_COUNTS.update(warn_counts)
 
     # Звіт — за першим проходом (справжні унікальні значення документа);
     # до 3.1.10 статистика підсумовувалась по всіх проходах (×N) і
@@ -1149,7 +1213,9 @@ def _save_results(masked_data, is_json: bool, masking_dict: Dict,
                   total_unique: int, args, config, logger,
                   chain=None, password: Optional[str] = None) -> int:
     """Save masked output, mapping (or chain), and report. Returns exit code."""
-    re_mask_passes = getattr(args, 're_mask', None)
+    # У звіті — виконані проходи, а не запитані (--re-mask 50 обмежується
+    # remask.max_passes; до 3.1.21 звіт показував 50)
+    re_mask_passes = len(chain.passes) if chain is not None else None
     system_cfg = getattr(config, 'system', None)
 
     try:
@@ -1165,6 +1231,8 @@ def _save_results(masked_data, is_json: bool, masking_dict: Dict,
         # Кодуємо ДО відкриття файлу: інакше помилка кодування (символ поза
         # cp1251) лишала порожній вихідний файл без mapping (v3.1.8)
         out_text = json.dumps(masked_data, ensure_ascii=False, indent=2) if is_json else masked_data
+        if is_json and out_encoding.startswith(("utf-16-", "utf-32-")):
+            out_text = "\ufeff" + out_text  # вхід мав BOM (див. _textio.read_text)
         payload = out_text.encode(out_encoding)
         with open(output_path, 'wb') as f:
             f.write(payload)
@@ -1172,8 +1240,9 @@ def _save_results(masked_data, is_json: bool, masking_dict: Dict,
         if chain is not None:
             chain_json = map_path.with_name(map_path.name.replace("masking_map_", "masking_chain_", 1))
             chain_dict = chain.to_dict()
-            if "input_encoding" in masking_dict:
-                chain_dict["input_encoding"] = masking_dict["input_encoding"]
+            for key in ("input_encoding", "input_format"):
+                if key in masking_dict:
+                    chain_dict[key] = masking_dict[key]
             written_map = _write_mapping(chain_dict, chain_json, password, logger,
                                          kdf=getattr(args, '_kdf', None))
             print(f"  Chain mapping ({len(chain.passes)} passes): {written_map}")
@@ -1230,7 +1299,12 @@ def main(argv=None) -> int:
         if Path(target).exists() and not args.force:
             print(f"Error: {target} already exists (use --force to overwrite)")
             return EXIT_ERROR
-        generate_default_config(target)
+        try:
+            generate_default_config(target)
+        except OSError as e:
+            # Немає теки, -c вказує на каталог, немає прав (до 3.1.21 — traceback)
+            print(f"Error: cannot write {target}: {e.strerror or e}")
+            return EXIT_ERROR
         print(f"Generated {target}")
         try:
             import yaml  # noqa: F401
@@ -1243,11 +1317,6 @@ def main(argv=None) -> int:
     if getattr(args, 'password', None) is not None and getattr(args, 'password_env', None):
         print("Error: use either --password or --password-env, not both")
         return EXIT_USAGE
-    if (getattr(args, 'password', None) is not None or getattr(args, 'password_env', None)) \
-            and not getattr(args, 'encrypt', False):
-        print("Error: --password / --password-env require --encrypt (the mapping would be written unencrypted)")
-        return EXIT_USAGE
-
     # ================================================================
     # Handle --list-types (early exit)
     # ================================================================
@@ -1280,6 +1349,13 @@ def main(argv=None) -> int:
     if settings_error:
         print(f"Error: {settings_error}")
         return EXIT_ERROR
+    # Після конфігурації: security.encrypt_output: true — те саме, що
+    # --encrypt (до 3.1.21 перевірка стояла раніше, і --password з таким
+    # конфігом відхилявся)
+    if (getattr(args, 'password', None) is not None or getattr(args, 'password_env', None)) \
+            and not getattr(args, 'encrypt', False):
+        print("Error: --password / --password-env require --encrypt (the mapping would be written unencrypted)")
+        return EXIT_USAGE
     for strict_error in getattr(args, '_strict_errors', []):
         print(f"Error: strict_mode: {strict_error}")
     if getattr(args, '_strict_errors', []):
