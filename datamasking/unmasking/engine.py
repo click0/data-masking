@@ -26,6 +26,7 @@ class FoundRank(TypedDict, total=False):
     text: str
     simple: bool
 
+from datamasking import _jsontext
 from datamasking.rank_data import (
     RANK_DECLENSIONS,
     RANK_FEMININE_MAP,
@@ -283,6 +284,7 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
         info["masked_as"] for info in mappings_copy.get("date_text", {}).values()
         if isinstance(info, dict) and "masked_as" in info
     }
+    date_text_lower = {m.lower() for m in date_text_masks}
 
     def _alternative(mask: str) -> str:
         if mask in date_text_masks:
@@ -329,7 +331,9 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
         matched = m.group(0)
         key = matched.lower()
         inst, counter_key = _lookup(matched, key)
-        quoted_date = False
+        # Текстова дата: mapping зберігає її в нижньому регістрі, тож регістр
+        # місяця («Жовтня», «ЖОВТНЯ») — з тексту (до 3.1.21 губився)
+        quoted_date = bool(inst) and key in date_text_lower
         if not inst and date_text_masks:
             # «28» вересня 2025 → ключ «28 вересня 2025»
             key = _DT_STRIP_RE.sub('', matched).lower()
@@ -448,16 +452,30 @@ def unmask_json_with_stats(masked_data: Any, masking_map: Dict, map_version: str
     JSON давав 0/0, і strict_mode завжди завершувався помилкою)."""
     stats = {"restored_count": 0, "skipped_count": 0}
 
+    def unmask_one(text: str) -> Tuple[str, Dict]:
+        if map_version.startswith("v2"):
+            return unmask_text_v2(text, masking_map, map_version)
+        return unmask_text_v1(text, masking_map)
+
+    # Усі рядки — одним текстом, як при маскуванні (datamasking/_jsontext.py):
+    # номери входжень масок спільні для всього документа. До 3.1.21 кожен
+    # рядок розмасковувався з нуля, і однакова маска двох різних оригіналів
+    # у різних рядках відновлювалась першим із них
+    strings = _jsontext.collect_strings(masked_data)
+    sep = _jsontext.separator(strings) if len(strings) > 1 else None
+    if sep is not None:
+        restored, st = unmask_one(sep.join(strings))
+        parts = restored.split(sep)
+        if len(parts) == len(strings):
+            return _jsontext.replace_strings(masked_data, iter(parts)), st
+
     def walk(data: Any) -> Any:
         if isinstance(data, dict):
             return {k: walk(v) for k, v in data.items()}
         if isinstance(data, list):
             return [walk(item) for item in data]
         if isinstance(data, str):
-            if map_version.startswith("v2"):
-                restored, st = unmask_text_v2(data, masking_map, map_version)
-            else:
-                restored, st = unmask_text_v1(data, masking_map)
+            restored, st = unmask_one(data)
             stats["restored_count"] += st.get("restored_count", 0)
             stats["skipped_count"] += st.get("skipped_count", 0)
             return restored

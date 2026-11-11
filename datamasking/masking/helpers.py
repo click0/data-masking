@@ -97,8 +97,9 @@ def normalize_string(s: str) -> str:
     if not s: return ""
     s_str = str(s).lower()
     s_str = s_str.replace("'", "'").replace('\xa0', ' ').replace(".", " ").replace(";", " ")
-    # Лапки → пробіл, щоб значення в лапках («сержант») знаходились під час пошуку
-    for q in _cfg.QUOTE_CHARS:
+    # Лапки й дужки → пробіл, щоб значення в лапках («сержант») і дужках
+    # («(сержант …)») знаходились під час пошуку
+    for q in _cfg.QUOTE_CHARS + _cfg.BRACKET_CHARS:
         s_str = s_str.replace(q, ' ')
     return re.sub(r'\s+', ' ', s_str).strip()
 
@@ -107,9 +108,31 @@ def normalize_identifier(identifier: str) -> str:
     identifier_str = str(identifier).upper()
     return re.sub(r'[\s\-.]', '', identifier_str).strip()
 
+_PUNCT = ',.!?;:'
+
+
+def strip_word(word: str, leading_punct: bool = False) -> str:
+    """Слово без обрамлення (лапки, дужки, «/…/», «*…*») і розділових знаків
+    у кінці — у будь-якому поєднанні («Петровича),»); з *leading_punct* —
+    і розділових знаків на початку."""
+    lead = _cfg.WRAP_CHARS + (_PUNCT if leading_punct else "")
+    trail = _cfg.WRAP_CHARS + _PUNCT
+    start, end = 0, len(word)
+    while start < end and word[start] in lead:
+        start += 1
+    while end > start and word[end - 1] in trail:
+        end -= 1
+    return word[start:end]
+
+
+def ends_clause(word: str) -> bool:
+    """Після слова — розділовий знак або закривна дужка: ПІБ на ньому закінчується."""
+    return word.rstrip(_cfg.QUOTE_CHARS + '*/')[-1:] in _PUNCT + ')]}>'
+
+
 def is_pib_anchor(word: str) -> bool:
     if word.startswith("___") and word.endswith("___"): return False
-    word = word.strip(_cfg.QUOTE_CHARS).strip(",.!?;:")
+    word = strip_word(word, leading_punct=True)
     if not word or len(word) <= 2: return False
     # Слова з цифрами/= — не ПІБ (ІПН=3698521592, «138», кодування)
     if re.search(r'[\d=]', word): return False

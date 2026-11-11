@@ -24,6 +24,7 @@ from datamasking.masking.language import (
 )
 from datamasking.masking import surname as _surname
 from datamasking.masking.surname import synthesize_surname, known_surname_forms
+from datamasking.masking.mask_military import _distinct_mask, _reseed
 
 
 _IPN_WEIGHTS = (-1, 5, 7, 9, 4, 6, 10, 5, 7)
@@ -49,15 +50,15 @@ def mask_ipn(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
         masked = masking_dict["mappings"]["ipn"][original]["masked_as"]
     else:
         if len(original) != 10 or not original.isdigit(): return original
-        seed = get_deterministic_seed(original)
-        random.seed(seed)
-        middle = ''.join([str(random.randint(0, 9)) for _ in range(6)])
-        masked = original[:3] + middle + original[-1]
         # validation.validate_ipn_checksum: валідний ІПН → валідна маска
         # (контрольна цифра перераховується); невалідний — як і раніше
-        if _cfg.VALIDATE_IPN_CHECKSUM and is_valid_ipn(original):
-            first9 = original[:3] + middle
-            masked = first9 + str(ipn_checksum(first9))
+        fix_checksum = _cfg.VALIDATE_IPN_CHECKSUM and is_valid_ipn(original)
+
+        def _gen(attempt: int) -> str:
+            _reseed(original, attempt)
+            first9 = original[:3] + ''.join(str(random.randint(0, 9)) for _ in range(6))
+            return first9 + (str(ipn_checksum(first9)) if fix_checksum else original[-1])
+        masked = _distinct_mask(original, _gen)
     return add_to_mapping(masking_dict, instance_counters, "ipn", original, masked)
 
 def mask_passport_id(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
@@ -71,10 +72,11 @@ def mask_passport_id(original: str, masking_dict: Dict, instance_counters: Dict)
         masked = masking_dict["mappings"]["passport_id"][original]["masked_as"]
     else:
         if len(original) != 9 or not original.isdigit(): return original
-        seed = get_deterministic_seed(original)
-        random.seed(seed)
-        middle = ''.join([str(random.randint(0, 9)) for _ in range(5)])
-        masked = original[:3] + middle + original[-1]
+
+        def _gen(attempt: int) -> str:
+            _reseed(original, attempt)
+            return original[:3] + ''.join(str(random.randint(0, 9)) for _ in range(5)) + original[-1]
+        masked = _distinct_mask(original, _gen)
     return add_to_mapping(masking_dict, instance_counters, "passport_id", original, masked)
 
 def mask_military_id(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
@@ -96,11 +98,14 @@ def mask_military_id(original: str, masking_dict: Dict, instance_counters: Dict)
         prefix = prefix_match.group(1) or ""
         sep = prefix_match.group(2) if prefix else ""
         digits = prefix_match.group(3)
-        seed = get_deterministic_seed(original)
-        random.seed(seed)
-        middle = ''.join([str(random.randint(0, 9)) for _ in range(2)])
-        masked_digits = digits[:2] + middle + digits[-2:]
-        masked = prefix + sep + masked_digits
+
+        # Змінюються лише 2 середні цифри — без повторних спроб маска
+        # збігалась з оригіналом у кожному сотому квитку (до 3.1.21)
+        def _gen(attempt: int) -> str:
+            _reseed(original, attempt)
+            middle = ''.join(str(random.randint(0, 9)) for _ in range(2))
+            return prefix + sep + digits[:2] + middle + digits[-2:]
+        masked = _distinct_mask(original, _gen)
     return add_to_mapping(masking_dict, instance_counters, "military_id", original, masked)
 
 def mask_surname(original: str, masking_dict: Dict, instance_counters: Dict) -> str:

@@ -107,7 +107,7 @@ class ValidationConfig:
     validate_rank_dictionary: bool = True  # лише True
     strict_pib_format: bool = False
     allow_abbreviated_patronymic: bool = True
-    max_name_length: int = 50
+    max_name_length: Optional[int] = None  # None — без обмеження
     min_name_length: int = 3
 
 

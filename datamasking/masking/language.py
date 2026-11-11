@@ -15,19 +15,20 @@ from datamasking.masking import constants as _cfg
 from datamasking.masking.declension import (
     VOCATIVE, analyze_name, analyze_patronymic, decline_name,
 )
-from datamasking.masking.helpers import get_deterministic_seed
+from datamasking.masking.helpers import get_deterministic_seed, strip_word
 
 
 def is_likely_surname_by_case(word: str) -> bool:
     if word.startswith("___") and word.endswith("___"): return False
-    word = word.strip(_cfg.QUOTE_CHARS)
+    word = strip_word(word)
     if not word or len(word) < 3: return False
     letters_only = re.sub(r"[-']", '', word)
     return letters_only.isupper() and len(letters_only) >= 3
 
 def looks_like_name(word: str) -> bool:
     if word.startswith("___") and word.endswith("___"): return False
-    clean_word = word.strip(_cfg.QUOTE_CHARS).rstrip(',.!?;:')
+    clean_word = strip_word(word)
+    if not clean_word: return False
     # validation.min_name_length / max_name_length (за замовчуванням 3 / без меж)
     if len(clean_word) < _cfg.NAME_MIN_LENGTH: return False
     if _cfg.NAME_MAX_LENGTH and len(clean_word) > _cfg.NAME_MAX_LENGTH: return False
@@ -35,6 +36,11 @@ def looks_like_name(word: str) -> bool:
     # Дієслова 1-2 особи множини (Повідомляємо, Просимо, Надаєте) —
     # ніколи не імена/прізвища
     if clean_word.lower().endswith(('ємо', 'имо', 'емо', 'єте', 'ите', 'ете')):
+        return False
+    # Інфінітиви на початку пункту наказу (Видати, Надати, Зарахувати,
+    # Виключити) — теж: до 3.1.21 «Видати Петренку Івану» без по батькові
+    # розбиралось як «прізвище Видати, ім'я Петренку, по батькові Івану»
+    if len(clean_word) >= 5 and clean_word.lower().endswith(('ати', 'яти', 'ити', 'іти', 'їти', 'ути', 'тися', 'тись')):
         return False
     # Віддієслівні та абстрактні іменники (-ння/-ття/-ість: Відділення,
     # Призначення, Відповідальність) — ні імена, ні прізвища (v3.1.17)

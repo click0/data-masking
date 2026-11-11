@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from datamasking.masking import constants as _cfg
 from datamasking.masking.declension import VOCATIVE, analyze_name, analyze_patronymic
-from datamasking.masking.helpers import normalize_string, normalize_identifier, is_pib_anchor
+from datamasking.masking.helpers import normalize_string, normalize_identifier, is_pib_anchor, strip_word, ends_clause
 from datamasking.masking.language import looks_like_name, detect_gender_by_patronymic, is_likely_surname_by_case
 
 # Роздільники слів усередині рядка: будь-які пробільні символи (пробіл, таб,
@@ -31,7 +31,7 @@ _BAD_WORD_RE = re.compile(
 
 
 def _strip_word(word: str) -> str:
-    return word.strip(_cfg.QUOTE_CHARS).strip(',.!?;:')
+    return strip_word(word, leading_punct=True)
 
 
 def is_patronymic_word(word: str, prev_word: Optional[str] = None) -> bool:
@@ -315,7 +315,10 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
     char_tok: List[int] = []     # символ normalized_line → індекс у parts (-1 — роздільник)
     tok_start: Set[int] = set()  # позиції, з яких починається слово parts
     for i, part in enumerate(parts):
-        norm = normalize_string(part)
+        # «*старший матрос …*», «/старшому моряку …/»: без цього звання
+        # знаходилось без першого слова («матрос» → «моряк»), а unmask бачив
+        # у «*старший моряк» інше, двослівне звання й не відновлював його
+        norm = normalize_string(part.strip('*/'))
         if not norm:
             continue
         if chunks:
@@ -367,7 +370,7 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
         rank_matches.sort(key=lambda x: x[0])
         rank_index, found_rank, rank_position, rank_word_count = rank_matches[0]
         pib_start_index = rank_position + rank_word_count
-        rank_words = [w.strip(_cfg.QUOTE_CHARS) for w in
+        rank_words = [strip_word(w) for w in
                       parts[rank_position:rank_position + rank_word_count]]
         found_rank_original_case = ' '.join(rank_words) if rank_words else found_rank
 
@@ -469,14 +472,14 @@ def _caps_block_without_patronymic(parts: List[str], start: int) -> bool:
     if not _caps_word(parts[start]):
         return False
     begin = start
-    while begin > 0 and _caps_word(parts[begin - 1]) and parts[begin - 1].rstrip(_cfg.QUOTE_CHARS)[-1:] not in ',.;:!?':
+    while begin > 0 and _caps_word(parts[begin - 1]) and not ends_clause(parts[begin - 1]):
         begin -= 1
     run: List[str] = []
     for word in parts[begin:]:
         if not _caps_word(word):
             break
         run.append(_strip_word(word))
-        if word.rstrip(_cfg.QUOTE_CHARS)[-1:] in ',.;:!?':
+        if ends_clause(word):
             break
     if len(run) < 3:
         return False
@@ -548,13 +551,13 @@ def _adjacent_rank(parts: List[str], start: int, rank_matches) -> str:
     регістрі оригіналу), або "" — якщо його там немає. rank_matches містить
     лише перше входження кожної форми, тож спершу дивимось на самі слова."""
     for k in range(min(4, start), 0, -1):
-        words = [w.strip(_cfg.QUOTE_CHARS).strip(',.;:!?') for w in parts[start - k:start]]
+        words = [strip_word(w, leading_punct=True) for w in parts[start - k:start]]
         phrase = ' '.join(words)
         if phrase.lower() in _cfg.RANKS_LIST_LOWER:
             return phrase
     for _idx, rank_form, pos, count in rank_matches:
         if pos + count == start:
-            words = [w.strip(_cfg.QUOTE_CHARS) for w in parts[pos:pos + count]]
+            words = [strip_word(w) for w in parts[pos:pos + count]]
             return ' '.join(words) if words else rank_form
     return ""
 
@@ -563,7 +566,7 @@ def _rank_word_as_surname(word: str, next_word: Optional[str]) -> bool:
     """«капітан Майор Іван Іванович»: слово-звання з великої літери одразу
     після справжнього звання і перед іменем — це прізвище (Майор, Сотник,
     Полковник — реальні українські прізвища)."""
-    clean = word.strip(_cfg.QUOTE_CHARS).rstrip(',.!?;:')
+    clean = strip_word(word)
     if len(clean) < 3 or clean.lower() not in _cfg.RANKS_LIST_LOWER:
         return False
     if not (clean[0].isupper() and clean[1:].islower()):
@@ -576,7 +579,7 @@ def _rank_word_as_surname(word: str, next_word: Optional[str]) -> bool:
 def _extract_pib_words(parts, start: int, after_rank: bool):
     pib_words = []
     for idx, word in enumerate(parts[start:start + 3]):
-        clean = word.strip(_cfg.QUOTE_CHARS).rstrip(',.!?;:')
+        clean = strip_word(word)
         if looks_like_name(word):
             pib_words.append(clean)
         elif idx == 0 and after_rank and _rank_word_as_surname(
@@ -587,6 +590,6 @@ def _extract_pib_words(parts, start: int, after_rank: bool):
         # Розділовий знак після слова завершує ПІБ: «Сергійович, ІПН …» —
         # інакше наступне слово з великої приклеювалось, і зібраний рядок
         # не існував у тексті (заміна не спрацьовувала)
-        if word.rstrip(_cfg.QUOTE_CHARS)[-1:] in ',.;:!?':
+        if ends_clause(word):
             break
     return pib_words

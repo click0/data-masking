@@ -112,14 +112,36 @@ _WORD_EDGE_BEFORE = r"(?<![\w'’ʼ])"
 _WORD_EDGE_AFTER = r"(?![\w'’ʼ])"
 
 
+_APOSTROPHES = "'’ʼ"
+_APOSTROPHE_CLASS = "[" + _APOSTROPHES + "]"
+
+
+def _escape_word(word: str) -> str:
+    # Апостроф — будь-який із трьох: у документах трапляються всі (до 3.1.21
+    # «Дем'ян» у переліку не знаходив «Дем’ян» і «Демʼян»)
+    return "".join(_APOSTROPHE_CLASS if ch in _APOSTROPHES else re.escape(ch) for ch in word)
+
+
+def apostrophe_variants(words: Iterable[str]) -> FrozenSet[str]:
+    """Слова з усіма варіантами апострофа (' ’ ʼ): перевірки «слово in
+    перелік» знаходять будь-яке написання."""
+    out = set()
+    for w in words:
+        out.add(w)
+        if any(a in w for a in _APOSTROPHES):
+            base = w.replace("’", "'").replace("ʼ", "'")
+            out.update(base.replace("'", a) for a in _APOSTROPHES)
+    return frozenset(out)
+
+
 def phrase_regex(phrase: str) -> str:
     """«Кабінет* Міністрів» → ``Кабінет\\w*\\s+Міністрів`` (без меж слова)."""
     parts = []
     for word in phrase.split():
         if word.endswith("*"):
-            parts.append(re.escape(word[:-1]) + r"\w*")
+            parts.append(_escape_word(word[:-1]) + r"\w*")
         else:
-            parts.append(re.escape(word))
+            parts.append(_escape_word(word))
     return r"\s+".join(parts)
 
 
@@ -198,15 +220,17 @@ def build(section: Any = None, dictionaries: Any = None) -> Exclusions:
     """Переліки (dictionaries з config.yaml або вбудовані) + секція
     exclusions конфігурації. Raises ValueError."""
     lists = {key: _items(section, key) for key in KEYS}
-    remove = {r.lower() for r in lists["remove"]}
+    remove = apostrophe_variants(r.lower() for r in lists["remove"])
     base_abbreviations = _base(dictionaries, "abbreviations", BUILTIN_ABBREVIATIONS)
     base_words = _base(dictionaries, "non_name_words", BUILTIN_WORDS)
     base_acts = _base(dictionaries, "legal_acts", BUILTIN_LEGAL_ACTS)
 
-    abbreviations = frozenset(a.lower() for a in base_abbreviations if a.lower() not in remove) \
-        | frozenset(a.lower() for a in lists["abbreviations"])
-    words = frozenset(w.lower() for w in base_words if w.lower() not in remove) \
-        | frozenset(w.lower() for w in lists["words"])
+    abbreviations = apostrophe_variants(
+        [a.lower() for a in base_abbreviations if a.lower() not in remove]
+        + [a.lower() for a in lists["abbreviations"]])
+    words = apostrophe_variants(
+        [w.lower() for w in base_words if w.lower() not in remove]
+        + [w.lower() for w in lists["words"]])
     acts = tuple(a for a in base_acts if a.lower() not in remove) \
         + tuple(lists["legal_acts"])
     if acts:
@@ -233,7 +257,8 @@ def build(section: Any = None, dictionaries: Any = None) -> Exclusions:
 def describe(ex: Exclusions) -> str:
     """Текст для --list-exclusions (діючі переліки)."""
     def block(title: str, items: Iterable[str]) -> List[str]:
-        items = sorted(items)
+        # Варіанти апострофа (apostrophe_variants) — одним записом
+        items = sorted(i for i in items if "’" not in i and "ʼ" not in i)
         return [f"{title} ({len(items)}):", "  " + (", ".join(items) if items else "—"), ""]
     lines: List[str] = []
     lines += block("Abbreviations (never masked as a surname)", ex.abbreviations)
