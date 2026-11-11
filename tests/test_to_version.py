@@ -75,10 +75,10 @@ class TestCliToVersion:
 
     def test_cli_rejects_non_chain_and_out_of_range(self, chain_run):
         tmp_path, chain_path, _, _ = chain_run
-        assert unmask_cli.main(["m.txt", "--map", str(chain_path), "--to-version", "9", "-o", "x.txt"]) == 1
+        assert unmask_cli.main(["m.txt", "--map", str(chain_path), "--to-version", "9", "-o", "x.txt"]) == 2
         assert mask_cli.main(["-i", "in.txt", "-o", "s.txt", "--no-report"]) == 0
         smap = next(tmp_path.glob("masking_map_*.json"))
-        assert unmask_cli.main(["s.txt", "--map", str(smap), "--to-version", "0", "-o", "y.txt"]) == 1
+        assert unmask_cli.main(["s.txt", "--map", str(smap), "--to-version", "0", "-o", "y.txt"]) == 2
 
 
 class TestChainUnmaskerApi:

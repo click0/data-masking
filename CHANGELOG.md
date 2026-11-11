@@ -129,6 +129,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `{"mappings": null}` or on an entry without `masked_as`. It now reports the
   problem and returns 1.
 
+### Fixed — command line and files
+- With `system.encoding: auto`, a UTF-16 file was read as cp1251, so nothing
+  was masked and the run still exited with 0. A byte order mark (UTF-8,
+  UTF-16, UTF-32) now decides the encoding, and the output and the restored
+  file keep it byte for byte. Text that decodes only with NUL characters
+  (UTF-16 without a BOM) is now an error instead of being guessed as cp1251.
+- `--only` / `--exclude` did not control the numbers of other documents
+  (`довідку № 4567`): `--only surname` still masked them, and
+  `--exclude order_number` did not stop it. They now follow `order_number`,
+  as with `enable_orders` in the configuration.
+- Unmasking chose between JSON and text by the masked file's extension, while
+  masking chose by the input's extension. Masked text saved as `out.json`
+  could not be unmasked, and JSON saved as `.txt` came back only in part. The
+  mapping now records the input format (`input_format`); older mappings
+  still use the extension.
+- A JSON input with a UTF-8 BOM was rejected; it is now read like a text
+  file with a BOM.
+- `unmask` could not read files over 100 MB even when
+  `validation.max_input_size_mb` allowed them, while `mask` did read them.
+  Both now apply the same limit.
+- `--password` (or `--password-env`) with `security.encrypt_output: true` in
+  the configuration was rejected as if `--encrypt` were missing.
+- A password that is not valid UTF-8 (from a terminal in another encoding)
+  failed only when the mapping was being encrypted. By then the masked file
+  was already written, and its mapping was not. Such a password is now
+  rejected before any file is written.
+- `-o` pointing to a hard link of the input, with `--force`, overwrote the
+  original document; it is now refused like `-o` equal to the input.
+- A mapping entry with an empty mask made unmasking insert the original
+  value between all characters of the text; such a mapping is now rejected.
+- With `--re-mask 50`, the report said 50 passes, although the run was capped
+  at `remask.max_passes` (10). It now shows the passes actually made.
+- Tracebacks replaced with error messages (exit code 1): a damaged header of a
+  format-2 `.enc` file, and `--init-config -c` with a missing folder or a
+  folder as the target.
+- `unmask` now exits with 2 (wrong usage), as `mask` does, when
+  `--password-env` names an unset variable, when no `--map` is given for a
+  file that is not named `output_*`, and when `--to-version` is out of range
+  or used with a mapping that is not a chain. Before, it exited with 1.
+
 ### Changed — masks
 - Naval ranks get naval masks: `капітан 1-го рангу` and `капітан-лейтенант`
   were masked as army ranks (`майор`, `лейтенант`).

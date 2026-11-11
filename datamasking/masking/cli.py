@@ -846,6 +846,10 @@ def _validate_output_paths(args, input_path: Path, output_path: Path) -> Optiona
     перезаписує існуючий файл без --force. Повертає текст помилки або None."""
     try:
         same = output_path.resolve() == input_path.resolve()
+        # Жорстке посилання на вхід — той самий файл (до 3.1.21 «-o» на
+        # нього з --force перезаписував оригінал)
+        if not same and output_path.exists():
+            same = os.path.samefile(output_path, input_path)
     except OSError:
         same = False
     if same:
@@ -856,6 +860,21 @@ def _validate_output_paths(args, input_path: Path, output_path: Path) -> Optiona
 
 
 def _resolve_password(args, config, logger) -> Tuple[Optional[str], Optional[str]]:
+    """Пароль для --encrypt (див. _resolve_password_impl) — і перевірка, що
+    його можна закодувати: пароль із байтами не в UTF-8 (з оболонки в іншому
+    кодуванні) до 3.1.21 виявлявся лише під час шифрування mapping, коли
+    замаскований файл уже був записаний, а mapping — ні."""
+    password, error = _resolve_password_impl(args, config, logger)
+    if password is not None:
+        try:
+            password.encode("utf-8")
+        except UnicodeEncodeError:
+            return None, ("the password is not valid UTF-8 text (check the terminal or "
+                          "environment encoding)")
+    return password, error
+
+
+def _resolve_password_impl(args, config, logger) -> Tuple[Optional[str], Optional[str]]:
     """Визначає пароль для --encrypt ДО запису будь-яких файлів.
 
     Пріоритет: --password → --password-env VAR → $DATA_MASKING_PASSWORD →
@@ -920,7 +939,13 @@ def _read_input(input_path: Path, is_json: bool, logger, masking_dict: Optional[
                 masking_dict["input_encoding"] = used
         if logger:
             logger.info(f"Input encoding: {used}")
-        return json.loads(text) if is_json else text
+        if masking_dict is not None:
+            # unmask читає вихід як JSON чи текст за цим полем, а не за
+            # суфіксом файлу (до 3.1.21 «-o out.json» для тексту не
+            # розмасковувався, а JSON у «.txt» відновлювався частково)
+            masking_dict["input_format"] = "json" if is_json else "text"
+        # BOM перед JSON (Блокнот Windows) — не помилка, як і для тексту
+        return json.loads(text[1:] if text.startswith("\ufeff") else text) if is_json else text
     except (FileNotFoundError, PermissionError, OSError, json.JSONDecodeError,
             UnicodeDecodeError, ValueError) as e:
         print(f"Error reading file: {e}")
@@ -1188,7 +1213,9 @@ def _save_results(masked_data, is_json: bool, masking_dict: Dict,
                   total_unique: int, args, config, logger,
                   chain=None, password: Optional[str] = None) -> int:
     """Save masked output, mapping (or chain), and report. Returns exit code."""
-    re_mask_passes = getattr(args, 're_mask', None)
+    # У звіті — виконані проходи, а не запитані (--re-mask 50 обмежується
+    # remask.max_passes; до 3.1.21 звіт показував 50)
+    re_mask_passes = len(chain.passes) if chain is not None else None
     system_cfg = getattr(config, 'system', None)
 
     try:
@@ -1204,6 +1231,8 @@ def _save_results(masked_data, is_json: bool, masking_dict: Dict,
         # Кодуємо ДО відкриття файлу: інакше помилка кодування (символ поза
         # cp1251) лишала порожній вихідний файл без mapping (v3.1.8)
         out_text = json.dumps(masked_data, ensure_ascii=False, indent=2) if is_json else masked_data
+        if is_json and out_encoding.startswith(("utf-16-", "utf-32-")):
+            out_text = "\ufeff" + out_text  # вхід мав BOM (див. _textio.read_text)
         payload = out_text.encode(out_encoding)
         with open(output_path, 'wb') as f:
             f.write(payload)
@@ -1211,8 +1240,9 @@ def _save_results(masked_data, is_json: bool, masking_dict: Dict,
         if chain is not None:
             chain_json = map_path.with_name(map_path.name.replace("masking_map_", "masking_chain_", 1))
             chain_dict = chain.to_dict()
-            if "input_encoding" in masking_dict:
-                chain_dict["input_encoding"] = masking_dict["input_encoding"]
+            for key in ("input_encoding", "input_format"):
+                if key in masking_dict:
+                    chain_dict[key] = masking_dict[key]
             written_map = _write_mapping(chain_dict, chain_json, password, logger,
                                          kdf=getattr(args, '_kdf', None))
             print(f"  Chain mapping ({len(chain.passes)} passes): {written_map}")
@@ -1269,7 +1299,12 @@ def main(argv=None) -> int:
         if Path(target).exists() and not args.force:
             print(f"Error: {target} already exists (use --force to overwrite)")
             return EXIT_ERROR
-        generate_default_config(target)
+        try:
+            generate_default_config(target)
+        except OSError as e:
+            # Немає теки, -c вказує на каталог, немає прав (до 3.1.21 — traceback)
+            print(f"Error: cannot write {target}: {e.strerror or e}")
+            return EXIT_ERROR
         print(f"Generated {target}")
         try:
             import yaml  # noqa: F401
@@ -1282,11 +1317,6 @@ def main(argv=None) -> int:
     if getattr(args, 'password', None) is not None and getattr(args, 'password_env', None):
         print("Error: use either --password or --password-env, not both")
         return EXIT_USAGE
-    if (getattr(args, 'password', None) is not None or getattr(args, 'password_env', None)) \
-            and not getattr(args, 'encrypt', False):
-        print("Error: --password / --password-env require --encrypt (the mapping would be written unencrypted)")
-        return EXIT_USAGE
-
     # ================================================================
     # Handle --list-types (early exit)
     # ================================================================
@@ -1319,6 +1349,13 @@ def main(argv=None) -> int:
     if settings_error:
         print(f"Error: {settings_error}")
         return EXIT_ERROR
+    # Після конфігурації: security.encrypt_output: true — те саме, що
+    # --encrypt (до 3.1.21 перевірка стояла раніше, і --password з таким
+    # конфігом відхилявся)
+    if (getattr(args, 'password', None) is not None or getattr(args, 'password_env', None)) \
+            and not getattr(args, 'encrypt', False):
+        print("Error: --password / --password-env require --encrypt (the mapping would be written unencrypted)")
+        return EXIT_USAGE
     for strict_error in getattr(args, '_strict_errors', []):
         print(f"Error: strict_mode: {strict_error}")
     if getattr(args, '_strict_errors', []):

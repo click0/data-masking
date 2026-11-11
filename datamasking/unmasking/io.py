@@ -115,12 +115,16 @@ def _validate_mappings(mapping: Dict, where: str) -> None:
         if not isinstance(entries, dict):
             raise ValueError(f"'{where}mappings.{category}' must be a dictionary")
         for original, info in entries.items():
+            # Порожня маска «знаходиться» між будь-якими двома символами, і
+            # unmask вставляв оригінал у випадкові місця (до 3.1.21)
             if isinstance(info, str):
+                if not info:
+                    raise ValueError(f"'{where}mappings.{category}.{original}' must not be empty")
                 continue
             if not isinstance(info, dict):
                 raise ValueError(f"'{where}mappings.{category}.{original}' must be an object or a string")
-            if not isinstance(info.get("masked_as"), str):
-                raise ValueError(f"'{where}mappings.{category}.{original}.masked_as' must be a string")
+            if not isinstance(info.get("masked_as"), str) or not info["masked_as"]:
+                raise ValueError(f"'{where}mappings.{category}.{original}.masked_as' must be a non-empty string")
             instances = info.get("instances", [])
             if not isinstance(instances, list) or not all(isinstance(n, int) for n in instances):
                 raise ValueError(f"'{where}mappings.{category}.{original}.instances' must be a list of integers")
