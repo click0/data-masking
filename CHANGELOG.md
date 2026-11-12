@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [3.1.21] - 2026-11
 
 ### Fixed — names left unmasked
 - A full name before a rank that is followed by more words was not masked
