@@ -48,6 +48,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   When every rank of the hierarchy is open in the document, the rank is left
   as it is rather than masked with a rank that unmasking would confuse.
 
+### Fixed — older mapping files
+- A v2.0 mapping (entries without `instances`) restored nothing, with exit
+  code 0 and no warning. Such an entry now restores every occurrence of its
+  mask.
+- Ranks in v2.0 mappings were never restored; they now are, as for 2.1+.
+- A mapping without a `version` key was read as v1 and restored nothing; its
+  format is now taken from its structure.
+- v1 mappings (plain `"original": "mask"` pairs) were restored by replacing
+  one mask after another. A restored value that was itself another mask was
+  replaced again (`Сидоренко` → `Петренко` → …), and a mask was also found
+  inside longer words (`Петро` inside `Петрович`). They are now restored in
+  one pass, whole words only.
+
+### Fixed — masks
+- The case forms of one surname in a document now share one synthetic stem
+  (`Коваль`/`Коваля`/`Ковалем` → `Ковар`/`Коваря`/`Коварем`), as the
+  documentation promises. Surnames declined like nouns ending in a consonant
+  (Коваль, Ткач, Бондар, Мороз, Ґудзь) got a different stem in each case:
+  their case endings match those of surnames ending in `-а`/`-я`. A form now
+  takes the stem of another form already masked in the document. The `-ин`
+  and `-ін` families also cover `Литвином`, `Литвинові` and `Кузьміним`.
+  A bare surname ending in a consonant gets a mask ending in a consonant
+  where possible.
+- A surname mask could contain the apostrophe `ʼ` (U+02BC) from the name
+  dictionary. A document in cp1251 with such a mask then failed to save.
+  Surname masks now use the ASCII apostrophe, as name masks already did.
+
+### Fixed — Python API
+- `data_masking` (compatibility module): `MASK_NAMES = False` left surnames
+  and patronymics masked, and `MASK_DATES = False` left text dates masked;
+  they now switch the related flags too, as the configuration does.
+  `MASK_SURNAMES`, `MASK_PATRONYMICS`, `MASK_DATE_TEXT` and
+  `MASK_DOCUMENT_NUMBERS` can be read and set.
+  `apply_filter_to_globals(f, data_masking.__dict__)`, as its docstring
+  suggested, had no effect; it now sets the engine's flags.
+- `tools.mask_name_direct`, `mask_patronymic_direct` and `mask_value` for
+  names and patronymics assumed a male name unless told otherwise
+  (`Марія` → a male name). The gender now comes from the value, as in
+  `data-mask`. `mask_value("", "name")` no longer fails.
+- `generate_password(ensure_variety=True)` could leave out a character class
+  (about one short password in ten). A length below 1 is now an error instead
+  of an empty password, and the generator's `-l 0` / `-n 0` are rejected.
+- `MappingChain.get_chain_mapping(a, b)` forward was off by one pass
+  (`(1, 2)` mapped the original text, not pass 1, to pass 2).
+  `ChainUnmasker` restored nothing for a chain whose passes have no `"pass"`
+  number, or after `chain.passes = [...]`. `MappingChain.from_dict` no longer
+  changes the dictionary it was given.
+
+### Fixed — command line
+- `--only ,` (an empty list) enabled every type; an empty `--only` or
+  `--exclude` list is now an error (exit code 2).
+
 ## [3.1.21] - 2026-11
 
 ### Fixed — names left unmasked

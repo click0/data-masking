@@ -158,6 +158,10 @@ def generate_password(
         pwd = generate_password(length=8, include_ascii_upper=False,
                                 include_ascii_lower=False, include_special=False)
     """
+    if isinstance(length, bool) or not isinstance(length, int) or length < 1:
+        # До 3.1.22 довжина 0 чи від'ємна мовчки давала порожній пароль
+        raise ValueError(f"password length must be a positive integer, got {length!r}")
+
     # Формуємо набір символів та список обов'язкових наборів
     charset = ""
     required_charsets: List[str] = []
@@ -200,19 +204,13 @@ def generate_password(
 
     # Гарантуємо наявність символів кожного типу (якщо довжина дозволяє)
     if ensure_variety:
-        positions_used: set = set()
-        for req_charset in required_charsets:
-            if len(positions_used) >= length:
-                break
-            # Знаходимо позицію, яка ще не використана
-            attempts = 0
-            while attempts < length * 2:
-                pos = secrets.randbelow(length)
-                if pos not in positions_used:
-                    password_list[pos] = secrets.choice(req_charset)
-                    positions_used.add(pos)
-                    break
-                attempts += 1
+        # Різні позиції для кожного обов'язкового набору — одразу, без
+        # повторних спроб (до 3.1.22 випадкові спроби з лімітом інколи не
+        # знаходили вільної позиції: ~9 % коротких паролів без одного класу)
+        k = min(len(required_charsets), length)
+        positions = secrets.SystemRandom().sample(range(length), k)
+        for pos, req_charset in zip(positions, required_charsets):
+            password_list[pos] = secrets.choice(req_charset)
 
     return ''.join(password_list)
 def generate_password_from_config(config: PasswordConfig) -> Optional[str]:
@@ -482,6 +480,11 @@ def main():
                         help='Тільки пароль, без додаткової інформації')
 
     args = parser.parse_args()
+    # Довжина й кількість — додатні (до 3.1.22 «-l 0» друкував порожній пароль)
+    if args.length < 1:
+        parser.error(f"--length must be a positive integer, got {args.length}")
+    if args.count < 1:
+        parser.error(f"--count must be a positive integer, got {args.count}")
 
     # Аналіз існуючого пароля
     if args.analyze:

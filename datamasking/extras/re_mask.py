@@ -128,6 +128,8 @@ class MappingChain:
     @passes.setter
     def passes(self, value: List[Dict]) -> None:
         self._passes = value
+        # Інакше ChainUnmasker після chain.passes = [...] не бачив проходів
+        self._current_pass = len(value)
 
     @property
     def current_pass(self) -> int:
@@ -174,6 +176,11 @@ class MappingChain:
         for p in self._passes:
             if p.get("pass") == pass_number:
                 return p
+        # Проходи без поля "pass" (ланцюг, зібраний вручну; його приймають і
+        # validate_mapping_schema, і unmask_chain) — за позицією. До 3.1.22
+        # ChainUnmasker для такого ланцюга мовчки нічого не відновлював
+        if 1 <= pass_number <= len(self._passes) and "pass" not in self._passes[pass_number - 1]:
+            return self._passes[pass_number - 1]
         return None
 
     def get_chain_mapping(self, from_pass: int, to_pass: int) -> Dict:
@@ -197,16 +204,12 @@ class MappingChain:
         return self._build_reverse_chain(from_pass, to_pass)
 
     def _build_forward_chain(self, from_pass: int, to_pass: int) -> Dict:
-        """Compose forward mappings from from_pass to to_pass.
-        Chains original->masked relationships through intermediate passes."""
-        # Seed with the from_pass mapping
+        """Compose forward mappings from the text after pass *from_pass*
+        (0 = original) to the text after pass *to_pass*: passes
+        from_pass+1 .. to_pass, as the reverse chain counts them. Before
+        3.1.22 the from_pass mapping itself was included, so (1, 2) gave
+        original -> pass 2 instead of pass 1 -> pass 2."""
         combined: Dict[str, str] = {}
-        seed_data = self.get_pass(from_pass)
-        if seed_data is not None:
-            for _cat, pairs in seed_data.get("mappings", {}).items():
-                if isinstance(pairs, dict):
-                    combined.update(_flat_pairs(pairs))
-        # Chain through subsequent passes
         for step in range(from_pass + 1, to_pass + 1):
             step_data = self.get_pass(step)
             if step_data is None:
@@ -276,7 +279,8 @@ class MappingChain:
         chain_id = data.get("chain_id", _generate_chain_id())
         chain = cls(chain_id=chain_id)
         chain._created_at = data.get("created_at", chain._created_at)
-        chain._passes = data.get("passes", [])
+        # Копія: add_pass не має змінювати словник, переданий викликачем
+        chain._passes = copy.deepcopy(data.get("passes", []))
         chain._current_pass = len(chain._passes)
         return chain
 

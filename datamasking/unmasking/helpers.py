@@ -127,9 +127,11 @@ def check_mapping_version(masking_map: Dict) -> str:
     Returns:
         Версія логіки: 'v2.1', 'v2.0' або 'v1'
     """
-    version = masking_map.get("version", "1.0.0")
+    # Без ключа version — за структурою (до 3.1.22 тут підставлялось «1.0.0»,
+    # і mapping 2.x/3.x без version ішов у v1 і нічого не відновлював)
+    version = masking_map.get("version")
 
-    match = re.match(r"v?(\d+)\.(\d+)", str(version))
+    match = re.match(r"v?(\d+)\.(\d+)", str(version)) if version is not None else None
     if not match:
         # Невідома/відсутня версія — визначаємо за структурою: записи-об'єкти
         # з masked_as — це v2.1 (до 3.1.10 такий mapping ішов у v1 і нічого
@@ -164,11 +166,23 @@ def find_all_occurrences(text: str, pattern: str) -> List[Tuple[int, int]]:
     return occurrences
 
 
+# Номер «будь-якого входження» для записів без instances (див. build_instance_map)
+ANY_INSTANCE = 0
+
+
+def instance_original(instances: Dict[int, str], number: int) -> Optional[str]:
+    """Оригінал для входження *number* маски (або для будь-якого — ANY_INSTANCE)."""
+    value = instances.get(number)
+    return value if value is not None else instances.get(ANY_INSTANCE)
+
+
 def build_instance_map(masking_map: Dict) -> Dict[str, Dict[int, str]]:
     """
     Створює мапу для instance tracking при unmask.
 
-    Структура: {masked_value: {instance_num: original_value}}
+    Структура: {masked_value: {instance_num: original_value}}. Запис без
+    ключа instances (mapping v2.0) — номер ANY_INSTANCE: оригінал для
+    будь-якого входження цієї маски (до 3.1.22 такий запис не відновлювався).
     """
     instance_map: Dict[str, Dict[int, str]] = {}
     mappings_data = masking_map.get("mappings", {})
@@ -177,7 +191,7 @@ def build_instance_map(masking_map: Dict) -> Dict[str, Dict[int, str]]:
         for original, mask_info in mappings.items():
             if isinstance(mask_info, dict) and "masked_as" in mask_info:
                 masked_value = mask_info["masked_as"]
-                instances = mask_info.get("instances", [])
+                instances = mask_info.get("instances", [ANY_INSTANCE])
 
                 if masked_value not in instance_map:
                     instance_map[masked_value] = {}

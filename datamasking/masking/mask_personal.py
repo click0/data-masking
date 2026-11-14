@@ -24,7 +24,7 @@ from datamasking.masking.language import (
     generate_easy_name, same_name_forms, normalize_apostrophe,
 )
 from datamasking.masking import surname as _surname
-from datamasking.masking.surname import synthesize_surname, known_surname_forms
+from datamasking.masking.surname import synthesize_surname, known_surname_forms, paradigm_mask
 from datamasking.masking.mask_military import _distinct_mask, _reseed
 
 
@@ -136,7 +136,11 @@ def mask_surname(original: str, masking_dict: Dict, instance_counters: Dict) -> 
                 masked_parts.append(_apply_original_case(part, mp))
             masked = '-'.join(masked_parts)
         else:
-            masked = _apply_original_case(original, synthesize_surname(original, forbidden=forbidden))
+            # Інша форма того самого прізвища вже має маску — її основа
+            # (див. surname.paradigm_mask), інакше синтез
+            masked = _apply_original_case(
+                original, paradigm_mask(original, masking_dict, forbidden)
+                or synthesize_surname(original, forbidden=forbidden))
     return add_to_mapping(masking_dict, instance_counters, "surname", original, masked)
 
 def pseudo_gender(value: str) -> str:
@@ -145,7 +149,7 @@ def pseudo_gender(value: str) -> str:
     return 'male' if get_deterministic_seed("gender\x00" + value.lower()) % 2 == 0 else 'female'
 
 
-def mask_patronymic(patronymic: str, gender: str, masking_dict: Dict, instance_counters: Dict) -> str:
+def mask_patronymic(patronymic: str, gender: Optional[str], masking_dict: Dict, instance_counters: Dict) -> str:
     """
     Маскує по батькові з урахуванням роду і відмінка.
 
@@ -217,6 +221,8 @@ def mask_name(original: str, masking_dict: Dict, instance_counters: Dict,
     немає (v3.1.12). Маска стоїть у відмінку оригіналу, а всі відмінки одного
     імені дають одну маску.
     """
+    if not original:
+        return original
     # БАГ #17 FIX: Зберігаємо оригінальний регістр перед обробкою
     is_upper = original.isupper()
     is_capitalize = original[0].isupper() and (len(original) == 1 or original[1:].islower())

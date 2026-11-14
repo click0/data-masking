@@ -522,7 +522,7 @@ def mask_name_direct(
     value: str,
     masking_dict: Dict,
     instance_counters: Dict,
-    gender: str = 'male',
+    gender: Optional[str] = None,
 ) -> str:
     """Mask a first name, preserving case and respecting gender.
 
@@ -534,7 +534,9 @@ def mask_name_direct(
         value: First name string.
         masking_dict: Shared masking dictionary (mutated).
         instance_counters: Instance tracking counters (mutated).
-        gender: ``'male'`` (default) or ``'female'``.
+        gender: ``'male'``, ``'female'`` or ``None`` (default: from the name
+                itself, as ``data-mask`` does; before 3.1.22 the default
+                was ``'male'``, and «Марія» got a male mask).
 
     Returns:
         Masked first name with case preserved.
@@ -548,7 +550,7 @@ def mask_patronymic_direct(
     value: str,
     masking_dict: Dict,
     instance_counters: Dict,
-    gender: str = 'male',
+    gender: Optional[str] = None,
 ) -> str:
     """Mask a patronymic, preserving case and respecting gender.
 
@@ -559,7 +561,8 @@ def mask_patronymic_direct(
         value: Patronymic string.
         masking_dict: Shared masking dictionary (mutated).
         instance_counters: Instance tracking counters (mutated).
-        gender: ``'male'`` (default) or ``'female'``.
+        gender: ``'male'``, ``'female'`` or ``None`` (default: from the
+                patronymic itself — «Іванівна» is female).
 
     Returns:
         Masked patronymic with case preserved.

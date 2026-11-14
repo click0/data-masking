@@ -115,7 +115,8 @@ def _size_limit(config: Any) -> int:
 def _expected_instances(masking_map: Dict) -> int:
     """Скільки входжень масок записано в mapping (для ланцюга — у всіх проходах)."""
     maps = masking_map.get("passes", [masking_map]) if is_chain_mapping(masking_map) else [masking_map]
-    return sum(len(info.get("instances", []))
+    # Запис без instances (mapping v2.0) — щонайменше одне входження
+    return sum(len(info.get("instances", [None]))
                for m in maps if isinstance(m, dict)
                for cat in m.get("mappings", {}).values() if isinstance(cat, dict)
                for info in cat.values() if isinstance(info, dict))

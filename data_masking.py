@@ -120,8 +120,18 @@ _LIVE_FLAGS = frozenset({
     "MASK_NAMES", "MASK_IPN", "MASK_PASSPORT", "MASK_MILITARY_ID",
     "MASK_RANKS", "MASK_BRIGADES", "MASK_UNITS", "MASK_ORDERS",
     "MASK_BR_NUMBERS", "MASK_DATES",
+    "MASK_SURNAMES", "MASK_PATRONYMICS", "MASK_DATE_TEXT", "MASK_DOCUMENT_NUMBERS",
     "DEBUG_MODE", "PRESERVE_CASE", "HASH_ALGORITHM",
 })
+
+# Загальний прапорець вмикає/вимикає й похідні — як follow() у CLI
+# (до 3.1.22 MASK_NAMES = False лишав прізвища й по батькові маскованими,
+# MASK_DATES = False — текстові дати, MASK_ORDERS = False — номери довідок)
+_FOLLOWERS = {
+    "MASK_NAMES": ("MASK_SURNAMES", "MASK_PATRONYMICS"),
+    "MASK_DATES": ("MASK_DATE_TEXT",),
+    "MASK_ORDERS": ("MASK_DOCUMENT_NUMBERS",),
+}
 
 
 def __getattr__(name):
@@ -134,6 +144,8 @@ class _LiveFlagsModule(_ModuleType):
     def __setattr__(self, name, value):
         if name in _LIVE_FLAGS:
             setattr(_cfg, name, value)
+            for follower in _FOLLOWERS.get(name, ()):
+                setattr(_cfg, follower, value)
         else:
             super().__setattr__(name, value)
 
