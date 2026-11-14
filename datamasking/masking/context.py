@@ -11,7 +11,7 @@ import re
 from typing import Dict, List, Optional, Set, Tuple
 
 from datamasking.masking import constants as _cfg
-from datamasking.masking.declension import VOCATIVE, analyze_name, analyze_patronymic
+from datamasking.masking.declension import VOCATIVE, analyze_name, analyze_patronymic, fold_homoglyphs
 from datamasking.masking.helpers import normalize_string, normalize_identifier, is_pib_anchor, strip_word, ends_clause
 from datamasking.masking.language import looks_like_name, detect_gender_by_patronymic, is_likely_surname_by_case
 
@@ -19,7 +19,7 @@ from datamasking.masking.language import looks_like_name, detect_gender_by_patro
 # NBSP) і «|» таблиць. До 3.1.7 ПІБ із табуляцією або подвійним пробілом
 # між словами не маскувався взагалі: parse_hybrid_line стискав пробіли, а
 # рушій шукав зібраний ПІБ дослівно в рядку (і не знаходив).
-WORD_SEPARATOR_RE = re.compile(r"[\s|]+")
+WORD_SEPARATOR_RE = re.compile(r"[\s|;]+")
 
 # Канцелярські слова, після яких кандидат на ПІБ — не ПІБ («Наказ
 # Міністерства…»). Збіг — лише цілим словом: до 3.1.7 порівнювався підрядок,
@@ -178,6 +178,13 @@ def clean_line_before_parsing(line: str) -> str:
     # «|» таблиць — як пробіл (рушій потім знаходить слова ПІБ у рядку з
     # оригінальними роздільниками, див. engine.locate_words)
     line = line.replace('|', ' ')
+    # CSV з Excel («Петренко;Іван;Петрович;сержант»): «;» впритул до
+    # наступного слова — роздільник клітинок, як «|»; «; » у тексті й далі
+    # завершує ПІБ. Кома впритул до слова — як «, ». До 3.1.22 клітинка
+    # «Петрович;сержант;1234567890» була одним словом, і по батькові
+    # лишалось відкритим
+    line = re.sub(r';(?=\S)', ' ', line)
+    line = re.sub(r',(?=[^\W\d_])', ', ', line)
     # Видаляємо нумерацію пунктів на початку рядка: "20.1.2.1.", "1.", "1.2.", "3.2." тощо
     line = re.sub(r'^\s*(?:\d+\.)+\s*', '', line)
     line = re.sub(r'\d{1,2}[.!]\d{1,2}\.\d{4}', '', line)
@@ -196,7 +203,8 @@ def extract_identifier_from_line(line: str) -> Optional[str]:
 def extract_base_rank(full_rank_text: str) -> Tuple[str, str]:
     if not full_rank_text: return full_rank_text, ""
     service_type_phrases = ['медичної служби', 'юстиції']
-    status_phrases = ['у відставці', 'в запасі', 'у запасі', 'на пенсії', 'в резерві', 'у резерві']
+    status_phrases = ['у відставці', 'в запасі', 'у запасі', 'на пенсії', 'в резерві', 'у резерві',
+                      'запасу', 'резерву']
     full_rank_lower = full_rank_text.lower()
     base_rank = full_rank_text
     additional_parts = []
@@ -363,6 +371,9 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
         if words_after and words_after[0] in ['у', 'в', 'на']:
             if len(words_after) > 1 and words_after[1] in ['відставці', 'запасі', 'пенсії', 'резерві']:
                 additional_words += 2
+        elif words_after and words_after[0] in ['запасу', 'резерву']:
+            # «майор запасу Петренко …» (до 3.1.22 звання лишалось відкритим)
+            additional_words += 1
 
         rank_matches.append((rank_index, rank_form, first_tok, last_tok - first_tok + 1 + additional_words))
 
@@ -370,6 +381,15 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
         rank_matches.sort(key=lambda x: x[0])
         rank_index, found_rank, rank_position, rank_word_count = rank_matches[0]
         pib_start_index = rank_position + rank_word_count
+        # Одразу за званням — ще одне звання з кількох слів («…капітаном
+        # СТАРШИЙ ЛЕЙТЕНАНТ ПИЛИП'ЮК…», рядки, склеєні на час розбору): ПІБ
+        # іде після нього, і звання особи — воно. До 3.1.22 «СТАРШИЙ»
+        # маскувалось як прізвище. Звання з одного слова («капітан Майор Іван
+        # Іванович») може бути прізвищем, тож його не пропускаємо
+        multiword = {m[2]: m for m in rank_matches if len(m[1].split()) > 1}
+        while pib_start_index in multiword and multiword[pib_start_index][2] != rank_position:
+            rank_index, found_rank, rank_position, rank_word_count = multiword[pib_start_index]
+            pib_start_index = rank_position + rank_word_count
         rank_words = [strip_word(w) for w in
                       parts[rank_position:rank_position + rank_word_count]]
         found_rank_original_case = ' '.join(rank_words) if rank_words else found_rank
@@ -513,7 +533,7 @@ def roles_plausible(pib_words: List[str], after_rank: bool = False) -> bool:
     if len(pib_words) < 2:
         return True
     surname, name, patronymic, _order = assign_pib_roles(pib_words)
-    name_low = _strip_word(name).lower()
+    name_low = fold_homoglyphs(_strip_word(name))
     if name_low.endswith(_NOT_A_FIRST_NAME_ENDINGS):
         return False
     if name_low.endswith(_PLURAL_LIKE_ENDINGS) and not analyze_name(name_low).known:
@@ -522,7 +542,7 @@ def roles_plausible(pib_words: List[str], after_rank: bool = False) -> bool:
             and not analyze_name(name_low).known):
         return False
     if surname:
-        surname_low = _strip_word(surname).lower()
+        surname_low = fold_homoglyphs(_strip_word(surname))
         if len(surname_low) >= 7 and surname_low.endswith(('ом', 'ем')) \
                 and not name_low.endswith(_INSTRUMENTAL_NAME_ENDINGS):
             return False

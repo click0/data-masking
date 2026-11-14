@@ -34,16 +34,36 @@ def validate_file_size(file_path: Path, max_size: Optional[int] = None) -> None:
         )
 
 
+# Позначка mapping-у (з 3.1.22): номери входжень однієї маски рахуються без
+# урахування її регістру. Маска виводиться в регістрі кожного входження
+# («ГОРДІЇВНИ» в рядку капсом, «Гордіївни» далі), і лічильник за точним
+# регістром першої появи розходився з тим, що бачив unmask: коли два
+# оригінали мали маски, що різнились лише регістром, одне входження не
+# відновлювалось. Mapping без позначки (старіші версії) unmask читає як раніше
+INSTANCE_CASE_KEY = "instance_case"
+INSTANCE_CASE_INSENSITIVE = "insensitive"
+
+
 def get_next_instance(masked_value: str, instance_counters: Dict[str, int]) -> int:
     """
-    Повертає наступний номер екземпляра для даного замаскованого значення.
+    Повертає наступний номер екземпляра для даного замаскованого значення
+    (без урахування регістру — див. INSTANCE_CASE_KEY).
 
     Instance tracking: відстежуємо випадки коли різні оригінали
     маскуються в одне значення (колізії)
     """
-    instance_counters.setdefault(masked_value, 0)
-    instance_counters[masked_value] += 1
-    return instance_counters[masked_value]
+    key = masked_value.lower()
+    instance_counters.setdefault(key, 0)
+    instance_counters[key] += 1
+    return instance_counters[key]
+
+
+def record_instance(masking_dict: Dict, instance_counters: Dict[str, int], category: str,
+                    original: str, masked: str) -> None:
+    """Наступний номер входження *masked* — у instances запису *original*."""
+    masking_dict[INSTANCE_CASE_KEY] = INSTANCE_CASE_INSENSITIVE
+    instance_num = get_next_instance(masked, instance_counters)
+    masking_dict["mappings"][category][original]["instances"].append(instance_num)
 
 def add_to_mapping(masking_dict: Dict, instance_counters: Dict, category: str, original: str, masked: str) -> str:
     """
@@ -73,8 +93,7 @@ def add_to_mapping(masking_dict: Dict, instance_counters: Dict, category: str, o
         masked = masking_dict["mappings"][category][original]["masked_as"]
 
     # Instance tracking: зберігаємо кожне входження
-    instance_num = get_next_instance(masked, instance_counters)
-    masking_dict["mappings"][category][original]["instances"].append(instance_num)
+    record_instance(masking_dict, instance_counters, category, original, masked)
     return masked
 
 def _apply_original_case(original: str, masked: str) -> str:

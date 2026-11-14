@@ -127,9 +127,11 @@ def check_mapping_version(masking_map: Dict) -> str:
     Returns:
         Версія логіки: 'v2.1', 'v2.0' або 'v1'
     """
-    version = masking_map.get("version", "1.0.0")
+    # Без ключа version — за структурою (до 3.1.22 тут підставлялось «1.0.0»,
+    # і mapping 2.x/3.x без version ішов у v1 і нічого не відновлював)
+    version = masking_map.get("version")
 
-    match = re.match(r"v?(\d+)\.(\d+)", str(version))
+    match = re.match(r"v?(\d+)\.(\d+)", str(version)) if version is not None else None
     if not match:
         # Невідома/відсутня версія — визначаємо за структурою: записи-об'єкти
         # з masked_as — це v2.1 (до 3.1.10 такий mapping ішов у v1 і нічого
@@ -164,11 +166,23 @@ def find_all_occurrences(text: str, pattern: str) -> List[Tuple[int, int]]:
     return occurrences
 
 
+# Номер «будь-якого входження» для записів без instances (див. build_instance_map)
+ANY_INSTANCE = 0
+
+
+def instance_original(instances: Dict[int, str], number: int) -> Optional[str]:
+    """Оригінал для входження *number* маски (або для будь-якого — ANY_INSTANCE)."""
+    value = instances.get(number)
+    return value if value is not None else instances.get(ANY_INSTANCE)
+
+
 def build_instance_map(masking_map: Dict) -> Dict[str, Dict[int, str]]:
     """
     Створює мапу для instance tracking при unmask.
 
-    Структура: {masked_value: {instance_num: original_value}}
+    Структура: {masked_value: {instance_num: original_value}}. Запис без
+    ключа instances (mapping v2.0) — номер ANY_INSTANCE: оригінал для
+    будь-якого входження цієї маски (до 3.1.22 такий запис не відновлювався).
     """
     instance_map: Dict[str, Dict[int, str]] = {}
     mappings_data = masking_map.get("mappings", {})
@@ -177,7 +191,7 @@ def build_instance_map(masking_map: Dict) -> Dict[str, Dict[int, str]]:
         for original, mask_info in mappings.items():
             if isinstance(mask_info, dict) and "masked_as" in mask_info:
                 masked_value = mask_info["masked_as"]
-                instances = mask_info.get("instances", [])
+                instances = mask_info.get("instances", [ANY_INSTANCE])
 
                 if masked_value not in instance_map:
                     instance_map[masked_value] = {}
@@ -198,11 +212,23 @@ def _apply_original_case(original: str, masked: str) -> str:
     if original.isupper():
         return masked.upper()
     elif len(original) > 1 and original[0].isupper() and original[1:].islower():
+        # Подвійне ім'я («Анна-Марія», «АННА-МАРІЯ»): кожна частина з великої,
+        # якщо так записано в mapping — до 3.1.22 capitalize() давав
+        # «Анна-марія». «генерал-майор» лишається «Генерал-майор»
+        parts = masked.split("-")
+        if len(parts) > 1 and all(p[:1].isupper() for p in parts):
+            return "-".join(p.capitalize() for p in parts)
         return masked.capitalize()
     elif original.islower():
         return masked.lower()
-    # Змішаний регістр (Петренко-Іванова, McDonald) — лишаємо як у mapping;
-    # раніше все, що не UPPER/Title, силоміць переводилось у нижній
+    # Подвійне слово (маска «Доличенко-Ґубко»): регістр — по частинах, з
+    # тексту. До 3.1.22 бралося як у mapping, і запис-двійник з іншим
+    # регістром («ДОРОШЕНКО-ҐУДЗЬ» з рядка капсом) повертався капсом
+    o_parts, m_parts = original.split("-"), masked.split("-")
+    if len(o_parts) > 1 and len(o_parts) == len(m_parts) and all(o_parts) and all(m_parts):
+        return "-".join(_apply_original_case(o, m) for o, m in zip(o_parts, m_parts))
+    # Змішаний регістр (McDonald) — лишаємо як у mapping; раніше все, що не
+    # UPPER/Title, силоміць переводилось у нижній
     return masked
 
 
@@ -238,7 +264,8 @@ def extract_base_rank(full_rank_text: str) -> tuple:
     service_type_phrases = ['медичної служби', 'юстиції']
     status_phrases = [
         'у відставці', 'в запасі', 'у запасі',
-        'на пенсії', 'в резерві', 'у резерві'
+        'на пенсії', 'в резерві', 'у резерві',
+        'запасу', 'резерву',
     ]
 
     full_rank_lower = full_rank_text.lower()

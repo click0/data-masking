@@ -306,6 +306,10 @@ def create_filter(
     """
     only_set = parse_type_list(only) if only else None
     exclude_set = parse_type_list(exclude) if exclude else None
+    # «--only ,» — порожній перелік; до 3.1.22 він означав «усі типи»
+    for label, raw, parsed in (("only", only, only_set), ("exclude", exclude, exclude_set)):
+        if raw is not None and str(raw).strip() and not parsed:
+            raise ValueError(f"--{label}: no masking type given in {raw!r}")
     return SelectiveFilter(only_types=only_set, exclude_types=exclude_set)
 
 
@@ -320,9 +324,16 @@ def apply_filter_to_globals(
 
     Args:
         selective_filter: The filter to apply.
-        globals_dict: The module globals dict (e.g. ``data_masking.__dict__``
-                      or the result of ``globals()``).
+        globals_dict: Where the flags live: ``vars(datamasking.masking.
+                      constants)`` (what the engine reads) or another dict.
+                      ``data_masking.__dict__`` (the compatibility module)
+                      is redirected to the engine's flags: writing there
+                      directly had no effect before 3.1.22 and left stale
+                      values that hid the live ones.
     """
+    if globals_dict.get("__name__") == "data_masking":
+        from datamasking.masking import constants as _cfg
+        globals_dict = vars(_cfg)
     # Collect which MASK_* keys should be True
     enabled_globals: Set[str] = set()
     for type_name in selective_filter.enabled_types:

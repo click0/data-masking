@@ -13,17 +13,18 @@ from typing import Dict, List, Optional
 
 from datamasking.masking import constants as _cfg
 from datamasking.masking.helpers import (
-    add_to_mapping, get_deterministic_seed, get_next_instance,
+    add_to_mapping, get_deterministic_seed, record_instance,
     _apply_original_case, normalize_identifier,
 )
 from datamasking.masking.declension import (
     NOMINATIVE, VOCATIVE, analyze_name, analyze_patronymic, decline_name, decline_patronymic,
+    fold_homoglyphs,
 )
 from datamasking.masking.language import (
     generate_easy_name, same_name_forms, normalize_apostrophe,
 )
 from datamasking.masking import surname as _surname
-from datamasking.masking.surname import synthesize_surname, known_surname_forms
+from datamasking.masking.surname import synthesize_surname, known_surname_forms, paradigm_mask
 from datamasking.masking.mask_military import _distinct_mask, _reseed
 
 
@@ -135,7 +136,11 @@ def mask_surname(original: str, masking_dict: Dict, instance_counters: Dict) -> 
                 masked_parts.append(_apply_original_case(part, mp))
             masked = '-'.join(masked_parts)
         else:
-            masked = _apply_original_case(original, synthesize_surname(original, forbidden=forbidden))
+            # Інша форма того самого прізвища вже має маску — її основа
+            # (див. surname.paradigm_mask), інакше синтез
+            masked = _apply_original_case(
+                original, paradigm_mask(original, masking_dict, forbidden)
+                or synthesize_surname(original, forbidden=forbidden))
     return add_to_mapping(masking_dict, instance_counters, "surname", original, masked)
 
 def pseudo_gender(value: str) -> str:
@@ -144,7 +149,7 @@ def pseudo_gender(value: str) -> str:
     return 'male' if get_deterministic_seed("gender\x00" + value.lower()) % 2 == 0 else 'female'
 
 
-def mask_patronymic(patronymic: str, gender: str, masking_dict: Dict, instance_counters: Dict) -> str:
+def mask_patronymic(patronymic: str, gender: Optional[str], masking_dict: Dict, instance_counters: Dict) -> str:
     """
     Маскує по батькові з урахуванням роду і відмінка.
 
@@ -161,8 +166,7 @@ def mask_patronymic(patronymic: str, gender: str, masking_dict: Dict, instance_c
     if patronymic_lower in masking_dict["mappings"]["patronymic"]:
         masked = masking_dict["mappings"]["patronymic"][patronymic_lower]["masked_as"]
         masked_with_case = _apply_original_case(patronymic, masked)
-        instance_num = get_next_instance(masked, instance_counters)
-        masking_dict["mappings"]["patronymic"][patronymic_lower]["instances"].append(instance_num)
+        record_instance(masking_dict, instance_counters, "patronymic", patronymic_lower, masked)
         return masked_with_case
 
     form = analyze_patronymic(patronymic_lower)
@@ -217,6 +221,8 @@ def mask_name(original: str, masking_dict: Dict, instance_counters: Dict,
     немає (v3.1.12). Маска стоїть у відмінку оригіналу, а всі відмінки одного
     імені дають одну маску.
     """
+    if not original:
+        return original
     # БАГ #17 FIX: Зберігаємо оригінальний регістр перед обробкою
     is_upper = original.isupper()
     is_capitalize = original[0].isupper() and (len(original) == 1 or original[1:].islower())
@@ -248,7 +254,7 @@ def mask_name(original: str, masking_dict: Dict, instance_counters: Dict,
         # відмінка оригіналу (в регістрі оригіналу), тож усі відмінки одного
         # імені дають одну маску: «Петро/Петра/Петром» → «Павло/Павла/Павлом»
         # (v3.1.12; для називного відмінка — як у попередніх версіях)
-        first_letter = original[0].lower()
+        first_letter = fold_homoglyphs(original[0])
         lemma = _apply_original_case(original, form.nominative)
         seed = get_deterministic_seed(lemma)
         doc_words = _surname.residue_vocabulary()

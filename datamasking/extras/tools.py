@@ -277,9 +277,9 @@ def get_next_instance(masked_value: str, instance_counters: Dict[str, int]) -> i
     Returns:
         The incremented instance number (starting from 1).
     """
-    instance_counters.setdefault(masked_value, 0)
-    instance_counters[masked_value] += 1
-    return instance_counters[masked_value]
+    # Без урахування регістру маски — як у рушії (masking/helpers.py)
+    from datamasking.masking.helpers import get_next_instance as _engine_next
+    return _engine_next(masked_value, instance_counters)
 
 
 def add_to_mapping(
@@ -327,6 +327,8 @@ def add_to_mapping(
     else:
         masked = masking_dict["mappings"][entity_type][original]["masked_as"]
 
+    from datamasking.masking.helpers import INSTANCE_CASE_INSENSITIVE, INSTANCE_CASE_KEY
+    masking_dict[INSTANCE_CASE_KEY] = INSTANCE_CASE_INSENSITIVE
     instance_num = get_next_instance(masked, instance_counters)
     masking_dict["mappings"][entity_type][original]["instances"].append(
         instance_num
@@ -520,7 +522,7 @@ def mask_name_direct(
     value: str,
     masking_dict: Dict,
     instance_counters: Dict,
-    gender: str = 'male',
+    gender: Optional[str] = None,
 ) -> str:
     """Mask a first name, preserving case and respecting gender.
 
@@ -532,7 +534,9 @@ def mask_name_direct(
         value: First name string.
         masking_dict: Shared masking dictionary (mutated).
         instance_counters: Instance tracking counters (mutated).
-        gender: ``'male'`` (default) or ``'female'``.
+        gender: ``'male'``, ``'female'`` or ``None`` (default: from the name
+                itself, as ``data-mask`` does; before 3.1.22 the default
+                was ``'male'``, and «Марія» got a male mask).
 
     Returns:
         Masked first name with case preserved.
@@ -546,7 +550,7 @@ def mask_patronymic_direct(
     value: str,
     masking_dict: Dict,
     instance_counters: Dict,
-    gender: str = 'male',
+    gender: Optional[str] = None,
 ) -> str:
     """Mask a patronymic, preserving case and respecting gender.
 
@@ -557,7 +561,8 @@ def mask_patronymic_direct(
         value: Patronymic string.
         masking_dict: Shared masking dictionary (mutated).
         instance_counters: Instance tracking counters (mutated).
-        gender: ``'male'`` (default) or ``'female'``.
+        gender: ``'male'``, ``'female'`` or ``None`` (default: from the
+                patronymic itself — «Іванівна» is female).
 
     Returns:
         Masked patronymic with case preserved.

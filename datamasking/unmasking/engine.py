@@ -28,6 +28,7 @@ class FoundRank(TypedDict, total=False):
 
 from datamasking import _jsontext
 from datamasking.rank_data import (
+    RANK_DATIVE_OVI,
     RANK_DECLENSIONS,
     RANK_FEMININE_MAP,
     RANK_DECLENSIONS_FEMALE,
@@ -37,7 +38,7 @@ from datamasking.rank_data import (
 
 from datamasking.unmasking.helpers import (
     get_rank_info, check_mapping_version,
-    find_all_occurrences, build_instance_map,
+    find_all_occurrences, build_instance_map, instance_original,
     _apply_original_case, is_real_mask, extract_base_rank,
 )
 
@@ -138,8 +139,9 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
             instance_counters[masked_rank_lower] += 1
             instance_num = instance_counters[masked_rank_lower]
 
-            if masked_rank_lower in rank_instance_map and instance_num in rank_instance_map[masked_rank_lower]:
-                original_rank = rank_instance_map[masked_rank_lower][instance_num]
+            original_rank_opt = instance_original(rank_instance_map.get(masked_rank_lower, {}), instance_num)
+            if original_rank_opt is not None:
+                original_rank = original_rank_opt
 
                 if not is_real_mask(masked_rank_lower, masking_map, all_masked_ranks):
                     stats["skipped_count"] += 1
@@ -168,8 +170,9 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
         instance_counters[base_masked_form] += 1
         instance_num = instance_counters[base_masked_form]
 
-        if base_masked_form in rank_instance_map and instance_num in rank_instance_map[base_masked_form]:
-            original_base_form = rank_instance_map[base_masked_form][instance_num]
+        original_base_opt = instance_original(rank_instance_map.get(base_masked_form, {}), instance_num)
+        if original_base_opt is not None:
+            original_base_form = original_base_opt
 
             if not is_real_mask(base_masked_form, masking_map, all_masked_ranks):
                 stats["skipped_count"] += 1
@@ -184,7 +187,11 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
                         reconstructed_form = RANK_DECLENSIONS_FEMALE[base_female].get(case or 'nominative', base_female)
 
             else:
-                if original_base_form in RANK_DECLENSIONS:
+                if case == "dative_ovi" and original_base_form in RANK_DECLENSIONS:
+                    # «майорові» (з 3.1.22; див. rank_data.RANK_DATIVE_OVI)
+                    reconstructed_form = (RANK_DATIVE_OVI.get(original_base_form)
+                                          or RANK_DECLENSIONS[original_base_form]["dative"])
+                elif original_base_form in RANK_DECLENSIONS:
                     reconstructed_form = RANK_DECLENSIONS[original_base_form].get(case or 'nominative', original_base_form)
 
             reconstructed_form = _apply_original_case(base_rank_text, reconstructed_form)
@@ -263,11 +270,21 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
     by_lower: Dict[str, Dict[str, Dict[int, str]]] = {}
     for masked_value, inst_map in instance_map.items():
         by_lower.setdefault(masked_value.lower(), {})[masked_value] = inst_map
+    # З 3.1.22 mask рахує входження без урахування регістру маски (позначка
+    # instance_case у mapping): тоді номери в межах «маски в будь-якому
+    # регістрі» унікальні, і рахувати треба так само. Старіші mapping —
+    # за точним регістром, як і раніше
+    case_insensitive = masking_map.get("instance_case") == "insensitive"
 
     def _lookup(matched: str, key: str):
         group = by_lower.get(key)
         if not group:
             return None, key
+        if case_insensitive:
+            merged_ci: Dict[int, str] = {}
+            for inst in group.values():
+                merged_ci.update(inst)
+            return merged_ci, key
         if matched in group:
             return group[matched], matched
         if len(group) == 1:
@@ -322,7 +339,7 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
             "per-mask scan over %d masks — this is much slower on large files",
             e, len(instance_map),
         )
-        return _unmask_other_data_slow(restored_text, instance_map)
+        return _unmask_other_data_slow(restored_text, instance_map, case_insensitive)
 
     seen: Dict[str, int] = {}   # маска (точна або lower) -> скільки входжень уже зустріли
     segments: List[str] = []
@@ -344,7 +361,7 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
             continue
         n = seen.get(counter_key, 0) + 1
         seen[counter_key] = n
-        original_value = inst.get(n)
+        original_value = instance_original(inst, n)
         if original_value is None:
             stats["skipped_count"] += 1
             continue
@@ -364,17 +381,23 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
     return restored_text, stats
 
 
-def _unmask_other_data_slow(restored_text: str, instance_map: Dict) -> Tuple[str, Dict]:
+def _unmask_other_data_slow(restored_text: str, instance_map: Dict,
+                            case_insensitive: bool = False) -> Tuple[str, Dict]:
     """Запасна реалізація через find_all_occurrences (коли єдиний regex
     не компілюється). Семантика збігається з основним шляхом."""
     stats = {"restored_count": 0, "skipped_count": 0}
     replacements_to_do = []
+    if case_insensitive:
+        merged: Dict[str, Dict[int, str]] = {}
+        for masked_value, inst in instance_map.items():
+            merged.setdefault(masked_value.lower(), {}).update(inst)
+        instance_map = merged
     for masked_value, instance_to_original in instance_map.items():
         for instance_num, (start_pos, end_pos) in enumerate(
                 find_all_occurrences(restored_text, masked_value), 1):
-            if instance_num in instance_to_original:
-                replacements_to_do.append(
-                    (start_pos, end_pos, instance_to_original[instance_num], masked_value))
+            original = instance_original(instance_to_original, instance_num)
+            if original is not None:
+                replacements_to_do.append((start_pos, end_pos, original, masked_value))
                 stats["restored_count"] += 1
             else:
                 stats["skipped_count"] += 1
@@ -413,7 +436,9 @@ def unmask_text_v2(masked_text: str, masking_map: Dict, map_version: str) -> Tup
             total_stats["skipped_count"] += stats.get("skipped_count", 0)
         return text, total_stats
 
-    if map_version == "v2.1":
+    # Звання — для будь-якого v2.x (до 3.1.22 лише для v2.1: у mapping v2.0
+    # звання не відновлювались, бо unmask_other_data категорію rank пропускає)
+    if map_version.startswith("v2"):
         text_after_ranks, rank_stats = unmask_ranks_gender_aware(masked_text, masking_map)
         final_text, other_stats = unmask_other_data(text_after_ranks, masking_map)
         return final_text, {
@@ -428,23 +453,28 @@ def unmask_text_v1(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
     """
     Unmask для старих версій 1.x (проста заміна рядків).
     """
-    restored_text = masked_text
     stats = {"restored_count": 0, "skipped_count": 0}
-    all_replacements = []
+    originals: Dict[str, str] = {}
 
     for category, cat_mappings in masking_map.get("mappings", {}).items():
         for original, masked in cat_mappings.items():
-            if isinstance(masked, str):
-                all_replacements.append((masked, original))
+            if isinstance(masked, str) and masked:
+                originals.setdefault(masked, original)
+    if not originals:
+        return masked_text, stats
 
-    all_replacements.sort(key=lambda x: len(x[0]), reverse=True)
+    # Один прохід, цілими словами, довші маски першими. До 3.1.22 маски
+    # замінювались по черзі через str.replace: відновлений оригінал, що сам
+    # був маскою іншого запису, замінювався ще раз («Сидоренко» → «Петренко»
+    # → …), а маска «Петро» знаходилась усередині «Петрович»
+    alternatives = sorted(originals, key=len, reverse=True)
+    pattern = re.compile(r"(?<!\w)(?:" + "|".join(re.escape(m) for m in alternatives) + r")(?!\w)")
 
-    for masked, original in all_replacements:
-        if masked in restored_text:
-            stats["restored_count"] += restored_text.count(masked)
-            restored_text = restored_text.replace(masked, original)
+    def _replace(match: "re.Match[str]") -> str:
+        stats["restored_count"] += 1
+        return originals[match.group(0)]
 
-    return restored_text, stats
+    return pattern.sub(_replace, masked_text), stats
 
 
 def unmask_json_with_stats(masked_data: Any, masking_map: Dict, map_version: str) -> Tuple[Any, Dict]:

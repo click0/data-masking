@@ -4,6 +4,102 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed — data left unmasked
+- Tables exported from Excel as CSV (`Петренко Іван Петрович;сержант;1234567890`,
+  `Петренко;Іван;Петрович;сержант`): a `;` with no space after it now
+  separates cells like `|` does, so the name, the rank and the patronymic
+  in the last cell are masked. Before, the patronymic glued to the next cell
+  stayed open. A `;` followed by a space still ends a name, as in prose. A
+  comma glued to the next word (`Петрович,сержант`) is read as `, `.
+- A Latin letter that looks like a Cyrillic one inside a name (`Ярoслав`
+  with a Latin `o`, typical of text pasted from elsewhere) made the name
+  unrecognised. Its mask could then be the real name (`Ярослав`), and a
+  surname in an oblique case next to it (`Литвином`) stayed open. Names and
+  patronymics are now analysed with such letters read as Cyrillic; the
+  mapping keeps the original spelling.
+- Ranks followed by `запасу` or `резерву` (`майор запасу Петренко …`) and
+  ranks in the dative ending in `-ові` (`майорові`, `солдатові`,
+  `старшому лейтенантові`) were not recognised and stayed open next to a
+  masked name. The `-ові` form gets a mask that has the same form.
+- After a rank at the end of a line, a rank at the start of the next line
+  (`… капітаном` / `СТАРШИЙ ЛЕЙТЕНАНТ ПИЛИП'ЮК …`) had its first word masked
+  as a surname, also inside the rank's mask (`СТЕМИЙ СТЕМИЙ ПРАПОРЩИК`). A
+  rank of several words right after another rank is now the person's rank.
+
+### Fixed — unmasking did not restore the original
+- When two values got masks that differ only in letter case (a patronymic
+  first seen in a line in capitals, `ГОРДІЇВНИ`, and another one,
+  `Гордіївни`), one occurrence was not restored: masking numbered the
+  occurrences by the mask's case at its first use, while the text shows the
+  mask in the case of each occurrence. Occurrences are now numbered
+  regardless of case, and new mappings say so (`"instance_case":
+  "insensitive"`); mappings from earlier versions are unmasked as before.
+- A double surname that also appears in a line in capitals came back in
+  capitals in an ordinary line (`ДОРОШЕНКУ-ҐУДЗЮ` instead of
+  `Дорошенку-Ґудзю`); the case of each part is now taken from the text.
+  A double first name came back with a lower-case second part
+  (`Анна-марія`).
+- In a long order that mentions many ranks without names, a rank's mask could
+  equal one of those open ranks: only the neighbours two steps up or down
+  were tried. Unmasking then replaced the open rank (`доповіла капітану роти`
+  came back as `майору`). The nearest free rank of the hierarchy is now taken.
+  When every rank of the hierarchy is open in the document, the rank is left
+  as it is rather than masked with a rank that unmasking would confuse.
+
+### Fixed — older mapping files
+- A v2.0 mapping (entries without `instances`) restored nothing, with exit
+  code 0 and no warning. Such an entry now restores every occurrence of its
+  mask.
+- Ranks in v2.0 mappings were never restored; they now are, as for 2.1+.
+- A mapping without a `version` key was read as v1 and restored nothing; its
+  format is now taken from its structure.
+- v1 mappings (plain `"original": "mask"` pairs) were restored by replacing
+  one mask after another. A restored value that was itself another mask was
+  replaced again (`Сидоренко` → `Петренко` → …), and a mask was also found
+  inside longer words (`Петро` inside `Петрович`). They are now restored in
+  one pass, whole words only.
+
+### Fixed — masks
+- The case forms of one surname in a document now share one synthetic stem
+  (`Коваль`/`Коваля`/`Ковалем` → `Ковар`/`Коваря`/`Коварем`), as the
+  documentation promises. Surnames declined like nouns ending in a consonant
+  (Коваль, Ткач, Бондар, Мороз, Ґудзь) got a different stem in each case:
+  their case endings match those of surnames ending in `-а`/`-я`. A form now
+  takes the stem of another form already masked in the document. The `-ин`
+  and `-ін` families also cover `Литвином`, `Литвинові` and `Кузьміним`.
+  A bare surname ending in a consonant gets a mask ending in a consonant
+  where possible.
+- A surname mask could contain the apostrophe `ʼ` (U+02BC) from the name
+  dictionary. A document in cp1251 with such a mask then failed to save.
+  Surname masks now use the ASCII apostrophe, as name masks already did.
+
+### Fixed — Python API
+- `data_masking` (compatibility module): `MASK_NAMES = False` left surnames
+  and patronymics masked, and `MASK_DATES = False` left text dates masked;
+  they now switch the related flags too, as the configuration does.
+  `MASK_SURNAMES`, `MASK_PATRONYMICS`, `MASK_DATE_TEXT` and
+  `MASK_DOCUMENT_NUMBERS` can be read and set.
+  `apply_filter_to_globals(f, data_masking.__dict__)`, as its docstring
+  suggested, had no effect; it now sets the engine's flags.
+- `tools.mask_name_direct`, `mask_patronymic_direct` and `mask_value` for
+  names and patronymics assumed a male name unless told otherwise
+  (`Марія` → a male name). The gender now comes from the value, as in
+  `data-mask`. `mask_value("", "name")` no longer fails.
+- `generate_password(ensure_variety=True)` could leave out a character class
+  (about one short password in ten). A length below 1 is now an error instead
+  of an empty password, and the generator's `-l 0` / `-n 0` are rejected.
+- `MappingChain.get_chain_mapping(a, b)` forward was off by one pass
+  (`(1, 2)` mapped the original text, not pass 1, to pass 2).
+  `ChainUnmasker` restored nothing for a chain whose passes have no `"pass"`
+  number, or after `chain.passes = [...]`. `MappingChain.from_dict` no longer
+  changes the dictionary it was given.
+
+### Fixed — command line
+- `--only ,` (an empty list) enabled every type; an empty `--only` or
+  `--exclude` list is now an error (exit code 2).
+
 ## [3.1.21] - 2026-11
 
 ### Fixed — names left unmasked

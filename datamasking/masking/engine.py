@@ -432,7 +432,7 @@ def _rank_tail_words() -> frozenset:
     global _RANK_TAIL_WORDS
     if _RANK_TAIL_WORDS is None:
         words = {w for form in _cfg.ALL_RANK_FORMS for w in form.split()}
-        words |= {"служби", "юстиції", "відставці", "запасі", "запасу", "резерві", "пенсії"}
+        words |= {"служби", "юстиції", "відставці", "запасі", "запасу", "резерві", "резерву", "пенсії"}
         _RANK_TAIL_WORDS = frozenset(words)
     return _RANK_TAIL_WORDS
 
@@ -625,12 +625,12 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
 def locate_words(line: str, phrase: str) -> Optional[Tuple[int, int, List[str]]]:
     """Знаходить слова *phrase* (розділені пробілом) у *line*, де між ними
     може стояти будь-який роздільник: кілька пробілів, таб, NBSP, «|»
-    таблиць. Повертає (start, end, роздільники між словами) або None.
+    таблиць, «;» клітинок CSV. Повертає (start, end, роздільники між словами) або None.
     До 3.1.7 ПІБ шукався дослівно, і «Коваль\tТетяна\tСергіївна» не маскувався."""
     words = phrase.split()
     if not words:
         return None
-    pattern = r"(?<![\w'’ʼ-])" + r"([\s|]+)".join(re.escape(w) for w in words) + r"(?![\w'’ʼ-])"
+    pattern = r"(?<![\w'’ʼ-])" + r"([\s|;]+)".join(re.escape(w) for w in words) + r"(?![\w'’ʼ-])"
     m = re.search(pattern, line)
     if not m:
         # Слово могло бути приклеєне до лапок/розділового знака — як раніше, дослівно
@@ -649,7 +649,7 @@ def locate_words_before(line: str, phrase: str, before: int) -> Optional[Tuple[i
     words = phrase.split()
     if not words:
         return None
-    pattern = r"(?<![\w'’ʼ-])" + r"([\s|]+)".join(re.escape(w) for w in words) + r"(?![\w'’ʼ-])"
+    pattern = r"(?<![\w'’ʼ-])" + r"([\s|;]+)".join(re.escape(w) for w in words) + r"(?![\w'’ʼ-])"
     best = None
     for m in re.finditer(pattern, line):
         if m.end() <= before:
@@ -662,11 +662,11 @@ def locate_words_before(line: str, phrase: str, before: int) -> Optional[Tuple[i
 
 
 def _words_pattern(phrase: str) -> str:
-    return (r"(?<![\w'’ʼ-])" + r"([\s|]+)".join(re.escape(w) for w in phrase.split())
+    return (r"(?<![\w'’ʼ-])" + r"([\s|;]+)".join(re.escape(w) for w in phrase.split())
             + r"(?![\w'’ʼ-])")
 
 
-_RANK_PIB_GAP_RE = re.compile(r"[\s|«»\"„“”']*")
+_RANK_PIB_GAP_RE = re.compile(r"[\s|;«»\"„“”']*")
 
 
 def locate_rank_and_pib(line: str, rank: str, pib: str) -> Tuple[Optional[Tuple[int, int, List[str]]],
@@ -792,6 +792,8 @@ def _mask_text_core(text: str, masking_dict: Dict, instance_counters: Dict,
     # формою (див. mask_rank, v3.1.14) — і в пробному, і в основному прогоні
     saved_feminine = _cfg.FEMININE_RANK_BASES
     _cfg.FEMININE_RANK_BASES = _feminine_rank_bases(text)
+    saved_ovi = _cfg.OVI_RANK_BASES
+    _cfg.OVI_RANK_BASES = _ovi_rank_bases(text)
     saved_spaced = _cfg.SPACED_RANK_BASES
     _cfg.SPACED_RANK_BASES = _spaced_rank_bases(text)
     saved = _cfg.AVOID_RANK_MASKS
@@ -804,6 +806,7 @@ def _mask_text_core(text: str, masking_dict: Dict, instance_counters: Dict,
     finally:
         _cfg.AVOID_RANK_MASKS = saved
         _cfg.FEMININE_RANK_BASES = saved_feminine
+        _cfg.OVI_RANK_BASES = saved_ovi
         _cfg.SPACED_RANK_BASES = saved_spaced
         _surname.set_residue(None)
     return ("\ufeff" + text) if bom else text
@@ -818,6 +821,14 @@ def _feminine_rank_bases(text: str) -> frozenset:
         if gender == 'female' and re.search(r"(?<![\w'])" + re.escape(form) + r"(?![\w'])", lowered):
             bases.add(base.lower())
     return frozenset(bases)
+
+
+def _ovi_rank_bases(text: str) -> frozenset:
+    """Базові звання, що в тексті стоять у давальному на «-ові» («майорові»)."""
+    lowered = re.sub(r"\s+", " ", text.lower())
+    return frozenset(
+        base.lower() for form, (base, case, _gender) in _cfg.RANK_TO_NOMINATIVE.items()
+        if case == "dative_ovi" and re.search(r"(?<![\w'-])" + re.escape(form) + r"(?![\w'-])", lowered))
 
 
 # Роздільник між словами, який не є одним звичайним пробілом
@@ -838,7 +849,7 @@ def _rank_span_regex() -> Pattern:
         _RANK_SPAN_CACHE[key] = re.compile(
             r"(?<![\w-])(?:" + alternatives + r")"
             r"(?:\s+(?:медичної\s+служби|юстиції))?"
-            r"(?:\s+(?:(?:у|в)\s+(?:відставці|запасі|резерві)|на\s+пенсії))?"
+            r"(?:\s+(?:(?:у|в)\s+(?:відставці|запасі|резерві)|на\s+пенсії|запасу|резерву))?"
             r"(?![\w-])", re.IGNORECASE)
     return _RANK_SPAN_CACHE[key]
 

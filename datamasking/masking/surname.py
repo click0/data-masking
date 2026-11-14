@@ -48,7 +48,12 @@ _ENDINGS: Tuple[Tuple[str, str], ...] = (
     ("евим", "ев"), ("евою", "ев"), ("евої", "ев"), ("евій", "ев"), ("ева", "ев"), ("еву", "ев"), ("ев", "ев"),
     ("євим", "єв"), ("євою", "єв"), ("євої", "єв"), ("євій", "єв"), ("єва", "єв"), ("єву", "єв"), ("єв", "єв"),
     ("івим", "ів"), ("івою", "ів"), ("івої", "ів"), ("івій", "ів"), ("іва", "ів"), ("іву", "ів"), ("ів", "ів"),
-    ("иним", "ин"), ("иною", "ин"), ("иної", "ин"), ("иній", "ин"), ("ина", "ин"), ("ину", "ин"), ("ин", "ин"),
+    # «-ином», «-инові» — орудний і давальний іменникової відміни (Литвином,
+    # Литвинові); до 3.1.22 вони розбирались як основа «литвин» + «-ом», і
+    # маска мала іншу основу, ніж «Литвин» / «Литвина»
+    ("инові", "ин"), ("иним", "ин"), ("ином", "ин"), ("иною", "ин"), ("иної", "ин"), ("иній", "ин"),
+    ("ина", "ин"), ("ину", "ин"), ("ин", "ин"),
+    ("іним", "ін"), ("іною", "ін"), ("іної", "ін"), ("іній", "ін"), ("іна", "ін"), ("іну", "ін"), ("ін", "ін"),
     # -ук / -юк / -чук / -ак / -як / -ик / -ець / -ун (приголосні основи)
     ("укові", "ук"), ("уком", "ук"), ("ука", "ук"), ("уку", "ук"), ("ук", "ук"),
     ("юкові", "юк"), ("юком", "юк"), ("юка", "юк"), ("юку", "юк"), ("юк", "юк"),
@@ -162,7 +167,7 @@ _VOWELS = "аеиіоу"
 # Родини, чиє закінчення приєднується до основи на приголосну: основа з
 # м'яким знаком/й/голосною дала б «Заєцьуком», «Журавельий»
 _CONSONANT_FAMILIES = frozenset({
-    "енко", "ко", "ський", "цький", "ов", "ев", "єв", "ів", "ин",
+    "енко", "ко", "ський", "цький", "ов", "ев", "єв", "ів", "ин", "ін",
     "ук", "юк", "ак", "як", "ик", "ець", "єць", "ун", "ий",
 })
 
@@ -182,7 +187,10 @@ def _draw_candidates(seed: int, bare: bool) -> Iterable[Tuple[str, str]]:
     """
     _cfg.fake_uk.seed_instance(seed)
     for _ in range(_FAKER_DRAWS):
-        candidate = _cfg.fake_uk.last_name().lower()
+        # Апостроф — ASCII «'», як у масках імен (v3.1.8): faker дає «ʼ»
+        # (U+02BC), якого немає в cp1251, і документ у cp1251 з такою маскою
+        # прізвища не зберігався (до 3.1.22)
+        candidate = _cfg.fake_uk.last_name().lower().replace("ʼ", "'").replace("’", "'")
         if bare:
             if len(candidate) >= MIN_STEM and "'" not in candidate and " " not in candidate:
                 yield candidate, ""
@@ -193,7 +201,7 @@ def _draw_candidates(seed: int, bare: bool) -> Iterable[Tuple[str, str]]:
 
 
 def _pick_stem(seed: int, target_len: int, family: str, ending: str, forbidden: Set[str],
-               prefix: str = "") -> str:
+               prefix: str = "", consonant_end: bool = False) -> str:
     """Обирає синтетичну основу: тієї ж родини, придатну до закінчення
     і схожої довжини, якщо є. Якщо задано *prefix* — основа починається
     з нього (перші символи оригінального прізвища), а решта синтетична."""
@@ -217,6 +225,12 @@ def _pick_stem(seed: int, target_len: int, family: str, ending: str, forbidden: 
     def closest(pool):
         return min(pool, key=lambda s: abs(len(s) - target_len)) if pool else None
 
+    # «Голе» прізвище на приголосний (Бондар, Мороз) — маска теж на
+    # приголосний, якщо такий кандидат є: інші відмінки (Бондаря, Морозом)
+    # беруть цю основу (paradigm_mask), і «Бонуба» давала б «Бонубая»
+    if consonant_end:
+        same_family = [s for s in same_family if s[-1] in _CONSONANTS] or same_family
+        others = [s for s in others if s[-1] in _CONSONANTS] or others
     return closest(same_family) or closest(others) or _random_stem(seed, target_len, prefix)
 
 
@@ -294,6 +308,76 @@ def _leaks(masked: str, original: str, stem: str) -> bool:
     return False
 
 
+# Відміна на приголосний (Коваль, Ткач, Бондар): закінчення її відмінків
+# (-а/-я, -у/-ю, -ем) збігаються з закінченнями родин «-а»/«-я» (Сорока,
+# Гмиря), і без словника форма «Ткача» не відрізняється від «Сороки». Тож
+# кожна форма діставала свою синтетичну основу: Коваль → Ковар, але
+# Коваля → Кобіля (до 3.1.22). У межах документа форма бере основу з маски
+# іншої форми того самого прізвища, якщо та вже є
+_PLAIN_FAMILIES = frozenset({"", "а", "я"})
+
+
+def _plain_paradigm(word: str) -> Optional[Tuple[str, str]]:
+    """(основа без м'якого знака, закінчення) для прізвищ «простих» родин,
+    інакше None. «коваль» → («ковал», ""), «коваля» → («ковал», «я»)."""
+    stem, ending, family = split_surname(word.lower())
+    if family not in _PLAIN_FAMILIES:
+        return None
+    if not ending and stem.endswith("ь"):
+        stem = stem[:-1]
+    return (stem, ending) if len(stem) >= MIN_STEM else None
+
+
+# Закінчення відмінка — за останнім приголосним нової основи: після
+# задньоязикових і губних — тверді (Ткака → Ткака, Ткаком), після шиплячих —
+# «-а/-у/-ем» (Ткача, Ткачем), після інших — як в оригіналі (Коваря, Ковар)
+_HARD_ONLY = frozenset("кгґхпбфвм")
+_HUSHING = frozenset("жчшщ")
+_TO_HARD = {"я": "а", "ю": "у", "ем": "ом", "єм": "ом", "еві": "ові"}
+_TO_HUSHING = {"я": "а", "ю": "у", "ом": "ем", "єм": "ем", "ові": "еві"}
+
+
+def _harmonize(ending: str, stem: str) -> str:
+    last = stem[-1:]
+    if last in _HARD_ONLY:
+        return _TO_HARD.get(ending, ending)
+    if last in _HUSHING:
+        return _TO_HUSHING.get(ending, ending)
+    return ending
+
+
+def paradigm_mask(original: str, masking_dict: Dict, forbidden: Set[str]) -> Optional[str]:
+    """Маска (нижній регістр) для *original* з основою маски іншої форми того
+    самого прізвища в цьому документі — або None, якщо такої форми немає чи
+    похідна маска не годиться (витік, збіг зі словом документа)."""
+    own = _plain_paradigm(original)
+    if own is None:
+        return None
+    stem, ending = own
+    for other, info in masking_dict.get("mappings", {}).get("surname", {}).items():
+        if not isinstance(info, dict) or not info.get("masked_as") or other.lower() == original.lower():
+            continue
+        theirs = _plain_paradigm(other)
+        if theirs is None or theirs[0] != stem:
+            continue
+        other_mask = str(info["masked_as"]).lower()
+        other_ending = theirs[1]
+        if other_ending and not other_mask.endswith(other_ending):
+            continue
+        new_stem = other_mask[:len(other_mask) - len(other_ending)] if other_ending else other_mask
+        new_stem = new_stem[:-1] if new_stem.endswith("ь") else new_stem
+        # Основа на голосну з відмінковим закінченням — «Бонубая», «Мойдаа»
+        if not new_stem or "-" in new_stem or (ending and new_stem[-1] not in _CONSONANTS):
+            continue
+        masked = new_stem + _harmonize(ending, new_stem)
+        if original.lower().endswith("ь") and not ending and new_stem[-1:] in _CONSONANTS:
+            masked += "ь"   # Коваль → Кобіль, як Коваля → Кобіля
+        if (not _leaks(masked, original, split_surname(original)[0])
+                and masked not in forbidden and masked not in _document_vocab):
+            return masked
+    return None
+
+
 def known_surname_forms(masking_dict: Dict, except_original: Optional[str] = None) -> Set[str]:
     """Усі вже відомі оригінали та маски прізвищ (нижній регістр) —
     нова маска не повинна з ними збігатися, інакше unmask неоднозначний.
@@ -330,7 +414,9 @@ def synthesize_surname(original: str, forbidden: Optional[Set[str]] = None,
     last = ""
     for attempt in range(_ATTEMPTS):
         seed = base_seed if attempt == 0 else get_deterministic_seed(f"{stem}\x00{attempt}")
-        new_stem = _pick_stem(seed, len(stem), family, ending, forbidden={stem}, prefix=prefix)
+        new_stem = _pick_stem(seed, len(stem), family, ending, forbidden={stem}, prefix=prefix,
+                              consonant_end=(not ending and not family
+                                             and (stem[-1:] in _CONSONANTS or stem.endswith("ь"))))
         masked = new_stem + ending
         last = masked
         if not _leaks(masked, original, stem) and masked not in forbidden:
