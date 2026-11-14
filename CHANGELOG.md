@@ -4,6 +4,50 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed — data left unmasked
+- Tables exported from Excel as CSV (`Петренко Іван Петрович;сержант;1234567890`,
+  `Петренко;Іван;Петрович;сержант`): a `;` with no space after it now
+  separates cells like `|` does, so the name, the rank and the patronymic
+  in the last cell are masked. Before, the patronymic glued to the next cell
+  stayed open. A `;` followed by a space still ends a name, as in prose. A
+  comma glued to the next word (`Петрович,сержант`) is read as `, `.
+- A Latin letter that looks like a Cyrillic one inside a name (`Ярoслав`
+  with a Latin `o`, typical of text pasted from elsewhere) made the name
+  unrecognised. Its mask could then be the real name (`Ярослав`), and a
+  surname in an oblique case next to it (`Литвином`) stayed open. Names and
+  patronymics are now analysed with such letters read as Cyrillic; the
+  mapping keeps the original spelling.
+- Ranks followed by `запасу` or `резерву` (`майор запасу Петренко …`) and
+  ranks in the dative ending in `-ові` (`майорові`, `солдатові`,
+  `старшому лейтенантові`) were not recognised and stayed open next to a
+  masked name. The `-ові` form gets a mask that has the same form.
+- After a rank at the end of a line, a rank at the start of the next line
+  (`… капітаном` / `СТАРШИЙ ЛЕЙТЕНАНТ ПИЛИП'ЮК …`) had its first word masked
+  as a surname, also inside the rank's mask (`СТЕМИЙ СТЕМИЙ ПРАПОРЩИК`). A
+  rank of several words right after another rank is now the person's rank.
+
+### Fixed — unmasking did not restore the original
+- When two values got masks that differ only in letter case (a patronymic
+  first seen in a line in capitals, `ГОРДІЇВНИ`, and another one,
+  `Гордіївни`), one occurrence was not restored: masking numbered the
+  occurrences by the mask's case at its first use, while the text shows the
+  mask in the case of each occurrence. Occurrences are now numbered
+  regardless of case, and new mappings say so (`"instance_case":
+  "insensitive"`); mappings from earlier versions are unmasked as before.
+- A double surname that also appears in a line in capitals came back in
+  capitals in an ordinary line (`ДОРОШЕНКУ-ҐУДЗЮ` instead of
+  `Дорошенку-Ґудзю`); the case of each part is now taken from the text.
+  A double first name came back with a lower-case second part
+  (`Анна-марія`).
+- In a long order that mentions many ranks without names, a rank's mask could
+  equal one of those open ranks: only the neighbours two steps up or down
+  were tried. Unmasking then replaced the open rank (`доповіла капітану роти`
+  came back as `майору`). The nearest free rank of the hierarchy is now taken.
+  When every rank of the hierarchy is open in the document, the rank is left
+  as it is rather than masked with a rank that unmasking would confuse.
+
 ## [3.1.21] - 2026-11
 
 ### Fixed — names left unmasked

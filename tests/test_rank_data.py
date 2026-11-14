@@ -327,7 +327,8 @@ class TestRankToNominative:
 
     def test_case_names_valid(self):
         """Тест: валідність назв відмінків"""
-        valid_cases = {'nominative', 'genitive', 'dative', 'instrumental'}
+        # dative_ovi — давальний на «-ові» («майорові», з 3.1.22)
+        valid_cases = {'nominative', 'genitive', 'dative', 'instrumental', 'dative_ovi'}
 
         for case_form, (base, case, gender) in RANK_TO_NOMINATIVE.items():
             assert case in valid_cases, \

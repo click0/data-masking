@@ -82,8 +82,22 @@ _MALE_NAMES: Optional[Set[str]] = None
 _FEMALE_NAMES: Optional[Set[str]] = None
 
 
+# Латинські літери, що виглядають як кириличні (a c e i o p x y k), — у
+# кирилицю, якщо в слові вже є кирилиця: «Ярoслав» з латинською «o» (копія
+# з іншого документа) інакше не впізнавалось як ім'я, а маскою могло стати
+# «Ярослав» — справжнє ім'я (до 3.1.22). Слово лише з латиниці не змінюється
+_HOMOGLYPHS = str.maketrans("aceiopxyk", "асеіорхук")
+_CYRILLIC_RE = re.compile(r"[а-яіїєґ]")
+
+
+def fold_homoglyphs(word: str) -> str:
+    """Нижній регістр слова з латинськими двійниками, заміненими кирилицею."""
+    low = word.lower()
+    return low.translate(_HOMOGLYPHS) if _CYRILLIC_RE.search(low) else low
+
+
 def _normalize(word: str) -> str:
-    return word.replace("ʼ", "'").replace("’", "'").lower()
+    return fold_homoglyphs(word.replace("ʼ", "'").replace("’", "'"))
 
 
 def _faker_names() -> Tuple[Set[str], Set[str]]:

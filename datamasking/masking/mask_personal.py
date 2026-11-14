@@ -13,11 +13,12 @@ from typing import Dict, List, Optional
 
 from datamasking.masking import constants as _cfg
 from datamasking.masking.helpers import (
-    add_to_mapping, get_deterministic_seed, get_next_instance,
+    add_to_mapping, get_deterministic_seed, record_instance,
     _apply_original_case, normalize_identifier,
 )
 from datamasking.masking.declension import (
     NOMINATIVE, VOCATIVE, analyze_name, analyze_patronymic, decline_name, decline_patronymic,
+    fold_homoglyphs,
 )
 from datamasking.masking.language import (
     generate_easy_name, same_name_forms, normalize_apostrophe,
@@ -161,8 +162,7 @@ def mask_patronymic(patronymic: str, gender: str, masking_dict: Dict, instance_c
     if patronymic_lower in masking_dict["mappings"]["patronymic"]:
         masked = masking_dict["mappings"]["patronymic"][patronymic_lower]["masked_as"]
         masked_with_case = _apply_original_case(patronymic, masked)
-        instance_num = get_next_instance(masked, instance_counters)
-        masking_dict["mappings"]["patronymic"][patronymic_lower]["instances"].append(instance_num)
+        record_instance(masking_dict, instance_counters, "patronymic", patronymic_lower, masked)
         return masked_with_case
 
     form = analyze_patronymic(patronymic_lower)
@@ -248,7 +248,7 @@ def mask_name(original: str, masking_dict: Dict, instance_counters: Dict,
         # відмінка оригіналу (в регістрі оригіналу), тож усі відмінки одного
         # імені дають одну маску: «Петро/Петра/Петром» → «Павло/Павла/Павлом»
         # (v3.1.12; для називного відмінка — як у попередніх версіях)
-        first_letter = original[0].lower()
+        first_letter = fold_homoglyphs(original[0])
         lemma = _apply_original_case(original, form.nominative)
         seed = get_deterministic_seed(lemma)
         doc_words = _surname.residue_vocabulary()

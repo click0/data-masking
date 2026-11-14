@@ -277,9 +277,9 @@ def get_next_instance(masked_value: str, instance_counters: Dict[str, int]) -> i
     Returns:
         The incremented instance number (starting from 1).
     """
-    instance_counters.setdefault(masked_value, 0)
-    instance_counters[masked_value] += 1
-    return instance_counters[masked_value]
+    # Без урахування регістру маски — як у рушії (masking/helpers.py)
+    from datamasking.masking.helpers import get_next_instance as _engine_next
+    return _engine_next(masked_value, instance_counters)
 
 
 def add_to_mapping(
@@ -327,6 +327,8 @@ def add_to_mapping(
     else:
         masked = masking_dict["mappings"][entity_type][original]["masked_as"]
 
+    from datamasking.masking.helpers import INSTANCE_CASE_INSENSITIVE, INSTANCE_CASE_KEY
+    masking_dict[INSTANCE_CASE_KEY] = INSTANCE_CASE_INSENSITIVE
     instance_num = get_next_instance(masked, instance_counters)
     masking_dict["mappings"][entity_type][original]["instances"].append(
         instance_num

@@ -13,7 +13,7 @@ from typing import Optional, Tuple, Set
 
 from datamasking.masking import constants as _cfg
 from datamasking.masking.declension import (
-    VOCATIVE, analyze_name, analyze_patronymic, decline_name,
+    VOCATIVE, analyze_name, analyze_patronymic, decline_name, fold_homoglyphs,
 )
 from datamasking.masking.helpers import get_deterministic_seed, strip_word
 
@@ -129,7 +129,7 @@ def same_name_forms(candidate: str, original: str) -> bool:
     закінчення (≤ 1 літери від коротшого слова). До 3.1.6 порівнювалась
     лише точна форма, і «Олега» маскувалось як «Олег» — справжнє ім'я
     (7 із 15 поширених імен у родовому відмінку)."""
-    a, b = (candidate or "").lower(), (original or "").lower()
+    a, b = fold_homoglyphs(candidate or ""), fold_homoglyphs(original or "")
     if not a or not b:
         return False
     if a == b:

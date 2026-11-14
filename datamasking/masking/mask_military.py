@@ -344,6 +344,10 @@ def get_rank_info(rank_form: str) -> Tuple[Optional[str], Optional[str], Optiona
 
 def get_rank_in_case(nominative_rank: str, target_case: str) -> str:
     if nominative_rank not in _cfg.RANK_DECLENSIONS: return nominative_rank
+    if target_case == "dative_ovi":
+        # Звання без форми на «-ові» (рядовий) — звичайний давальний
+        return (_cfg.RANK_DATIVE_OVI.get(nominative_rank)
+                or _cfg.RANK_DECLENSIONS[nominative_rank]["dative"])
     return _cfg.RANK_DECLENSIONS[nominative_rank].get(target_case, nominative_rank)
 
 def mask_rank(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
@@ -417,6 +421,24 @@ def mask_rank(original: str, masking_dict: Dict, instance_counters: Dict) -> str
             if alt.lower() != search_key and alt.lower() not in _cfg.AVOID_RANK_MASKS:
                 masked = alt
                 break
+        else:
+            # Усі сусіди за зсувом відкрито стоять у документі (великий наказ,
+            # де згадано десятки звань) — найближче вільне звання ієрархії.
+            # До 3.1.22 лишався перший варіант, і unmask підміняв відкрите
+            # звання («доповіла капітану роти» → «майору»)
+            for distance in range(1, len(hierarchy)):
+                free = [hierarchy[i] for i in (idx + distance, idx - distance)
+                        if 0 <= i < len(hierarchy) and hierarchy[i].lower() != search_key
+                        and hierarchy[i].lower() not in _cfg.AVOID_RANK_MASKS]
+                if free:
+                    masked = free[0]
+                    break
+            else:
+                # Вільних звань немає зовсім (кожне звання ієрархії десь у
+                # документі стоїть відкрито): будь-яка маска збіглася б із
+                # відкритим текстом, і unmask мовчки ставив би чужі звання.
+                # Звання лишається як є — так воно відновлюється точно
+                masked = search_key
 
     # Звання, що в документі стоїть і в жіночій формі («солдатки»), потребує
     # маски з жіночою формою: «рядовий» її не має, і «солдатки» ставало
@@ -449,6 +471,26 @@ def mask_rank(original: str, masking_dict: Dict, instance_counters: Dict) -> str
                     alt = hierarchy[alt_idx]
                     if (alt.lower() != search_key and len(alt.split()) == n_words
                             and alt.lower() not in _cfg.AVOID_RANK_MASKS
+                            and (not need_feminine or alt.lower() in _cfg.RANK_FEMININE_MAP)):
+                        masked = alt
+                        break
+            else:
+                continue
+            break
+
+    # Звання, що в документі стоїть у давальному на «-ові» («майорові»),
+    # потребує маски з такою формою — інакше «рядовому» розмасковувалось би
+    # в «майору» (після 3.1.21). Решта вимог — як у блоках вище
+    if search_key in _cfg.OVI_RANK_BASES and masked.lower() not in _cfg.RANK_DATIVE_OVI:
+        need_feminine = search_key in _cfg.FEMININE_RANK_BASES
+        same_words = len(search_key.split()) if search_key in _cfg.SPACED_RANK_BASES else None
+        for distance in range(1, len(hierarchy)):
+            for alt_idx in (idx + distance, idx - distance):
+                if 0 <= alt_idx < len(hierarchy):
+                    alt = hierarchy[alt_idx]
+                    if (alt.lower() != search_key and alt.lower() in _cfg.RANK_DATIVE_OVI
+                            and alt.lower() not in _cfg.AVOID_RANK_MASKS
+                            and (same_words is None or len(alt.split()) == same_words)
                             and (not need_feminine or alt.lower() in _cfg.RANK_FEMININE_MAP)):
                         masked = alt
                         break
@@ -501,11 +543,11 @@ def mask_rank_preserve_case(original_text: str, masking_dict: Dict, instance_cou
             else: final_rank = masked_base_female
         else:
             if masked_base_male.lower() in _cfg.RANK_DECLENSIONS and detected_case:
-                final_rank = _cfg.RANK_DECLENSIONS[masked_base_male.lower()].get(detected_case, masked_base_male)
+                final_rank = get_rank_in_case(masked_base_male.lower(), detected_case)
             else: final_rank = masked_base_male
     else:
         if masked_base_male.lower() in _cfg.RANK_DECLENSIONS and detected_case:
-            final_rank = _cfg.RANK_DECLENSIONS[masked_base_male.lower()].get(detected_case, masked_base_male)
+            final_rank = get_rank_in_case(masked_base_male.lower(), detected_case)
         else: final_rank = masked_base_male
 
     if _cfg.PRESERVE_CASE and final_rank:

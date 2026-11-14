@@ -198,11 +198,23 @@ def _apply_original_case(original: str, masked: str) -> str:
     if original.isupper():
         return masked.upper()
     elif len(original) > 1 and original[0].isupper() and original[1:].islower():
+        # Подвійне ім'я («Анна-Марія», «АННА-МАРІЯ»): кожна частина з великої,
+        # якщо так записано в mapping — до 3.1.22 capitalize() давав
+        # «Анна-марія». «генерал-майор» лишається «Генерал-майор»
+        parts = masked.split("-")
+        if len(parts) > 1 and all(p[:1].isupper() for p in parts):
+            return "-".join(p.capitalize() for p in parts)
         return masked.capitalize()
     elif original.islower():
         return masked.lower()
-    # Змішаний регістр (Петренко-Іванова, McDonald) — лишаємо як у mapping;
-    # раніше все, що не UPPER/Title, силоміць переводилось у нижній
+    # Подвійне слово (маска «Доличенко-Ґубко»): регістр — по частинах, з
+    # тексту. До 3.1.22 бралося як у mapping, і запис-двійник з іншим
+    # регістром («ДОРОШЕНКО-ҐУДЗЬ» з рядка капсом) повертався капсом
+    o_parts, m_parts = original.split("-"), masked.split("-")
+    if len(o_parts) > 1 and len(o_parts) == len(m_parts) and all(o_parts) and all(m_parts):
+        return "-".join(_apply_original_case(o, m) for o, m in zip(o_parts, m_parts))
+    # Змішаний регістр (McDonald) — лишаємо як у mapping; раніше все, що не
+    # UPPER/Title, силоміць переводилось у нижній
     return masked
 
 
@@ -238,7 +250,8 @@ def extract_base_rank(full_rank_text: str) -> tuple:
     service_type_phrases = ['медичної служби', 'юстиції']
     status_phrases = [
         'у відставці', 'в запасі', 'у запасі',
-        'на пенсії', 'в резерві', 'у резерві'
+        'на пенсії', 'в резерві', 'у резерві',
+        'запасу', 'резерву',
     ]
 
     full_rank_lower = full_rank_text.lower()

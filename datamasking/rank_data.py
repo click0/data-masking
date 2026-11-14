@@ -533,6 +533,32 @@ for nominative_rank_female, cases in RANK_DECLENSIONS_FEMALE.items():
             # Зберігаємо базову ЧОЛОВІЧУ форму для уніфікації маскування
             RANK_TO_NOMINATIVE[case_form.lower()] = (base_male_form, case_name, 'female')
 
+# Давальний на «-ові» («майорові», «старшому лейтенантові», «капітанові
+# 1-го рангу») — поширений у наказах («оголосити подяку солдатові …»); до
+# 3.1.22 такі звання не розпізнавались і лишались відкритими. Окрема форма
+# (відмінок "dative_ovi"), лише для звань, у яких давальний — це іменник
+# на приголосний + «у»; прикметникові (рядовий) її не мають
+
+
+def _dative_ovi(nominative: str, dative: str):
+    nw, dw = nominative.split(), dative.split()
+    if len(nw) != len(dw):
+        return None
+    hits = [i for i, (n, d) in enumerate(zip(nw, dw))
+            if d == n + "у" and n[-1:] not in "аеєиіїоуюяйь"]
+    if len(hits) != 1:
+        return None
+    i = hits[0]
+    return " ".join(dw[:i] + [nw[i] + "ові"] + dw[i + 1:])
+
+
+RANK_DATIVE_OVI = {}
+for _nominative, _cases in RANK_DECLENSIONS.items():
+    _form = _dative_ovi(_nominative, _cases.get("dative", ""))
+    if _form:
+        RANK_DATIVE_OVI[_nominative] = _form
+        RANK_TO_NOMINATIVE.setdefault(_form.lower(), (_nominative, "dative_ovi", "male"))
+
 # --- 2. ALL_RANK_FORMS: ВІДСОРТОВАНИЙ СПИСОК ДЛЯ РОЗПІЗНАВАННЯ ---
 # Список всіх можливих форм звань (усі відмінки + роди) для швидкого пошуку в тексті.
 # Сортування від найдовших до найкоротших критично важливе для правильного розпізнавання

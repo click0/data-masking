@@ -28,6 +28,7 @@ class FoundRank(TypedDict, total=False):
 
 from datamasking import _jsontext
 from datamasking.rank_data import (
+    RANK_DATIVE_OVI,
     RANK_DECLENSIONS,
     RANK_FEMININE_MAP,
     RANK_DECLENSIONS_FEMALE,
@@ -184,7 +185,11 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
                         reconstructed_form = RANK_DECLENSIONS_FEMALE[base_female].get(case or 'nominative', base_female)
 
             else:
-                if original_base_form in RANK_DECLENSIONS:
+                if case == "dative_ovi" and original_base_form in RANK_DECLENSIONS:
+                    # «майорові» (з 3.1.22; див. rank_data.RANK_DATIVE_OVI)
+                    reconstructed_form = (RANK_DATIVE_OVI.get(original_base_form)
+                                          or RANK_DECLENSIONS[original_base_form]["dative"])
+                elif original_base_form in RANK_DECLENSIONS:
                     reconstructed_form = RANK_DECLENSIONS[original_base_form].get(case or 'nominative', original_base_form)
 
             reconstructed_form = _apply_original_case(base_rank_text, reconstructed_form)
@@ -263,11 +268,21 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
     by_lower: Dict[str, Dict[str, Dict[int, str]]] = {}
     for masked_value, inst_map in instance_map.items():
         by_lower.setdefault(masked_value.lower(), {})[masked_value] = inst_map
+    # З 3.1.22 mask рахує входження без урахування регістру маски (позначка
+    # instance_case у mapping): тоді номери в межах «маски в будь-якому
+    # регістрі» унікальні, і рахувати треба так само. Старіші mapping —
+    # за точним регістром, як і раніше
+    case_insensitive = masking_map.get("instance_case") == "insensitive"
 
     def _lookup(matched: str, key: str):
         group = by_lower.get(key)
         if not group:
             return None, key
+        if case_insensitive:
+            merged_ci: Dict[int, str] = {}
+            for inst in group.values():
+                merged_ci.update(inst)
+            return merged_ci, key
         if matched in group:
             return group[matched], matched
         if len(group) == 1:
@@ -322,7 +337,7 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
             "per-mask scan over %d masks — this is much slower on large files",
             e, len(instance_map),
         )
-        return _unmask_other_data_slow(restored_text, instance_map)
+        return _unmask_other_data_slow(restored_text, instance_map, case_insensitive)
 
     seen: Dict[str, int] = {}   # маска (точна або lower) -> скільки входжень уже зустріли
     segments: List[str] = []
@@ -364,11 +379,17 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
     return restored_text, stats
 
 
-def _unmask_other_data_slow(restored_text: str, instance_map: Dict) -> Tuple[str, Dict]:
+def _unmask_other_data_slow(restored_text: str, instance_map: Dict,
+                            case_insensitive: bool = False) -> Tuple[str, Dict]:
     """Запасна реалізація через find_all_occurrences (коли єдиний regex
     не компілюється). Семантика збігається з основним шляхом."""
     stats = {"restored_count": 0, "skipped_count": 0}
     replacements_to_do = []
+    if case_insensitive:
+        merged: Dict[str, Dict[int, str]] = {}
+        for masked_value, inst in instance_map.items():
+            merged.setdefault(masked_value.lower(), {}).update(inst)
+        instance_map = merged
     for masked_value, instance_to_original in instance_map.items():
         for instance_num, (start_pos, end_pos) in enumerate(
                 find_all_occurrences(restored_text, masked_value), 1):

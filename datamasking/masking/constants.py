@@ -11,6 +11,7 @@ import re
 from faker import Faker
 
 from datamasking.rank_data import (
+    RANK_DATIVE_OVI,
     RANK_DECLENSIONS,
     RANK_FEMININE_MAP,
     RANK_DECLENSIONS_FEMALE,
@@ -165,6 +166,9 @@ AVOID_RANK_MASKS: frozenset = frozenset()
 # жіноча форма маскується чоловічою і unmask повертає «солдата» замість
 # «солдатки» (v3.1.14). Задається рушієм на час обробки документа.
 FEMININE_RANK_BASES: frozenset = frozenset()
+# Звання, що в документі стоять у давальному на «-ові» (див. rank_data.
+# RANK_DATIVE_OVI): маска має теж мати цю форму. Задається рушієм
+OVI_RANK_BASES: frozenset = frozenset()
 # Базові звання, які в поточному документі записані з нерозривним пробілом,
 # табом чи кількома пробілами між словами: маска має ту саму кількість слів,
 # щоб роздільники перенеслись у неї й назад (після 3.1.20). Задається рушієм.
