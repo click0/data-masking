@@ -648,7 +648,7 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
 
 # Роздільник слів ПІБ у рядку: пробіли, «|» і «;» таблиць, а також клітинки
 # CSV — кома впритул до наступного слова («Петренко,Іван,Петрович») і лапки
-# навколо клітинок («"Петренко";"Іван"»); до 3.1.22 такі ПІБ лишались відкритими
+# навколо клітинок («"Петренко";"Іван"»); до 3.2.0 такі ПІБ лишались відкритими
 _SEPARATOR = r"((?:[\s|;\"]|,(?=[^\s,]))+)"
 
 
@@ -991,7 +991,7 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
                     _add_listed_numbers(result['end'])
 
     def _add_listed_numbers(pos: int) -> None:
-        # «накази № 12, 13 та 14» — і решта номерів переліку (до 3.1.22
+        # «накази № 12, 13 та 14» — і решта номерів переліку (до 3.2.0
         # маскувався лише перший); «№ 12, 13 травня» — не перелік
         while True:
             m = _LISTED_NUMBER_RE.match(text, pos)
@@ -1026,7 +1026,7 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
     def _phase_military_unit() -> None:
         # «А1234» — завжди; з пробілом, нерозривним пробілом чи дефісом
         # («в/ч А 1234», «в/ч А\xa01234», «А-1234») — лише після «в/ч» /
-        # «частина»: до 3.1.22 «А 1234» з пробілом бралось без контексту, і
+        # «частина»: до 3.2.0 «А 1234» з пробілом бралось без контексту, і
         # «У 2025 році», «В 2024 р.», «А 2000 грн» маскувались як в/ч
         if not _cfg.MASK_UNITS:
             return
@@ -1089,7 +1089,7 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
         # («мт-123456»); «до 150000» (слово + пробіл) — не серія
         # Паспорт старого зразка «АА123456» — той самий формат, що й квиток:
         # без MASK_MILITARY_ID (--only passport) фаза бере лише номери з
-        # серією. До 3.1.22 паспорт тоді лишався відкритим
+        # серією. До 3.2.0 паспорт тоді лишався відкритим
         'military_id': (_simple_phase('military_id', 'MASK_MILITARY_ID',
                                       r"(?<![\w'])(?:[A-ZА-ЯІЇЄҐ]{2}[\s-]?|[a-zа-яіїєґ]{2}-)?\d{6}(?!\d)")
                         if _cfg.MASK_MILITARY_ID else
@@ -1156,7 +1156,7 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
 
     if line_join:
         text = _join_broken_pib_lines(text)
-    # Рядки — і за одиночним CR (старі файли Mac) чи U+2028/U+2029: до 3.1.22
+    # Рядки — і за одиночним CR (старі файли Mac) чи U+2028/U+2029: до 3.2.0
     # такий файл розбирався як один рядок — у десятки разів повільніше
     parts = _LINE_SPLIT_RE.split(text)
     lines, line_breaks = parts[0::2], parts[1::2]

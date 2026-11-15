@@ -102,7 +102,7 @@ def validate_mapping_schema(mapping: Dict) -> None:
     if _major and int(_major.group(1)) >= 2 and "mappings" not in mapping:
         raise ValueError(f"Mapping v{version} must contain 'mappings' key")
     # Будь-який інший JSON (config.json, сам замаскований output.json, {})
-    # до 3.1.22 приймався, і unmask «успішно» нічого не відновлював
+    # до 3.2.0 приймався, і unmask «успішно» нічого не відновлював
     if "mappings" not in mapping and "re_mask_passes" not in mapping:
         raise ValueError("Not a mapping file: no 'mappings' key")
     if "re_mask_passes" in mapping:
@@ -134,7 +134,7 @@ def _validate_mappings(mapping: Dict, where: str) -> None:
             # Порожня маска «знаходиться» між будь-якими двома символами, і
             # unmask вставляв оригінал у випадкові місця (до 3.1.21)
             # Маска без жодної літери чи цифри (« », «.») теж: unmask вставляв
-            # оригінали між словами (до 3.1.22)
+            # оригінали між словами (до 3.2.0)
             if isinstance(info, str):
                 if not _is_mask(info):
                     raise ValueError(f"'{where}mappings.{category}.{original}' must not be empty "

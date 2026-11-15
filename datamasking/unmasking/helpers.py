@@ -127,7 +127,7 @@ def check_mapping_version(masking_map: Dict) -> str:
     Returns:
         Версія логіки: 'v2.1', 'v2.0' або 'v1'
     """
-    # Без ключа version — за структурою (до 3.1.22 тут підставлялось «1.0.0»,
+    # Без ключа version — за структурою (до 3.2.0 тут підставлялось «1.0.0»,
     # і mapping 2.x/3.x без version ішов у v1 і нічого не відновлював)
     version = masking_map.get("version")
 
@@ -182,7 +182,7 @@ def build_instance_map(masking_map: Dict) -> Dict[str, Dict[int, str]]:
 
     Структура: {masked_value: {instance_num: original_value}}. Запис без
     ключа instances (mapping v2.0) — номер ANY_INSTANCE: оригінал для
-    будь-якого входження цієї маски (до 3.1.22 такий запис не відновлювався).
+    будь-якого входження цієї маски (до 3.2.0 такий запис не відновлювався).
     """
     instance_map: Dict[str, Dict[int, str]] = {}
     mappings_data = masking_map.get("mappings", {})
@@ -215,7 +215,7 @@ def _is_title(word: str) -> bool:
 
 def _capitalize(word: str) -> str:
     """str.capitalize(), що пропускає невидимі символи перед першою літерою
-    (до 3.1.22 «\u00adҐудзем» ставало «\u00adґудзем»)."""
+    (до 3.2.0 «\u00adҐудзем» ставало «\u00adґудзем»)."""
     i = next((k for k, ch in enumerate(word) if ch.isalpha()), 0)
     return word[:i] + word[i:i + 1].upper() + word[i + 1:].lower()
 
@@ -231,7 +231,7 @@ def _apply_original_case(original: str, masked: str) -> str:
         return masked.upper()
     elif _is_title(original):
         # Подвійне ім'я («Анна-Марія», «АННА-МАРІЯ»): кожна частина з великої,
-        # якщо так записано в mapping — до 3.1.22 capitalize() давав
+        # якщо так записано в mapping — до 3.2.0 capitalize() давав
         # «Анна-марія». «генерал-майор» лишається «Генерал-майор»
         parts = masked.split("-")
         if len(parts) > 1 and all(_first_letter(p).isupper() for p in parts):
@@ -240,7 +240,7 @@ def _apply_original_case(original: str, masked: str) -> str:
     elif original.islower():
         return masked.lower()
     # Подвійне слово (маска «Доличенко-Ґубко»): регістр — по частинах, з
-    # тексту. До 3.1.22 бралося як у mapping, і запис-двійник з іншим
+    # тексту. До 3.2.0 бралося як у mapping, і запис-двійник з іншим
     # регістром («ДОРОШЕНКО-ҐУДЗЬ» з рядка капсом) повертався капсом
     o_parts, m_parts = original.split("-"), masked.split("-")
     if len(o_parts) > 1 and len(o_parts) == len(m_parts) and all(o_parts) and all(m_parts):

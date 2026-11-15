@@ -188,7 +188,7 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
 
             else:
                 if case == "dative_ovi" and original_base_form in RANK_DECLENSIONS:
-                    # «майорові» (з 3.1.22; див. rank_data.RANK_DATIVE_OVI)
+                    # «майорові» (з 3.2.0; див. rank_data.RANK_DATIVE_OVI)
                     reconstructed_form = (RANK_DATIVE_OVI.get(original_base_form)
                                           or RANK_DECLENSIONS[original_base_form]["dative"])
                 elif original_base_form in RANK_DECLENSIONS:
@@ -272,7 +272,7 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
     by_lower: Dict[str, Dict[str, Dict[int, str]]] = {}
     for masked_value, inst_map in instance_map.items():
         by_lower.setdefault(masked_value.lower(), {})[masked_value] = inst_map
-    # З 3.1.22 mask рахує входження без урахування регістру маски (позначка
+    # З 3.2.0 mask рахує входження без урахування регістру маски (позначка
     # instance_case у mapping): тоді номери в межах «маски в будь-якому
     # регістрі» унікальні, і рахувати треба так само. Старіші mapping —
     # за точним регістром, як і раніше
@@ -438,7 +438,7 @@ def unmask_text_v2(masked_text: str, masking_map: Dict, map_version: str) -> Tup
             total_stats["skipped_count"] += stats.get("skipped_count", 0)
         return text, total_stats
 
-    # Звання — для будь-якого v2.x (до 3.1.22 лише для v2.1: у mapping v2.0
+    # Звання — для будь-якого v2.x (до 3.2.0 лише для v2.1: у mapping v2.0
     # звання не відновлювались, бо unmask_other_data категорію rank пропускає)
     if map_version.startswith("v2"):
         text_after_ranks, rank_stats = unmask_ranks_gender_aware(masked_text, masking_map)
@@ -465,7 +465,7 @@ def unmask_text_v1(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
     if not originals:
         return masked_text, stats
 
-    # Один прохід, цілими словами, довші маски першими. До 3.1.22 маски
+    # Один прохід, цілими словами, довші маски першими. До 3.2.0 маски
     # замінювались по черзі через str.replace: відновлений оригінал, що сам
     # був маскою іншого запису, замінювався ще раз («Сидоренко» → «Петренко»
     # → …), а маска «Петро» знаходилась усередині «Петрович»

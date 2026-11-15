@@ -121,7 +121,7 @@ class MappingSecurityManager:
             out["p"] = as_int("p", 1, 1, 16)
             if 128 * out["n"] * out["r"] > MappingSecurityManager.SCRYPT_MAX_MEMORY:
                 raise ValueError("security.scrypt_n × scrypt_r needs more than 1 GiB of memory")
-            # Обсяг обчислень (× p): до 3.1.22 підроблений заголовок .enc з
+            # Обсяг обчислень (× p): до 3.2.0 підроблений заголовок .enc з
             # n=2^20, r=8, p=16 змушував рахувати ключ ~40 с, перш ніж
             # з'являлось «Decryption failed»
             if 128 * out["n"] * out["r"] * out["p"] > 2 * MappingSecurityManager.SCRYPT_MAX_MEMORY:

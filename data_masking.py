@@ -31,7 +31,7 @@ Year: 2025-2026
 # Re-exports from masking package for backward compatibility
 # ============================================================================
 
-__version__ = "3.1.21"
+__version__ = "3.2.0"
 
 from datamasking.masking.constants import (
     __version__, __author__, __contact__, __phone__, __license__, __year__,
@@ -125,7 +125,7 @@ _LIVE_FLAGS = frozenset({
 })
 
 # Загальний прапорець вмикає/вимикає й похідні — як follow() у CLI
-# (до 3.1.22 MASK_NAMES = False лишав прізвища й по батькові маскованими,
+# (до 3.2.0 MASK_NAMES = False лишав прізвища й по батькові маскованими,
 # MASK_DATES = False — текстові дати, MASK_ORDERS = False — номери довідок)
 _FOLLOWERS = {
     "MASK_NAMES": ("MASK_SURNAMES", "MASK_PATRONYMICS"),

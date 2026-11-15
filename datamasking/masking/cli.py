@@ -390,7 +390,7 @@ def _setup_logger(args, config) -> Optional[Any]:
             _config_warning(args, f"{e} — log rotation disabled")
             max_bytes = 0
 
-    # Лог не пишеться у вхідний файл чи результат: до 3.1.22 «--log-file
+    # Лог не пишеться у вхідний файл чи результат: до 3.2.0 «--log-file
     # input.txt» дописував рядки логу в оригінал, і вони потрапляли у вихід
     if log_file:
         for label, other in (("input", args.input), ("output", args.output)):
@@ -861,7 +861,7 @@ def _validate_output_paths(args, input_path: Path, output_path: Path) -> Optiona
         same = False
     if same:
         return f"Output file must differ from input file: {output_path}"
-    # До 3.1.22 каталог на місці -o без --force підказував «use --force», а
+    # До 3.2.0 каталог на місці -o без --force підказував «use --force», а
     # неіснуюча тека виявлялась лише після всього маскування
     if output_path.is_dir():
         return f"Output path is a directory: {output_path}"
@@ -1297,7 +1297,7 @@ def main(argv=None) -> int:
     try:
         return _main(argv)
     except RecursionError:
-        # Надто глибоко вкладений JSON (до 3.1.22 — traceback)
+        # Надто глибоко вкладений JSON (до 3.2.0 — traceback)
         print("Error: the data is nested too deeply to process", file=sys.stderr)
         return 1
 

@@ -129,7 +129,7 @@ def main(argv=None) -> int:
     try:
         return _main(argv)
     except RecursionError:
-        # Надто глибоко вкладений JSON (до 3.1.22 — traceback)
+        # Надто глибоко вкладений JSON (до 3.2.0 — traceback)
         print("❌ The data is nested too deeply to process", file=sys.stderr)
         return EXIT_ERROR
 
@@ -274,7 +274,7 @@ Examples:
             if getattr(log_cfg, 'log_to_file', None) is not False:
                 log_file = getattr(log_cfg, 'file', None)
             console = getattr(log_cfg, 'log_to_console', True) is not False
-        # Лог не пишеться у вхідні файли чи результат: до 3.1.22
+        # Лог не пишеться у вхідні файли чи результат: до 3.2.0
         # «--log-file map.json» дописував рядки логу в mapping (а .enc після
         # цього вже не розшифровувався)
         if enabled and log_file:
@@ -329,7 +329,7 @@ Examples:
             return EXIT_ERROR
         masked_path, map_path, output_path = result
         log_info(f"Автоматичний режим: {masked_path.name}")
-        # --map і -o діють і тут (до 3.1.22 мовчки ігнорувались)
+        # --map і -o діють і тут (до 3.2.0 мовчки ігнорувались)
         if args.map_file:
             map_path = Path(args.map_file)
             if not map_path.exists():
@@ -399,7 +399,7 @@ Examples:
 
     try:
         # Mapping більший за документ (≈2,5×, ланцюг --re-mask — до ~30×): до
-        # 3.1.22 ліміт був сталі 100 МБ, і unmask не читав mapping, який mask
+        # 3.2.0 ліміт був сталі 100 МБ, і unmask не читав mapping, який mask
         # щойно записав
         masking_map = load_mapping_file(map_path, password=password,
                                         max_size=30 * _size_limit(config))

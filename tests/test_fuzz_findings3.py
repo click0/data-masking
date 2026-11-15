@@ -90,7 +90,7 @@ class TestHyphenatedNameCase:
 
 class TestInstanceCase:
     MAPPING = {
-        "version": "3.1.22",
+        "version": "3.2.0",
         "mappings": {"patronymic": {
             "петрівни": {"masked_as": "ГОРДІЇВНИ", "instances": [1, 3]},
             "богданівни": {"masked_as": "Гордіївни", "instances": [2]},
