@@ -30,7 +30,7 @@ import re
 from typing import Dict, Iterable, Optional, Set, Tuple
 
 from datamasking.masking import constants as _cfg
-from datamasking.masking.helpers import get_deterministic_seed
+from datamasking.masking.helpers import clean_word, get_deterministic_seed
 
 # Закінчення → словотвірна родина. Порядок: довші першими (перший збіг).
 # Основа після відрізання має бути ≥ MIN_STEM літер, інакше закінчення
@@ -65,7 +65,11 @@ _ENDINGS: Tuple[Tuple[str, str], ...] = (
     ("унові", "ун"), ("уном", "ун"), ("уна", "ун"), ("уну", "ун"), ("ун", "ун"),
     # -ко (Сірко, Бойко) — після -енко, щоб не перехопити
     ("кові", "ко"), ("ком", "ко"), ("ка", "ко"), ("ку", "ко"), ("ко", "ко"),
-    # прикметникові -ий / -ій (Білий, Заболотній)
+    # прикметникові -ий / -ій (Білий, Заболотній); м'яка відміна —
+    # «-нього», «-ньому», «-нім», «-ньої», «-ньою» (до 3.1.22 «Задорожнього»
+    # мало основу «задорожнь», а «Задорожнім» не розпізнавалось зовсім:
+    # три відмінки — три різні синтетичні основи)
+    ("ього", "ий"), ("ьому", "ий"), ("ьої", "я"), ("ьою", "я"), ("ім", "ий"),
     ("ого", "ий"), ("ому", "ий"), ("им", "ий"), ("ий", "ий"), ("ій", "ий"),
     # жіночий родовий прикметникових (Білої, Довгої): до 3.1.20 включно не
     # розпізнавався, і маска «Білої» мала іншу основу, ніж «Біла» / «Білій»
@@ -87,7 +91,7 @@ _FAKER_DRAWS = 12
 # реєструє словник на час обробки документа; після виходу він очищується,
 # щоб маски лишались детермінованими між документами.
 # ---------------------------------------------------------------------------
-_WORD_RE = re.compile(r"[А-ЯІЇЄҐа-яіїєґ][А-ЯІЇЄҐа-яіїєґ'’]+")
+_WORD_RE = re.compile(r"[А-ЯІЇЄҐа-яіїєґ][А-ЯІЇЄҐа-яіїєґ'’ʼ" + _cfg.JOINER_CHARS + r"]+")
 _document_vocab: Set[str] = set()
 _document_long_words: Set[str] = set()
 _document_text: str = ""
@@ -102,7 +106,7 @@ def enter_document(text: str) -> None:
     """Реєструє слова документа (зовнішній виклик); вкладені — лише лічильник."""
     global _depth, _document_vocab, _document_long_words, _document_text
     if _depth == 0:
-        words = {m.group(0).lower() for m in _WORD_RE.finditer(text)}
+        words = {clean_word(m.group(0)).lower() for m in _WORD_RE.finditer(text)}
         _document_vocab = words
         _document_long_words = {w for w in words if len(w) >= 5}
         _document_text = text
@@ -130,8 +134,9 @@ def document_contains(token: str) -> bool:
         return False
     if _residue_tokens is not None and " " not in token:
         return token.lower() in _residue_tokens
-    before = r"(?<!\d)" if token[0].isdigit() else r"(?<![\w'’ʼ])"
-    after = r"(?!\d)" if token[-1].isdigit() else r"(?![\w'’ʼ])"
+    join = _cfg.JOINER_CHARS
+    before = r"(?<!\d)" if token[0].isdigit() else r"(?<![\w'’ʼ])(?<!\w[" + join + r"])"
+    after = r"(?!\d)" if token[-1].isdigit() else r"(?![\w'’ʼ])(?![" + join + r"]\w)"
     return re.search(before + re.escape(token) + after, _document_text, re.IGNORECASE) is not None
 
 
@@ -155,9 +160,12 @@ def split_surname(word: str) -> Tuple[str, str, str]:
     Якщо жодне закінчення не підходить (Ґудзь, Коваль, Шамрай) —
     закінчення порожнє, основа = усе слово, родина "".
     """
-    w = word.lower()
+    w = clean_word(word).lower()
     for ending, family in _ENDINGS:
         if w.endswith(ending) and len(w) - len(ending) >= MIN_STEM:
+            # «-ім» — лише м'яка відміна після «н» (Задорожнім), не «Акім»
+            if ending == "ім" and not w[:-2].endswith("н"):
+                continue
             return w[: -len(ending)], ending, family
     return w, "", ""
 
@@ -314,7 +322,10 @@ def _leaks(masked: str, original: str, stem: str) -> bool:
 # кожна форма діставала свою синтетичну основу: Коваль → Ковар, але
 # Коваля → Кобіля (до 3.1.22). У межах документа форма бере основу з маски
 # іншої форми того самого прізвища, якщо та вже є
-_PLAIN_FAMILIES = frozenset({"", "а", "я"})
+# «ий» — прикметникові: «Головата» / «Головатій» (жіночий давальний
+# розбирається як «-ій» родини «ий») мають ділити основу маски; до 3.1.22
+# у них різнився навіть префікс («Голудна» / «Горудній»)
+_PLAIN_FAMILIES = frozenset({"", "а", "я", "ий"})
 
 
 def _plain_paradigm(word: str) -> Optional[Tuple[str, str]]:
@@ -335,9 +346,18 @@ _HARD_ONLY = frozenset("кгґхпбфвм")
 _HUSHING = frozenset("жчшщ")
 _TO_HARD = {"я": "а", "ю": "у", "ем": "ом", "єм": "ом", "еві": "ові"}
 _TO_HUSHING = {"я": "а", "ю": "у", "ом": "ем", "єм": "ем", "ові": "еві"}
+# М'які прикметникові закінчення — лише після «н» нової основи, інакше
+# тверді («задашт» + «ього» → «Задаштого», не «Задаштього»)
+_SOFT_TO_HARD = {"ього": "ого", "ьому": "ому", "ім": "им", "ьої": "ої", "ьою": "ою"}
+
+
+def _soft_ending(ending: str, stem: str) -> str:
+    return ending if stem.endswith("н") else _SOFT_TO_HARD.get(ending, ending)
 
 
 def _harmonize(ending: str, stem: str) -> str:
+    if ending in _SOFT_TO_HARD:
+        return _soft_ending(ending, stem)
     last = stem[-1:]
     if last in _HARD_ONLY:
         return _TO_HARD.get(ending, ending)
@@ -350,12 +370,13 @@ def paradigm_mask(original: str, masking_dict: Dict, forbidden: Set[str]) -> Opt
     """Маска (нижній регістр) для *original* з основою маски іншої форми того
     самого прізвища в цьому документі — або None, якщо такої форми немає чи
     похідна маска не годиться (витік, збіг зі словом документа)."""
+    original = clean_word(original)
     own = _plain_paradigm(original)
     if own is None:
         return None
     stem, ending = own
     for other, info in masking_dict.get("mappings", {}).get("surname", {}).items():
-        if not isinstance(info, dict) or not info.get("masked_as") or other.lower() == original.lower():
+        if not isinstance(info, dict) or not info.get("masked_as") or clean_word(other).lower() == original.lower():
             continue
         theirs = _plain_paradigm(other)
         if theirs is None or theirs[0] != stem:
@@ -402,6 +423,9 @@ def synthesize_surname(original: str, forbidden: Optional[Set[str]] = None,
     відмінкове/родове закінчення; не містить оригінал і не збігається з
     жодним рядком із *forbidden*.
     """
+    # Невидимі символи й написання апострофа («Дем‘янчук», «Пет\u00adренко»)
+    # не впливають на маску: усі написання дають ту саму основу
+    original = clean_word(original)
     forbidden = {f.lower() for f in (forbidden or set())} | _document_vocab
     stem, ending, family = split_surname(original)
     # Seed — від основи в нижньому регістрі, а не від поверхневої форми:
@@ -417,7 +441,7 @@ def synthesize_surname(original: str, forbidden: Optional[Set[str]] = None,
         new_stem = _pick_stem(seed, len(stem), family, ending, forbidden={stem}, prefix=prefix,
                               consonant_end=(not ending and not family
                                              and (stem[-1:] in _CONSONANTS or stem.endswith("ь"))))
-        masked = new_stem + ending
+        masked = new_stem + _soft_ending(ending, new_stem)
         last = masked
         if not _leaks(masked, original, stem) and masked not in forbidden:
             return masked

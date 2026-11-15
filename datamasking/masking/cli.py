@@ -18,7 +18,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from datamasking._fsutil import atomic_write_private
+from datamasking._fsutil import atomic_write_private, same_file
 from datamasking._textio import read_text, check_encoding_settings
 from datamasking.masking import constants as _cfg
 from datamasking.masking.helpers import validate_file_size
@@ -390,6 +390,13 @@ def _setup_logger(args, config) -> Optional[Any]:
             _config_warning(args, f"{e} — log rotation disabled")
             max_bytes = 0
 
+    # Лог не пишеться у вхідний файл чи результат: до 3.1.22 «--log-file
+    # input.txt» дописував рядки логу в оригінал, і вони потрапляли у вихід
+    if log_file:
+        for label, other in (("input", args.input), ("output", args.output)):
+            if other and same_file(log_file, other):
+                print(f"Error: log file {log_file} is the {label} file", file=sys.stderr)
+                sys.exit(2)
     try:
         logger = setup_logging(level=log_level, log_file=log_file, console=console,
                                file_format=file_format, max_bytes=max_bytes,
@@ -854,8 +861,14 @@ def _validate_output_paths(args, input_path: Path, output_path: Path) -> Optiona
         same = False
     if same:
         return f"Output file must differ from input file: {output_path}"
+    # До 3.1.22 каталог на місці -o без --force підказував «use --force», а
+    # неіснуюча тека виявлялась лише після всього маскування
+    if output_path.is_dir():
+        return f"Output path is a directory: {output_path}"
     if output_path.exists() and not getattr(args, 'force', False):
         return f"Output file already exists: {output_path} (use --force to overwrite)"
+    if not output_path.parent.is_dir():
+        return f"Output directory does not exist: {output_path.parent}"
     return None
 
 
@@ -1281,6 +1294,15 @@ def _save_results(masked_data, is_json: bool, masking_dict: Dict,
 def main(argv=None) -> int:
     """CLI entry point. Повертає код виходу (0/1/2); обгортки роблять
     sys.exit(main()), тому помилки більше не завершуються exit 0."""
+    try:
+        return _main(argv)
+    except RecursionError:
+        # Надто глибоко вкладений JSON (до 3.1.22 — traceback)
+        print("Error: the data is nested too deeply to process", file=sys.stderr)
+        return 1
+
+
+def _main(argv=None) -> int:
     # Fix Unicode output on Windows (cp1252 console): інакше «✅» у підсумку
     # падав UnicodeEncodeError уже ПІСЛЯ запису файлів (unmask мав цей фікс, mask — ні)
     if sys.platform == 'win32' and getattr(sys.stdout, 'encoding', 'utf-8').lower().replace('-', '') != 'utf8':

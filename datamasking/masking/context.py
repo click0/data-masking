@@ -142,6 +142,10 @@ def analyze_number_sign_context(text: str, match: re.Match) -> Optional[Dict]:
         return None
 
     number_text = number_match.group(1)
+    # «№ 15.01.2025» — це дата (її маскує фаза дат); до 3.1.22 «15» бралось як
+    # номер, і маска «№ 98.01.2025» лишала місяць і рік відкритими
+    if re.match(r'\.\d{1,2}\.\d{2,4}(?!\d)', after_text[number_match.end():]):
+        return None
     full_text = text[match.start():match.end() + len(number_match.group(0))]
 
     # 3. № 123дск / № 45/12/3п — БР; «№ 123-к» (кадровий наказ) з дефісом —
@@ -163,7 +167,8 @@ def analyze_br_keyword(text: str, match: re.Match) -> Optional[Dict]:
     """Аналізує контекст після слова БР"""
     pos = match.end()
     after_text = text[pos:pos+100]
-    br_match = re.match(r'[-\s]?(\d+(?:[/-]\d+)*(?:дск|п|к)?)', after_text, re.IGNORECASE)
+    # «БР 566», «БР-566», «БР566», «БР: 566» (до 3.1.22 два останні лишались відкритими)
+    br_match = re.match(r'(?:\s*:\s*|[-\s])?(\d+(?:[/-]\d+)*(?:дск|п|к)?)', after_text, re.IGNORECASE)
     if br_match:
         return {
             'type': 'br_standalone',
@@ -173,6 +178,13 @@ def analyze_br_keyword(text: str, match: re.Match) -> Optional[Dict]:
             'end': match.end() + len(br_match.group(0))
         }
     return None
+
+def _csv_cells(line: str) -> str:
+    """Клітинки CSV через кому впритул («Петренко,Іван,Петрович,сержант») і
+    в лапках («"Петренко","Іван"») — як окремі слова."""
+    line = re.sub(r'(?<=[^\W\d_]),(?=[^\W\d_])', ' ', line)
+    return re.sub(r'"\s*[,;]?\s*"', ' ', line)
+
 
 def clean_line_before_parsing(line: str) -> str:
     # «|» таблиць — як пробіл (рушій потім знаходить слова ПІБ у рядку з
@@ -184,6 +196,11 @@ def clean_line_before_parsing(line: str) -> str:
     # «Петрович;сержант;1234567890» була одним словом, і по батькові
     # лишалось відкритим
     line = re.sub(r';(?=\S)', ' ', line)
+    line = _csv_cells(line)
+    # Невидимі символи біля пробілу чи краю рядка («\u200cстарший матрос»)
+    # — не частина слова; всередині слова лишаються: рушій шукає слова ПІБ у
+    # справжньому рядку, і слово без них там не знайшлося б
+    line = re.sub(r'(?:^|(?<=\s))[' + _cfg.INVISIBLE_CHARS + r']+|[' + _cfg.INVISIBLE_CHARS + r']+(?=\s|$)', '', line)
     line = re.sub(r',(?=[^\W\d_])', ', ', line)
     # Видаляємо нумерацію пунктів на початку рядка: "20.1.2.1.", "1.", "1.2.", "3.2." тощо
     line = re.sub(r'^\s*(?:\d+\.)+\s*', '', line)
@@ -232,7 +249,7 @@ def extract_base_rank(full_rank_text: str) -> Tuple[str, str]:
 
 def looks_like_pib_line(line: str) -> bool:
     if not line or len(line.strip()) < 6: return False
-    line_clean = WORD_SEPARATOR_RE.sub(' ', line).strip()
+    line_clean = WORD_SEPARATOR_RE.sub(' ', _csv_cells(line)).strip()
     line_lower = line_clean.lower()
 
     if line_clean.startswith('===') or line_clean.startswith('---') or re.match(r'^[А-ЯҐЄІЇA-Z\s]+:\s*$', line_clean): return False

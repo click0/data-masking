@@ -24,7 +24,7 @@ from datamasking.masking.context import (
     is_name_patronymic_pair, looks_like_pib_line, parse_hybrid_line, WORD_SEPARATOR_RE,
 )
 from datamasking.masking.declension import analyze_patronymic
-from datamasking.masking.helpers import get_deterministic_seed, add_to_mapping
+from datamasking.masking.helpers import get_deterministic_seed, add_to_mapping, clean_word
 from datamasking.masking.language import (
     is_likely_surname_by_case, detect_gender_by_patronymic, looks_like_name,
 )
@@ -54,16 +54,24 @@ def _rank_hints(rank: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
 
 _UA_UPPER = "АБВГҐДЕЖЗІЙКЛМНОПРСТУФХЦЧШЩЮЯЄІЇҐ"
 
+# Межі слова: не всередині слова — ні після літери, апострофа чи дефіса, ні
+# після літери з «‘», «`» чи невидимим символом (див. constants.JOINER_CHARS)
+_JOIN = _cfg.JOINER_CHARS
+WORD_BEFORE = r"(?<![\w'’ʼ-])(?<![\w'’ʼ-][" + _JOIN + r"])"
+WORD_AFTER = r"(?![\w'’ʼ-])(?![" + _JOIN + r"]\w)"
+
 # Прізвище у Title Case, зокрема подвійне з великої після дефіса
 # (Петренко-Іванова, Нечуй-Левицький)
-_SURNAME_RE = r'[А-ЯІЇЄҐ][а-яіїєґ\'ʼ’]{2,}(?:-[А-ЯІЇЄҐ]?[а-яіїєґ\'ʼ’]{2,})?'
+_SURNAME_RE = (r"[А-ЯІЇЄҐ][а-яіїєґ'ʼ’" + _JOIN + r"]{2,}"
+               r"(?:-[" + _JOIN + r"]*[А-ЯІЇЄҐ]?[а-яіїєґ'ʼ’" + _JOIN + r"]{2,})?")
 # КАПСОМ, зокрема подвійне (ПЕТРЕНКО-КОВАЛЬ): до 3.1.20 включно бралась лише одна
 # частина, і друга (чи перша — «ПЕТРЕНКО» у «ПЕТРЕНКО-КОВАЛЬ І.М.») лишалась
-_SURNAME_UPPER_RE = r'[А-ЯІЇЄҐ][А-ЯІЇЄҐ\'ʼ’]{2,}(?:-[А-ЯІЇЄҐ][А-ЯІЇЄҐ\'ʼ’]+)?'
+_SURNAME_UPPER_RE = (r"[А-ЯІЇЄҐ][А-ЯІЇЄҐ'ʼ’" + _JOIN + r"]{2,}"
+                     r"(?:-[" + _JOIN + r"]*[А-ЯІЇЄҐ][А-ЯІЇЄҐ'ʼ’" + _JOIN + r"]+)?")
 _NAME_RE = r'(?:' + _SURNAME_RE + r'|' + _SURNAME_UPPER_RE + r')'
 # Прізвище перед ініціалами починається з початку слова (не з «КОВАЛЬ»
 # усередині «ПЕТРЕНКО-КОВАЛЬ»)
-_NAME_START = r"(?<![А-ЯІЇЄҐа-яіїєґA-Za-z'ʼ’-])"
+_NAME_START = r"(?<![А-ЯІЇЄҐа-яіїєґA-Za-z'ʼ’-])(?<![А-ЯІЇЄҐа-яіїєґA-Za-z'ʼ’-][" + _JOIN + r"])"
 
 # Пробіл у межах рядка (НЕ \s — щоб ініціали не склеювались
 # з наступним рядком через \n)
@@ -120,7 +128,7 @@ def _is_surname_candidate(word: str) -> bool:
     if not parts:
         return False
     for part in parts:
-        letters = part.replace("'", "").replace("ʼ", "").replace("’", "")
+        letters = clean_word(part).replace("'", "")
         if not letters:
             return False
         if letters.isupper() and len(letters) >= 2:
@@ -310,11 +318,11 @@ def _get_rank_forms_re() -> Pattern[str]:
     if _RANK_FORMS_RE is None:
         forms = sorted(_cfg.ALL_RANK_FORMS, key=len, reverse=True)
         alternation = '|'.join(re.escape(f).replace(r'\ ', r'\s+') for f in forms)
-        _RANK_FORMS_RE = re.compile(r"(?<![\w'’ʼ-])(?:" + alternation + r")(?![\w'’ʼ-])", re.IGNORECASE)
+        _RANK_FORMS_RE = re.compile(WORD_BEFORE + r"(?:" + alternation + r")" + WORD_AFTER, re.IGNORECASE)
     return _RANK_FORMS_RE
 
 
-_TOKEN_RE = re.compile(r"\d+(?:[./-]\d+)*|[А-ЯІЇЄҐа-яіїєґA-Za-z][А-ЯІЇЄҐа-яіїєґA-Za-z'’ʼ-]*")
+_TOKEN_RE = re.compile(r"\d+(?:[./-]\d+)*|[А-ЯІЇЄҐа-яіїєґA-Za-z][А-ЯІЇЄҐа-яіїєґA-Za-z'’ʼ" + _JOIN + r"-]*")
 
 
 def _instance_counts(masking_dict: Dict) -> Dict[str, int]:
@@ -544,6 +552,22 @@ def _mask_quoted_ranks(text: str, masking_dict: Dict, instance_counters: Dict) -
     return text
 
 
+# Наступний номер переліку після «№ 12»: «, 13», « та 14»; далі — кінець
+# речення/рядка, кома, «та/і/й» чи «від» (не «13 травня», не «13.05.2025»)
+# Після «та/і/й» номер може бути останнім і перед будь-яким словом, крім
+# місяця чи «року» («та 14 скасувати», не «та 14 травня»)
+_LISTED_NUMBER_RE = re.compile(
+    r"(?:\s*,\s*(\d+(?:[/-]\d+)*)(?=[ \t]*(?:[,;)\r\n]|\.(?!\d)|(?:та|і|й|від)\b|$))"
+    r"|\s+(?:та|і|й)\s+(\d+(?:[/-]\d+)*)(?![\d.,/-]?\d)(?![ \t]*(?:" + _cfg._MONTHS_UA
+    + r"|року|рік|років|р\.)))", re.IGNORECASE)
+
+# CR перед службовим _LINE_JOIN — це CRLF рядка, склеєного з наступним
+_LINE_SPLIT_RE = re.compile("(\n|\r(?![\n" + _LINE_JOIN + "])|\u2028|\u2029)")
+
+# Номер в/ч «А1234»; група 1 — роздільник між літерою і цифрами
+_UNIT_RE = re.compile(r"\b[А-ЯA-Z]([ \xa0-]?)\d{4}\b")
+_UNIT_CONTEXT_RE = re.compile(r"(?:\bв/ч|\bчастин\w*)\.?\s*$", re.IGNORECASE)
+
 _ORDER_CONTEXT = re.compile(
     r"(?:наказ|розпорядженн|розпорядж|директив)\w*(?:[^.;\n№]|(?<=\d)\.(?=\d)){0,80}$", re.IGNORECASE)
 
@@ -622,6 +646,12 @@ def _mask_text_context_aware_impl(text: str, masking_dict: Dict, instance_counte
     return text
 
 
+# Роздільник слів ПІБ у рядку: пробіли, «|» і «;» таблиць, а також клітинки
+# CSV — кома впритул до наступного слова («Петренко,Іван,Петрович») і лапки
+# навколо клітинок («"Петренко";"Іван"»); до 3.1.22 такі ПІБ лишались відкритими
+_SEPARATOR = r"((?:[\s|;\"]|,(?=[^\s,]))+)"
+
+
 def locate_words(line: str, phrase: str) -> Optional[Tuple[int, int, List[str]]]:
     """Знаходить слова *phrase* (розділені пробілом) у *line*, де між ними
     може стояти будь-який роздільник: кілька пробілів, таб, NBSP, «|»
@@ -630,7 +660,7 @@ def locate_words(line: str, phrase: str) -> Optional[Tuple[int, int, List[str]]]
     words = phrase.split()
     if not words:
         return None
-    pattern = r"(?<![\w'’ʼ-])" + r"([\s|;]+)".join(re.escape(w) for w in words) + r"(?![\w'’ʼ-])"
+    pattern = WORD_BEFORE + _SEPARATOR.join(re.escape(w) for w in words) + WORD_AFTER
     m = re.search(pattern, line)
     if not m:
         # Слово могло бути приклеєне до лапок/розділового знака — як раніше, дослівно
@@ -649,7 +679,7 @@ def locate_words_before(line: str, phrase: str, before: int) -> Optional[Tuple[i
     words = phrase.split()
     if not words:
         return None
-    pattern = r"(?<![\w'’ʼ-])" + r"([\s|;]+)".join(re.escape(w) for w in words) + r"(?![\w'’ʼ-])"
+    pattern = WORD_BEFORE + _SEPARATOR.join(re.escape(w) for w in words) + WORD_AFTER
     best = None
     for m in re.finditer(pattern, line):
         if m.end() <= before:
@@ -662,8 +692,7 @@ def locate_words_before(line: str, phrase: str, before: int) -> Optional[Tuple[i
 
 
 def _words_pattern(phrase: str) -> str:
-    return (r"(?<![\w'’ʼ-])" + r"([\s|;]+)".join(re.escape(w) for w in phrase.split())
-            + r"(?![\w'’ʼ-])")
+    return WORD_BEFORE + _SEPARATOR.join(re.escape(w) for w in phrase.split()) + WORD_AFTER
 
 
 _RANK_PIB_GAP_RE = re.compile(r"[\s|;«»\"„“”']*")
@@ -778,7 +807,7 @@ def _mask_known_surnames_standalone(text: str, masking_dict: Dict, instance_coun
             return word
         return mask_surname(word, masking_dict, instance_counters)
 
-    return re.sub(r"(?<![\w'’ʼ-])[А-ЯІЇЄҐ][А-ЯІЇЄҐа-яіїєґ'’ʼ-]{2,}(?![\w'’ʼ-])", _replace, text)
+    return re.sub(WORD_BEFORE + r"[А-ЯІЇЄҐ][А-ЯІЇЄҐа-яіїєґ'’ʼ" + _JOIN + r"-]{2,}" + WORD_AFTER, _replace, text)
 
 
 def _mask_text_core(text: str, masking_dict: Dict, instance_counters: Dict,
@@ -956,11 +985,28 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
             if result and _number_sign_enabled(text, match.start(), result['type']) \
                     and not _overlaps_mask(result['start'], result['end']):
                 _add_mask(result)
+                if result['type'] == 'order_simple':
+                    _add_listed_numbers(result['end'])
+
+    def _add_listed_numbers(pos: int) -> None:
+        # «накази № 12, 13 та 14» — і решта номерів переліку (до 3.1.22
+        # маскувався лише перший); «№ 12, 13 травня» — не перелік
+        while True:
+            m = _LISTED_NUMBER_RE.match(text, pos)
+            if not m:
+                return
+            group = 1 if m.group(1) is not None else 2
+            s, e = m.start(group), m.end(group)
+            if _overlaps_mask(s, e) or _inside_skip(s, e):
+                return
+            _add_mask({'type': 'order_simple', 'full_text': m.group(group), 'number_part': m.group(group),
+                       'start': s, 'end': e})
+            pos = e
 
     def _phase_br_number() -> None:
         if not _cfg.MASK_BR_NUMBERS:
             return
-        for match in re.finditer(r'\bБР\b', text, re.IGNORECASE):
+        for match in re.finditer(r'\bБР(?![^\W\d_])', text, re.IGNORECASE):
             result = analyze_br_keyword(text, match)
             if result:
                 skip = _overlaps_skip(result['start'], result['end']) or _overlaps_mask(result['start'], result['end'])
@@ -975,6 +1021,19 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
                 if not skip: _add_mask({'type': item_type, 'full_text': match.group(0), 'number_part': match.group(0), 'start': match.start(), 'end': match.end()})
         return run
 
+    def _phase_military_unit() -> None:
+        # «А1234» — завжди; з пробілом, нерозривним пробілом чи дефісом
+        # («в/ч А 1234», «в/ч А\xa01234», «А-1234») — лише після «в/ч» /
+        # «частина»: до 3.1.22 «А 1234» з пробілом бралось без контексту, і
+        # «У 2025 році», «В 2024 р.», «А 2000 грн» маскувались як в/ч
+        if not _cfg.MASK_UNITS:
+            return
+        for match in _UNIT_RE.finditer(text):
+            if match.group(1) and not _UNIT_CONTEXT_RE.search(text[max(0, match.start() - 40):match.start()]):
+                continue
+            skip = _inside_skip(match.start(), match.end()) or _overlaps_mask(match.start(), match.end())
+            if not skip: _add_mask({'type': 'military_unit', 'full_text': match.group(0), 'number_part': match.group(0), 'start': match.start(), 'end': match.end()})
+
     def _phase_brigade_number() -> None:
         if not _cfg.MASK_BRIGADES:
             return
@@ -983,7 +1042,7 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
             if not skip: _add_mask({'type': 'brigade_number', 'full_text': match.group(0), 'number_part': match.group(1), 'start': match.start(), 'end': match.end()})
 
     def _legal_act_date(start: int) -> bool:
-        window = text[max(0, start - 160):start]
+        window = text[max(0, start - 500):start]
         # Захищені фрази (exclusions.phrases, custom skip) тут — токени
         # ___KEEP…___; для пошуку назви акта повертаємо оригінал
         for token, original in kept or ():
@@ -1026,9 +1085,15 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
         'passport_id': _simple_phase('passport_id', 'MASK_PASSPORT', r'(?<!\d)\d{9}(?!\d)'),
         # Серія: 2 великі літери (І/Ї/Є/Ґ теж) або малі з дефісом впритул
         # («мт-123456»); «до 150000» (слово + пробіл) — не серія
-        'military_id': _simple_phase('military_id', 'MASK_MILITARY_ID',
-                                     r"(?<![\w'])(?:[A-ZА-ЯІЇЄҐ]{2}[\s-]?|[a-zа-яіїєґ]{2}-)?\d{6}(?!\d)"),
-        'military_unit': _simple_phase('military_unit', 'MASK_UNITS', r'\b[А-ЯA-Z] ?\d{4}\b'),
+        # Паспорт старого зразка «АА123456» — той самий формат, що й квиток:
+        # без MASK_MILITARY_ID (--only passport) фаза бере лише номери з
+        # серією. До 3.1.22 паспорт тоді лишався відкритим
+        'military_id': (_simple_phase('military_id', 'MASK_MILITARY_ID',
+                                      r"(?<![\w'])(?:[A-ZА-ЯІЇЄҐ]{2}[\s-]?|[a-zа-яіїєґ]{2}-)?\d{6}(?!\d)")
+                        if _cfg.MASK_MILITARY_ID else
+                        _simple_phase('military_id', 'MASK_PASSPORT',
+                                      r"(?<![\w'])[A-ZА-ЯІЇЄҐ]{2}[\s-]?\d{6}(?!\d)")),
+        'military_unit': _phase_military_unit,
         'brigade_number': _phase_brigade_number,
         'date': _phase_date,
         'date_text': _phase_date_text,
@@ -1089,7 +1154,10 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
 
     if line_join:
         text = _join_broken_pib_lines(text)
-    lines = text.split('\n')
+    # Рядки — і за одиночним CR (старі файли Mac) чи U+2028/U+2029: до 3.1.22
+    # такий файл розбирався як один рядок — у десятки разів повільніше
+    parts = _LINE_SPLIT_RE.split(text)
+    lines, line_breaks = parts[0::2], parts[1::2]
     masked_lines = []
     for line in lines:
         if not looks_like_pib_line(line):
@@ -1217,7 +1285,7 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
             final_line = final_line.replace(token, values[token], 1)
         masked_lines.append(final_line)
 
-    text = '\n'.join(masked_lines)
+    text = ''.join(line + brk for line, brk in zip(masked_lines, line_breaks + ['']))
 
     # Прізвища, вже замасковані в документі, — і там, де стоять самі
     text = _mask_known_surnames_standalone(text, masking_dict, instance_counters)

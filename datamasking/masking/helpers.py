@@ -129,13 +129,22 @@ def normalize_identifier(identifier: str) -> str:
 
 _PUNCT = ',.!?;:'
 
+_CLEAN_WORD = str.maketrans({**{a: "'" for a in _cfg.APOSTROPHE_CHARS},
+                             **{c: None for c in _cfg.INVISIBLE_CHARS}})
+
+
+def clean_word(word: str) -> str:
+    """Слово без невидимих символів і з ASCII-апострофом — для розпізнавання
+    й синтезу масок (у mapping лишається написання з документа)."""
+    return word.translate(_CLEAN_WORD)
+
 
 def strip_word(word: str, leading_punct: bool = False) -> str:
-    """Слово без обрамлення (лапки, дужки, «/…/», «*…*») і розділових знаків
-    у кінці — у будь-якому поєднанні («Петровича),»); з *leading_punct* —
-    і розділових знаків на початку."""
-    lead = _cfg.WRAP_CHARS + (_PUNCT if leading_punct else "")
-    trail = _cfg.WRAP_CHARS + _PUNCT
+    """Слово без обрамлення (лапки, дужки, «/…/», «*…*»), невидимих символів
+    по краях і розділових знаків у кінці — у будь-якому поєднанні
+    («Петровича),»); з *leading_punct* — і розділових знаків на початку."""
+    lead = _cfg.WRAP_CHARS + _cfg.INVISIBLE_CHARS + (_PUNCT if leading_punct else "")
+    trail = _cfg.WRAP_CHARS + _cfg.INVISIBLE_CHARS + _PUNCT
     start, end = 0, len(word)
     while start < end and word[start] in lead:
         start += 1
