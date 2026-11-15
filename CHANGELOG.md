@@ -11,8 +11,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Петренко;Іван;Петрович;сержант`): a `;` with no space after it now
   separates cells like `|` does, so the name, the rank and the patronymic
   in the last cell are masked. Before, the patronymic glued to the next cell
-  stayed open. A `;` followed by a space still ends a name, as in prose. A
-  comma glued to the next word (`Петрович,сержант`) is read as `, `.
+  stayed open. A `;` followed by a space still ends a name, as in prose.
+  CSV cells separated by a comma with no space (`Петренко,Іван,Петрович,сержант`)
+  and quoted cells (`"Петренко";"Іван";"Петрович"`, `"Петренко","Іван"`) are
+  read the same way; before, such names stayed open. A comma followed by a
+  space still ends a name.
+- A surname with an invisible character inside it (a soft hyphen, a
+  zero-width space or joiner, a byte order mark left in the middle of joined
+  files — common in text copied from Word, PDF or web pages), or with `‘` or
+  `` ` `` typed for the apostrophe (`ДЕМ‘ЯНЧУК`, `П`ЯТНИЧУК`), could stay
+  partly or fully open, and its occurrences were not restored by unmasking.
+  Such characters are now part of the word wherever names are searched, the
+  mask is made from the word without them, and the mapping keeps the
+  spelling of the document.
+- Dates after `законодавства`, `законних` or a law mentioned earlier in the
+  sentence (`на підставі закону, рапорт від 01.02.2025`) were taken for the
+  date of a law and stayed open. A date is kept only right after the name of
+  an act: its number, `України`, a quoted title of any length and a line
+  break may come in between, a comma may not. The date of a law with a long
+  quoted title, or with `від` on the next line, is now kept as well; before
+  it was shifted.
+- `БР566` and `БР: 566` stayed open; `БР 566` and `БР-566` were masked.
+- In a list of order numbers (`накази № 12, 13 та 14`) only the first number
+  was masked.
+- `наказ № 15.01.2025`: the day was masked as an order number, and the month
+  and year stayed open. It is now masked as a date.
+- Unit numbers written with a non-breaking space or a hyphen
+  (`в/ч А 1234` with a non-breaking space, `в/ч А-1234`) stayed open.
+- With `--only passport` (or the military ID type turned off), old passports
+  (`АА123456`, `АА 123456`) stayed open: they were masked only as military IDs.
+- Text dates in single quotes (`'28' вересня 2025`, `‘28’ вересня 2025`)
+  were not recognised.
 - A Latin letter that looks like a Cyrillic one inside a name (`Ярoслав`
   with a Latin `o`, typical of text pasted from elsewhere) made the name
   unrecognised. Its mask could then be the real name (`Ярослав`), and a
@@ -47,6 +76,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   came back as `майору`). The nearest free rank of the hierarchy is now taken.
   When every rank of the hierarchy is open in the document, the rank is left
   as it is rather than masked with a rank that unmasking would confuse.
+- A one-digit order number (`наказ № 5`) in a document with open numbered
+  items 1–9 got a mask equal to one of the item numbers, and unmasking
+  swapped them. Such a number now gets a two-digit mask when every one-digit
+  mask is taken.
+- A text date with no space before the month (`«28»вересня 2025 року`,
+  `28вересня 2025`) was masked but not restored.
 
 ### Fixed — older mapping files
 - A v2.0 mapping (entries without `instances`) restored nothing, with exit
@@ -71,6 +106,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and `-ін` families also cover `Литвином`, `Литвинові` and `Кузьміним`.
   A bare surname ending in a consonant gets a mask ending in a consonant
   where possible.
+- Surnames declined like soft adjectives (`Задорожній`, `Задорожнього`,
+  `Задорожньому`, `Задорожнім`, `Задорожня`, `Задорожньої`) got a different
+  stem in each case, and `Задорожнім` lost its ending. Feminine adjective
+  surnames in the dative (`Головатій` next to `Головата`, `Головатої`) also
+  got a different stem. They now share the stem of the other forms; a soft
+  ending stays soft only after `н` (`Задаштого`, not `Задаштього`).
+- Text dates kept the day when the shift went past the 1st or the 28th
+  (`1 березня` → `1 …`, `28 вересня` → `28 …`); the shift now goes the other
+  way.
+- `У 2025 році`, `В 2024 р.`, `А 2000 грн` were masked as military unit
+  numbers (`У 9309 році`). A letter and four digits with a space between them
+  are now a unit number only after `в/ч` or `частина`; `А1234` is always one.
 - A surname mask could contain the apostrophe `ʼ` (U+02BC) from the name
   dictionary. A document in cp1251 with such a mask then failed to save.
   Surname masks now use the ASCII apostrophe, as name masks already did.
@@ -99,6 +146,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed — command line
 - `--only ,` (an empty list) enabled every type; an empty `--only` or
   `--exclude` list is now an error (exit code 2).
+- `--log-file` naming the input file, the output file or the mapping wrote
+  log lines into it: into the original document (they then appeared in the
+  masked output) or into the mapping (an encrypted mapping could no longer be
+  decrypted). This is now an error (exit code 2).
+- `data-unmask` accepted any JSON object as a mapping (a configuration file,
+  `{}`, the masked JSON itself) and reported success. A file without
+  `mappings` is now rejected, as is a mask that is only spaces or punctuation
+  (unmasking inserted originals between words) and a malformed legacy
+  `re_mask_passes` key (a traceback before).
+- A mapping saved by an editor with a UTF-8 byte order mark is now read.
+- A mapping larger than 100 MB could not be read even with a higher size
+  limit in the configuration, so a long `--re-mask` chain could not be
+  unmasked. The limit for a mapping is now 30 times the configured input
+  limit.
+- In automatic mode (no masked file given) `data-unmask` ignored `-o` and
+  `--map`; they now apply.
+- `base64`, `hex`, `rot13` and other codecs that are not text encodings, in
+  the configuration or in the mapping, gave a traceback; they are now a
+  configuration error. JSON nested too deeply to process is an error too
+  (exit code 1), not a traceback.
+- `-o` naming a directory said to use `--force`; it is now an error saying
+  that it is a directory. `-o` in a directory that does not exist failed only
+  after all the masking; `data-mask` now checks it first.
+- A forged encrypted mapping (format 2) could ask for scrypt parameters that
+  take about a minute of computing before the wrong-password error; such
+  parameters are now rejected.
+
+### Performance
+- Text dates were searched with a pattern that took quadratic time on long
+  runs of spaces or empty lines, in masking and unmasking (80 000 spaces in a
+  document: about 4 minutes).
+- Files whose lines end in a carriage return only (old Mac files) or in
+  U+2028 / U+2029 were processed as one long line, tens of times slower; their
+  lines are now processed one by one.
 
 ## [3.1.21] - 2026-11
 

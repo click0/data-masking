@@ -25,6 +25,18 @@ PRIVATE_MODE = 0o600
 SECURE_DELETE_TEMP = True
 
 
+def same_file(a: Union[str, Path], b: Union[str, Path]) -> bool:
+    """Чи *a* і *b* — той самий файл (зокрема через посилання); для
+    неіснуючих — той самий абсолютний шлях."""
+    try:
+        pa, pb = Path(a), Path(b)
+        if pa.exists() and pb.exists():
+            return os.path.samefile(pa, pb)
+        return pa.resolve() == pb.resolve()
+    except (OSError, ValueError):
+        return False
+
+
 def _discard_temp(tmp_name: str) -> None:
     try:
         if SECURE_DELETE_TEMP:

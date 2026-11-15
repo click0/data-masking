@@ -24,9 +24,13 @@ DEFAULT_ALLOWED = ("utf-8", "cp1251", "latin-1")
 def normalize_encoding(name: str) -> str:
     """Канонічна назва кодування Python ('CP1251' → 'cp1251'); ValueError, якщо невідоме."""
     try:
-        return codecs.lookup(str(name).strip()).name
+        info = codecs.lookup(str(name).strip())
     except LookupError:
         raise ValueError(f"unknown encoding: {name!r}") from None
+    # base64, hex, rot13 … — кодеки не тексту: до 3.1.22 давали traceback
+    if not getattr(info, "_is_text_encoding", True):
+        raise ValueError(f"not a text encoding: {name!r}")
+    return info.name
 
 
 def check_encoding_settings(encoding: str, allowed: Optional[Iterable[str]]) -> Tuple[str, List[str]]:
