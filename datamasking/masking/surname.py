@@ -25,6 +25,7 @@
      одну синтетичну основу (МАЗУРЕНКА / Мазуренко / Мазуренку).
 """
 
+import functools
 import random
 import re
 from typing import Dict, Iterable, Optional, Set, Tuple
@@ -134,10 +135,15 @@ def document_contains(token: str) -> bool:
         return False
     if _residue_tokens is not None and " " not in token:
         return token.lower() in _residue_tokens
+    return _token_re(token).search(_document_text) is not None
+
+
+@functools.lru_cache(maxsize=4096)
+def _token_re(token: str) -> "re.Pattern[str]":
     join = _cfg.JOINER_CHARS
     before = r"(?<!\d)" if token[0].isdigit() else r"(?<![\w'’ʼ])(?<!\w[" + join + r"])"
     after = r"(?!\d)" if token[-1].isdigit() else r"(?![\w'’ʼ])(?![" + join + r"]\w)"
-    return re.search(before + re.escape(token) + after, _document_text, re.IGNORECASE) is not None
+    return re.compile(before + re.escape(token) + after, re.IGNORECASE)
 
 
 def exit_document() -> None:

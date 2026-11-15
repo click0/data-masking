@@ -660,8 +660,7 @@ def locate_words(line: str, phrase: str) -> Optional[Tuple[int, int, List[str]]]
     words = phrase.split()
     if not words:
         return None
-    pattern = WORD_BEFORE + _SEPARATOR.join(re.escape(w) for w in words) + WORD_AFTER
-    m = re.search(pattern, line)
+    m = _phrase_re(phrase).search(line)
     if not m:
         # Слово могло бути приклеєне до лапок/розділового знака — як раніше, дослівно
         idx = line.find(phrase)
@@ -679,9 +678,8 @@ def locate_words_before(line: str, phrase: str, before: int) -> Optional[Tuple[i
     words = phrase.split()
     if not words:
         return None
-    pattern = WORD_BEFORE + _SEPARATOR.join(re.escape(w) for w in words) + WORD_AFTER
     best = None
-    for m in re.finditer(pattern, line):
+    for m in _phrase_re(phrase).finditer(line):
         if m.end() <= before:
             best = m
         else:
@@ -691,8 +689,12 @@ def locate_words_before(line: str, phrase: str, before: int) -> Optional[Tuple[i
     return best.start(), best.end(), list(best.groups())
 
 
-def _words_pattern(phrase: str) -> str:
-    return WORD_BEFORE + _SEPARATOR.join(re.escape(w) for w in phrase.split()) + WORD_AFTER
+@functools.lru_cache(maxsize=4096)
+def _phrase_re(phrase: str) -> Pattern[str]:
+    """Скомпільований шаблон слів *phrase* з будь-якими роздільниками між
+    ними. Кеш: той самий ПІБ шукається в документі багато разів, а
+    вбудований кеш re (512 шаблонів) на великих документах витісняється."""
+    return re.compile(WORD_BEFORE + _SEPARATOR.join(re.escape(w) for w in phrase.split()) + WORD_AFTER)
 
 
 _RANK_PIB_GAP_RE = re.compile(r"[\s|;«»\"„“”']*")
@@ -705,8 +707,8 @@ def locate_rank_and_pib(line: str, rank: str, pib: str) -> Tuple[Optional[Tuple[
     перше входження ПІБ). До 3.1.20 включно ПІБ брався за першим входженням у рядку:
     у «М.О. Ткачук Адмірал Ткачук» звання діставалось першому «Ткачук»."""
     if rank and rank.split() and pib.split():
-        rank_matches = list(re.finditer(_words_pattern(rank), line))
-        for m in re.finditer(_words_pattern(pib), line):
+        rank_matches = list(_phrase_re(rank).finditer(line))
+        for m in _phrase_re(pib).finditer(line):
             for r in reversed(rank_matches):
                 if r.end() <= m.start():
                     if _RANK_PIB_GAP_RE.fullmatch(line[r.end():m.start()]):
@@ -720,7 +722,7 @@ def _locate_from(line: str, phrase: str, pos: int) -> Optional[Tuple[int, int, L
     """Перше входження *phrase*, що починається не раніше *pos*."""
     if not phrase.split():
         return None
-    m = re.compile(_words_pattern(phrase)).search(line, pos)
+    m = _phrase_re(phrase).search(line, pos)
     return (m.start(), m.end(), list(m.groups())) if m else None
 
 
