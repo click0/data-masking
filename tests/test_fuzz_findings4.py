@@ -288,9 +288,15 @@ class TestCli:
         assert unmask_cli.main(["out.txt", "-m", mapping, "-o", "r.txt"]) == 0
         assert (cwd / "r.txt").read_bytes() == (cwd / "src.txt").read_bytes()
 
-    def test_deep_json(self, cwd):
-        (cwd / "deep.json").write_text("[" * 700 + '"Петренко"' + "]" * 700, encoding="utf-8")
-        assert mask_cli.main(["-i", "deep.json", "-o", "o.json", "--no-report"]) == 1
+    @pytest.mark.parametrize("cli", [mask_cli, unmask_cli])
+    def test_too_deep_json_is_an_error(self, cli, monkeypatch, capsys):
+        # Глибина, на якій Python кидає RecursionError, залежить від версії й
+        # платформи, тож тут — сама обгортка main()
+        def deep(argv=None):
+            raise RecursionError("maximum recursion depth exceeded")
+        monkeypatch.setattr(cli, "_main", deep)
+        assert cli.main([]) == 1
+        assert "nested too deeply" in capsys.readouterr().err
 
     def test_output_directory(self, cwd):
         (cwd / "d").mkdir()
