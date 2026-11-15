@@ -4,7 +4,31 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [3.2.0] - 2026-11
+
+Minor release with the results of two bug hunts after 3.1.21. Most changes
+are fixes: data that stayed open in tables, in text copied from Word, PDF or
+web pages, and in many forms of dates and numbers; occurrences that unmasking
+did not restore; tracebacks and unsafe file handling on the command line.
+Masks of the same document now differ from 3.1.21, and new mappings record
+how occurrences are numbered. Mappings from earlier versions are unmasked as
+before.
+
+### Compatibility
+- Masks differ from 3.1.21 for the same input. All case forms of a surname
+  now share one synthetic stem. Names are found in more places (CSV cells,
+  words with invisible characters). Some numbers and dates are masked
+  differently. Unmasking depends only on the mapping, so mappings made by
+  earlier versions still restore exactly.
+- New mappings contain `"instance_case": "insensitive"`. Unmask them with
+  3.2.0 or later: 3.1.21 and earlier ignore the key and can leave an
+  occurrence unrestored when two masks differ only in letter case.
+- `data-unmask` now rejects a JSON file without `mappings` and a mask with
+  no letter or digit. `--log-file` naming the input, the output or the
+  mapping is a usage error (exit code 2).
+- New in the Python API: `rank_data.RANK_DATIVE_OVI` and the case name
+  `dative_ovi` in `RANK_TO_NOMINATIVE`, for the dative in `-ові`
+  (`майорові`). `RANK_DECLENSIONS` is unchanged.
 
 ### Fixed — data left unmasked
 - Tables exported from Excel as CSV (`Петренко Іван Петрович;сержант;1234567890`,

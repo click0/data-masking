@@ -75,7 +75,7 @@ def _distinct_mask(original: str, generate: "Callable[[int], str]", attempts: in
 def _widened(original: str) -> "Callable[[int], str]":
     """Генератор масок на одну цифру довших: однозначний номер «№ 5» у
     документі з відкритими пунктами 1–9 інакше діставав маску, що збігалась
-    із номером пункту, і unmask міняв їх місцями (до 3.1.22 — у ~30 %
+    із номером пункту, і unmask міняв їх місцями (до 3.2.0 — у ~30 %
     однозначних номерів таких документів; остання спроба взагалі не
     перевірялась і могла дорівнювати оригіналу)."""
     longer = re.sub(r"\d+", lambda m: m.group(0) + "0", original, count=1)
@@ -297,7 +297,7 @@ def mask_date_text(original: str, masking_dict: Dict, instance_counters: Dict) -
 
         # Зміщуємо день на +-5 (в межах 1-28)
         day_shift = random.choice([-5, -3, -2, 2, 3, 5])
-        # За межами 1–28 — зсув у інший бік: до 3.1.22 обрізання давало той
+        # За межами 1–28 — зсув у інший бік: до 3.2.0 обрізання давало той
         # самий день («1» − 5 → 1, «28» + 3 → 28)
         shifted = int(day) + day_shift
         if not 1 <= shifted <= 28:
@@ -444,7 +444,7 @@ def mask_rank(original: str, masking_dict: Dict, instance_counters: Dict) -> str
         else:
             # Усі сусіди за зсувом відкрито стоять у документі (великий наказ,
             # де згадано десятки звань) — найближче вільне звання ієрархії.
-            # До 3.1.22 лишався перший варіант, і unmask підміняв відкрите
+            # До 3.2.0 лишався перший варіант, і unmask підміняв відкрите
             # звання («доповіла капітану роти» → «майору»)
             for distance in range(1, len(hierarchy)):
                 free = [hierarchy[i] for i in (idx + distance, idx - distance)

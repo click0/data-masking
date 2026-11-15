@@ -27,7 +27,7 @@ def normalize_encoding(name: str) -> str:
         info = codecs.lookup(str(name).strip())
     except LookupError:
         raise ValueError(f"unknown encoding: {name!r}") from None
-    # base64, hex, rot13 … — кодеки не тексту: до 3.1.22 давали traceback
+    # base64, hex, rot13 … — кодеки не тексту: до 3.2.0 давали traceback
     if not getattr(info, "_is_text_encoding", True):
         raise ValueError(f"not a text encoding: {name!r}")
     return info.name

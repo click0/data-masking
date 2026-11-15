@@ -535,7 +535,7 @@ def mask_name_direct(
         masking_dict: Shared masking dictionary (mutated).
         instance_counters: Instance tracking counters (mutated).
         gender: ``'male'``, ``'female'`` or ``None`` (default: from the name
-                itself, as ``data-mask`` does; before 3.1.22 the default
+                itself, as ``data-mask`` does; before 3.2.0 the default
                 was ``'male'``, and «Марія» got a male mask).
 
     Returns:

@@ -204,7 +204,7 @@ class TestBuildInstanceMap:
         }
 
         # Mapping v2.0 не мав instances: запис діє для будь-якого входження
-        # маски (ANY_INSTANCE); до 3.1.22 такий запис не відновлювався
+        # маски (ANY_INSTANCE); до 3.2.0 такий запис не відновлювався
         from datamasking.unmasking.helpers import ANY_INSTANCE
         instance_map = build_instance_map(masking_map)
         assert instance_map == {"Іваненко": {ANY_INSTANCE: "петренко"}}

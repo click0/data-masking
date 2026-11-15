@@ -306,7 +306,7 @@ def create_filter(
     """
     only_set = parse_type_list(only) if only else None
     exclude_set = parse_type_list(exclude) if exclude else None
-    # «--only ,» — порожній перелік; до 3.1.22 він означав «усі типи»
+    # «--only ,» — порожній перелік; до 3.2.0 він означав «усі типи»
     for label, raw, parsed in (("only", only, only_set), ("exclude", exclude, exclude_set)):
         if raw is not None and str(raw).strip() and not parsed:
             raise ValueError(f"--{label}: no masking type given in {raw!r}")
@@ -328,7 +328,7 @@ def apply_filter_to_globals(
                       constants)`` (what the engine reads) or another dict.
                       ``data_masking.__dict__`` (the compatibility module)
                       is redirected to the engine's flags: writing there
-                      directly had no effect before 3.1.22 and left stale
+                      directly had no effect before 3.2.0 and left stale
                       values that hid the live ones.
     """
     if globals_dict.get("__name__") == "data_masking":

@@ -177,7 +177,7 @@ class MappingChain:
             if p.get("pass") == pass_number:
                 return p
         # Проходи без поля "pass" (ланцюг, зібраний вручну; його приймають і
-        # validate_mapping_schema, і unmask_chain) — за позицією. До 3.1.22
+        # validate_mapping_schema, і unmask_chain) — за позицією. До 3.2.0
         # ChainUnmasker для такого ланцюга мовчки нічого не відновлював
         if 1 <= pass_number <= len(self._passes) and "pass" not in self._passes[pass_number - 1]:
             return self._passes[pass_number - 1]
@@ -207,7 +207,7 @@ class MappingChain:
         """Compose forward mappings from the text after pass *from_pass*
         (0 = original) to the text after pass *to_pass*: passes
         from_pass+1 .. to_pass, as the reverse chain counts them. Before
-        3.1.22 the from_pass mapping itself was included, so (1, 2) gave
+        3.2.0 the from_pass mapping itself was included, so (1, 2) gave
         original -> pass 2 instead of pass 1 -> pass 2."""
         combined: Dict[str, str] = {}
         for step in range(from_pass + 1, to_pass + 1):

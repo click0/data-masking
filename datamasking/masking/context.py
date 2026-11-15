@@ -142,7 +142,7 @@ def analyze_number_sign_context(text: str, match: re.Match) -> Optional[Dict]:
         return None
 
     number_text = number_match.group(1)
-    # «№ 15.01.2025» — це дата (її маскує фаза дат); до 3.1.22 «15» бралось як
+    # «№ 15.01.2025» — це дата (її маскує фаза дат); до 3.2.0 «15» бралось як
     # номер, і маска «№ 98.01.2025» лишала місяць і рік відкритими
     if re.match(r'\.\d{1,2}\.\d{2,4}(?!\d)', after_text[number_match.end():]):
         return None
@@ -167,7 +167,7 @@ def analyze_br_keyword(text: str, match: re.Match) -> Optional[Dict]:
     """Аналізує контекст після слова БР"""
     pos = match.end()
     after_text = text[pos:pos+100]
-    # «БР 566», «БР-566», «БР566», «БР: 566» (до 3.1.22 два останні лишались відкритими)
+    # «БР 566», «БР-566», «БР566», «БР: 566» (до 3.2.0 два останні лишались відкритими)
     br_match = re.match(r'(?:\s*:\s*|[-\s])?(\d+(?:[/-]\d+)*(?:дск|п|к)?)', after_text, re.IGNORECASE)
     if br_match:
         return {
@@ -192,7 +192,7 @@ def clean_line_before_parsing(line: str) -> str:
     line = line.replace('|', ' ')
     # CSV з Excel («Петренко;Іван;Петрович;сержант»): «;» впритул до
     # наступного слова — роздільник клітинок, як «|»; «; » у тексті й далі
-    # завершує ПІБ. Кома впритул до слова — як «, ». До 3.1.22 клітинка
+    # завершує ПІБ. Кома впритул до слова — як «, ». До 3.2.0 клітинка
     # «Петрович;сержант;1234567890» була одним словом, і по батькові
     # лишалось відкритим
     line = re.sub(r';(?=\S)', ' ', line)
@@ -389,7 +389,7 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
             if len(words_after) > 1 and words_after[1] in ['відставці', 'запасі', 'пенсії', 'резерві']:
                 additional_words += 2
         elif words_after and words_after[0] in ['запасу', 'резерву']:
-            # «майор запасу Петренко …» (до 3.1.22 звання лишалось відкритим)
+            # «майор запасу Петренко …» (до 3.2.0 звання лишалось відкритим)
             additional_words += 1
 
         rank_matches.append((rank_index, rank_form, first_tok, last_tok - first_tok + 1 + additional_words))
@@ -400,7 +400,7 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
         pib_start_index = rank_position + rank_word_count
         # Одразу за званням — ще одне звання з кількох слів («…капітаном
         # СТАРШИЙ ЛЕЙТЕНАНТ ПИЛИП'ЮК…», рядки, склеєні на час розбору): ПІБ
-        # іде після нього, і звання особи — воно. До 3.1.22 «СТАРШИЙ»
+        # іде після нього, і звання особи — воно. До 3.2.0 «СТАРШИЙ»
         # маскувалось як прізвище. Звання з одного слова («капітан Майор Іван
         # Іванович») може бути прізвищем, тож його не пропускаємо
         multiword = {m[2]: m for m in rank_matches if len(m[1].split()) > 1}
