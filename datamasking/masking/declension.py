@@ -21,6 +21,7 @@ import re
 from typing import List, NamedTuple, Optional, Set, Tuple
 
 from datamasking.masking import constants as _cfg
+from datamasking.masking.helpers import clean_word
 
 # Відмінки: nominative, genitive (= accusative для істот чоловічого роду),
 # dative (також місцевий), dative_ovi («Петрові», «Андрієві»), accusative
@@ -97,7 +98,7 @@ def fold_homoglyphs(word: str) -> str:
 
 
 def _normalize(word: str) -> str:
-    return fold_homoglyphs(word.replace("ʼ", "'").replace("’", "'"))
+    return fold_homoglyphs(clean_word(word))
 
 
 def _faker_names() -> Tuple[Set[str], Set[str]]:

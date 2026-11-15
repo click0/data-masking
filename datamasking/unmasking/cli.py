@@ -61,7 +61,7 @@ except ImportError:
 # ============================================================================
 from datamasking._version import __version__  # єдине джерело версії
 from datamasking._textio import read_text, check_encoding_settings
-from datamasking._fsutil import atomic_write_private
+from datamasking._fsutil import atomic_write_private, same_file
 import random
 
 
@@ -126,6 +126,15 @@ def main(argv=None) -> int:
     """
     Головна функція CLI для unmask. Повертає код виходу (0 — успіх, 1 — помилка).
     """
+    try:
+        return _main(argv)
+    except RecursionError:
+        # Надто глибоко вкладений JSON (до 3.1.22 — traceback)
+        print("❌ The data is nested too deeply to process", file=sys.stderr)
+        return EXIT_ERROR
+
+
+def _main(argv=None) -> int:
     # Fix Unicode output on Windows (PyInstaller cp1252 issue)
     if sys.platform == 'win32' and getattr(sys.stdout, 'encoding', 'utf-8').lower().replace('-', '') != 'utf8':
         import io
@@ -265,6 +274,15 @@ Examples:
             if getattr(log_cfg, 'log_to_file', None) is not False:
                 log_file = getattr(log_cfg, 'file', None)
             console = getattr(log_cfg, 'log_to_console', True) is not False
+        # Лог не пишеться у вхідні файли чи результат: до 3.1.22
+        # «--log-file map.json» дописував рядки логу в mapping (а .enc після
+        # цього вже не розшифровувався)
+        if enabled and log_file:
+            for label, other in (("masked file", args.masked_file), ("mapping", args.map_file),
+                                 ("output", args.output)):
+                if other and same_file(log_file, other):
+                    print(f"❌ Log file {log_file} is the {label}", file=sys.stderr)
+                    return EXIT_USAGE
         if enabled:
             try:
                 logger = setup_logging(level=log_level, log_file=log_file, console=console)
@@ -311,6 +329,15 @@ Examples:
             return EXIT_ERROR
         masked_path, map_path, output_path = result
         log_info(f"Автоматичний режим: {masked_path.name}")
+        # --map і -o діють і тут (до 3.1.22 мовчки ігнорувались)
+        if args.map_file:
+            map_path = Path(args.map_file)
+            if not map_path.exists():
+                print(f"❌ Файл маппінгу не знайдено: {map_path}")
+                log_error(f"Файл маппінгу не знайдено: {map_path}")
+                return EXIT_ERROR
+        if args.output:
+            output_path = Path(args.output)
     else:
         masked_path = Path(args.masked_file)
         if not masked_path.exists():
@@ -359,11 +386,11 @@ Examples:
     if same_as:
         print(f"❌ Вихідний файл збігається з {same_as[0]}")
         return EXIT_USAGE
-    if output_path.exists() and not getattr(args, 'force', False):
-        print(f"❌ Файл {output_path} уже існує (використайте --force для перезапису)")
-        return EXIT_USAGE
     if output_path.is_dir():
         print(f"❌ {output_path} — каталог")
+        return EXIT_USAGE
+    if output_path.exists() and not getattr(args, 'force', False):
+        print(f"❌ Файл {output_path} уже існує (використайте --force для перезапису)")
         return EXIT_USAGE
 
     # ========================================================================
@@ -371,7 +398,11 @@ Examples:
     # ========================================================================
 
     try:
-        masking_map = load_mapping_file(map_path, password=password)
+        # Mapping більший за документ (≈2,5×, ланцюг --re-mask — до ~30×): до
+        # 3.1.22 ліміт був сталі 100 МБ, і unmask не читав mapping, який mask
+        # щойно записав
+        masking_map = load_mapping_file(map_path, password=password,
+                                        max_size=30 * _size_limit(config))
         validate_mapping_schema(masking_map)
         log_info(f"Mapping завантажено: {map_path.name}")
 

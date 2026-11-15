@@ -202,6 +202,24 @@ def build_instance_map(masking_map: Dict) -> Dict[str, Dict[int, str]]:
     return instance_map
 
 
+def _first_letter(word: str) -> str:
+    return next((ch for ch in word if ch.isalpha()), "")
+
+
+def _is_title(word: str) -> bool:
+    """Перша літера велика, решта малі (невидимі символи й апостроф перед
+    першою літерою не рахуються: «\u00adҐудзем»)."""
+    letters = [ch for ch in word if ch.isalpha()]
+    return len(letters) > 1 and letters[0].isupper() and "".join(letters[1:]).islower()
+
+
+def _capitalize(word: str) -> str:
+    """str.capitalize(), що пропускає невидимі символи перед першою літерою
+    (до 3.1.22 «\u00adҐудзем» ставало «\u00adґудзем»)."""
+    i = next((k for k, ch in enumerate(word) if ch.isalpha()), 0)
+    return word[:i] + word[i:i + 1].upper() + word[i + 1:].lower()
+
+
 def _apply_original_case(original: str, masked: str) -> str:
     """
     Відновлює регістр літер оригіналу на маскованому значенні.
@@ -211,14 +229,14 @@ def _apply_original_case(original: str, masked: str) -> str:
 
     if original.isupper():
         return masked.upper()
-    elif len(original) > 1 and original[0].isupper() and original[1:].islower():
+    elif _is_title(original):
         # Подвійне ім'я («Анна-Марія», «АННА-МАРІЯ»): кожна частина з великої,
         # якщо так записано в mapping — до 3.1.22 capitalize() давав
         # «Анна-марія». «генерал-майор» лишається «Генерал-майор»
         parts = masked.split("-")
-        if len(parts) > 1 and all(p[:1].isupper() for p in parts):
-            return "-".join(p.capitalize() for p in parts)
-        return masked.capitalize()
+        if len(parts) > 1 and all(_first_letter(p).isupper() for p in parts):
+            return "-".join(_capitalize(p) for p in parts)
+        return _capitalize(masked)
     elif original.islower():
         return masked.lower()
     # Подвійне слово (маска «Доличенко-Ґубко»): регістр — по частинах, з

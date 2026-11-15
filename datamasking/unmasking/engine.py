@@ -225,9 +225,11 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
     return restored_text, stats
 
 
-_DT_QUOTE_OPEN = r'[«"„“\']?\s*'
-_DT_QUOTE_CLOSE = r'\s*[»"“”\']?'
-_DT_STRIP_RE = re.compile(r'[«»"„“”\']')
+# Пробіли — лише після лапки (інакше квадратичний час на довгих пробілах);
+# між днем і місяцем пробілу може не бути («28»вересня — так маскується)
+_DT_QUOTE_OPEN = r'(?:[«"„“\'‘]\s*)?'
+_DT_QUOTE_CLOSE = r'\s*(?:[»"“”\'’]\s*)?'
+_DT_STRIP_RE = re.compile(r'[«»"„“”\'‘’]')
 
 
 def _restore_quoted_date(matched: str, masked_key: str, original_key: str) -> str:
@@ -307,7 +309,7 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
         if mask in date_text_masks:
             parts = mask.split()
             if len(parts) == 3 and parts[0].isdigit():
-                return (_DT_QUOTE_OPEN + re.escape(parts[0]) + _DT_QUOTE_CLOSE + r'\s+'
+                return (_DT_QUOTE_OPEN + re.escape(parts[0]) + _DT_QUOTE_CLOSE
                         + re.escape(parts[1]) + r'\s+' + re.escape(parts[2]))
         return re.escape(mask)
 
@@ -354,7 +356,7 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
         if not inst and date_text_masks:
             # «28» вересня 2025 → ключ «28 вересня 2025»
             key = _DT_STRIP_RE.sub('', matched).lower()
-            key = ' '.join(key.split())
+            key = ' '.join(re.sub(r'(\d)(?=[^\W\d_])', r'\1 ', key).split())
             inst, counter_key = _lookup(key, key)
             quoted_date = inst is not None
         if not inst:

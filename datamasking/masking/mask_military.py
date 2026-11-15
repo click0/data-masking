@@ -28,7 +28,7 @@ def mask_military_unit(original: str, masking_dict: Dict, instance_counters: Dic
     if original in masking_dict["mappings"]["military_unit"]:
         masked = masking_dict["mappings"]["military_unit"][original]["masked_as"]
     else:
-        match = re.match(r'^([А-ЯA-Z])( ?)(\d{4})$', original)
+        match = re.match(r'^([А-ЯA-Z])([ \xa0-]?)(\d{4})$', original)
         if not match: return original
         letter, sep = match.group(1), match.group(2)
 
@@ -51,20 +51,35 @@ def _redigit(original: str, attempt: int = 0) -> str:
     return re.sub(r'\d', lambda _: str(random.randint(0, 9)), original)
 
 
-def _distinct_mask(original: str, generate: "Callable[[int], str]", attempts: int = 10) -> str:
+def _distinct_mask(original: str, generate: "Callable[[int], str]", attempts: int = 10,
+                   widen: "Optional[Callable[[int], str]]" = None) -> str:
     """Маска, що не дорівнює оригіналу і не збігається з числом/словом
     документа (інакше unmask мінял би їх місцями, v3.1.9). *generate(attempt)*
-    — детермінований генератор; після *attempts* спроб — остання маска.
+    — детермінований генератор; *widen(attempt)* — запасний генератор
+    довших масок, коли всі короткі зайняті; інакше — остання маска.
 
     Потрібна кожному генератору, що міняє лише частину цифр: до 3.1.21
     військовий квиток (змінюються 2 цифри з 6) маскувався сам у себе в ~1 %
     випадків, «№5дск» — у кожному десятому, і номер лишався відкритим."""
-    masked = generate(0)
-    for attempt in range(1, attempts + 1):
-        if masked != original and not _surname.document_contains(masked):
-            break
-        masked = generate(attempt)
+    masked = original
+    for gen in (generate, widen):
+        if gen is None:
+            continue
+        for attempt in range(attempts + 1):
+            masked = gen(attempt)
+            if masked != original and not _surname.document_contains(masked):
+                return masked
     return masked
+
+
+def _widened(original: str) -> "Callable[[int], str]":
+    """Генератор масок на одну цифру довших: однозначний номер «№ 5» у
+    документі з відкритими пунктами 1–9 інакше діставав маску, що збігалась
+    із номером пункту, і unmask міняв їх місцями (до 3.1.22 — у ~30 %
+    однозначних номерів таких документів; остання спроба взагалі не
+    перевірялась і могла дорівнювати оригіналу)."""
+    longer = re.sub(r"\d+", lambda m: m.group(0) + "0", original, count=1)
+    return lambda attempt: _redigit(longer, attempt)
 
 
 def mask_order_number(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
@@ -76,14 +91,14 @@ def mask_order_number(original: str, masking_dict: Dict, instance_counters: Dict
     if original in masking_dict["mappings"]["order_number"]:
         masked = masking_dict["mappings"]["order_number"][original]["masked_as"]
     else:
-        masked = _distinct_mask(original, lambda a: _redigit(original, a))
+        masked = _distinct_mask(original, lambda a: _redigit(original, a), widen=_widened(original))
     return add_to_mapping(masking_dict, instance_counters, "order_number", original, masked)
 
 def mask_order_number_with_letters(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
     if original in masking_dict["mappings"]["order_number_with_letters"]:
         masked = masking_dict["mappings"]["order_number_with_letters"][original]["masked_as"]
     else:
-        masked = _distinct_mask(original, lambda a: _redigit(original, a))
+        masked = _distinct_mask(original, lambda a: _redigit(original, a), widen=_widened(original))
     return add_to_mapping(masking_dict, instance_counters, "order_number_with_letters", original, masked)
 
 def mask_br_number(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
@@ -103,7 +118,7 @@ def mask_br_number(original: str, masking_dict: Dict, instance_counters: Dict) -
         # тож у «БР 123/45» перший сегмент, а в «БР 566» усе лишалось відкритим)
         prefix = ""
         number_part = original
-        match = re.match(r'(№\s*)?(БР[-\s]?)?', original, re.IGNORECASE)
+        match = re.match(r'(№\s*)?(БР(?:\s*:\s*|[-\s])?)?', original, re.IGNORECASE)
         if match and match.group(0):
             prefix = match.group(0)
             number_part = original[len(prefix):]
@@ -282,7 +297,12 @@ def mask_date_text(original: str, masking_dict: Dict, instance_counters: Dict) -
 
         # Зміщуємо день на +-5 (в межах 1-28)
         day_shift = random.choice([-5, -3, -2, 2, 3, 5])
-        new_day = str(max(1, min(28, int(day) + day_shift))).zfill(len(day))
+        # За межами 1–28 — зсув у інший бік: до 3.1.22 обрізання давало той
+        # самий день («1» − 5 → 1, «28» + 3 → 28)
+        shifted = int(day) + day_shift
+        if not 1 <= shifted <= 28:
+            shifted = int(day) - day_shift
+        new_day = str(max(1, min(28, shifted))).zfill(len(day))
 
         # Замінюємо місяць на випадковий інший
         available_months = [m for m in _cfg._MONTHS_UA_LIST if m != month_name.lower()]

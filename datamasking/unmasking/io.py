@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
-from datamasking.unmasking.helpers import validate_file_size
+from datamasking.unmasking.helpers import MAX_INPUT_FILE_SIZE, validate_file_size
 from datamasking.unmasking.engine import is_chain_mapping
 
 # Optional modules
@@ -32,7 +32,8 @@ except ImportError:
     pass
 
 
-def load_mapping_file(map_path: Path, password: Optional[str] = None) -> Dict:
+def load_mapping_file(map_path: Path, password: Optional[str] = None,
+                      max_size: Optional[int] = None) -> Dict:
     """
     Завантажує mapping файл з підтримкою шифрування.
 
@@ -63,13 +64,14 @@ def load_mapping_file(map_path: Path, password: Optional[str] = None) -> Dict:
                 "Вкажіть --password / --password-env або встановіть DATA_MASKING_PASSWORD"
             )
 
-        validate_file_size(map_path)
+        validate_file_size(map_path, max_size or MAX_INPUT_FILE_SIZE)
         # v2.5–3.0.0: викликалось MappingSecurityManager(password) — клас без
         # __init__ → TypeError на кожному .enc; шифровані mapping не читались
         return MappingSecurityManager().decrypt_mapping(map_path, password)
     else:
-        validate_file_size(map_path)
-        with open(map_path, 'r', encoding='utf-8') as f:
+        validate_file_size(map_path, max_size or MAX_INPUT_FILE_SIZE)
+        # utf-8-sig: mapping, збережений редактором з BOM, теж читається
+        with open(map_path, 'r', encoding='utf-8-sig') as f:
             data = json.load(f)
         if not isinstance(data, dict):
             raise ValueError("Mapping file must be a JSON object")
@@ -99,7 +101,21 @@ def validate_mapping_schema(mapping: Dict) -> None:
     _major = re.match(r"v?(\d+)\.", str(version)) if version else None
     if _major and int(_major.group(1)) >= 2 and "mappings" not in mapping:
         raise ValueError(f"Mapping v{version} must contain 'mappings' key")
+    # Будь-який інший JSON (config.json, сам замаскований output.json, {})
+    # до 3.1.22 приймався, і unmask «успішно» нічого не відновлював
+    if "mappings" not in mapping and "re_mask_passes" not in mapping:
+        raise ValueError("Not a mapping file: no 'mappings' key")
+    if "re_mask_passes" in mapping:
+        passes = mapping["re_mask_passes"]
+        if not isinstance(passes, list) or not all(isinstance(p, dict) for p in passes):
+            raise ValueError("'re_mask_passes' must be a list of objects")
+        for i, pass_map in enumerate(passes, 1):
+            _validate_mappings(pass_map, f"re_mask_passes[{i}].")
     _validate_mappings(mapping, "")
+
+
+def _is_mask(value: str) -> bool:
+    return any(ch.isalnum() for ch in value)
 
 
 def _validate_mappings(mapping: Dict, where: str) -> None:
@@ -117,14 +133,18 @@ def _validate_mappings(mapping: Dict, where: str) -> None:
         for original, info in entries.items():
             # Порожня маска «знаходиться» між будь-якими двома символами, і
             # unmask вставляв оригінал у випадкові місця (до 3.1.21)
+            # Маска без жодної літери чи цифри (« », «.») теж: unmask вставляв
+            # оригінали між словами (до 3.1.22)
             if isinstance(info, str):
-                if not info:
-                    raise ValueError(f"'{where}mappings.{category}.{original}' must not be empty")
+                if not _is_mask(info):
+                    raise ValueError(f"'{where}mappings.{category}.{original}' must not be empty "
+                                     f"or only spaces/punctuation")
                 continue
             if not isinstance(info, dict):
                 raise ValueError(f"'{where}mappings.{category}.{original}' must be an object or a string")
-            if not isinstance(info.get("masked_as"), str) or not info["masked_as"]:
-                raise ValueError(f"'{where}mappings.{category}.{original}.masked_as' must be a non-empty string")
+            if not isinstance(info.get("masked_as"), str) or not _is_mask(info["masked_as"]):
+                raise ValueError(f"'{where}mappings.{category}.{original}.masked_as' must be a string, "
+                                 f"not empty or only spaces/punctuation")
             instances = info.get("instances", [])
             if not isinstance(instances, list) or not all(isinstance(n, int) for n in instances):
                 raise ValueError(f"'{where}mappings.{category}.{original}.instances' must be a list of integers")

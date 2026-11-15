@@ -9,11 +9,11 @@ Extracted from data_masking.py during the package refactoring (v2.5.0).
 
 import random
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 from datamasking.masking import constants as _cfg
 from datamasking.masking.helpers import (
-    add_to_mapping, get_deterministic_seed, record_instance,
+    add_to_mapping, clean_word, get_deterministic_seed, record_instance,
     _apply_original_case, normalize_identifier,
 )
 from datamasking.masking.declension import (
@@ -126,21 +126,33 @@ def mask_surname(original: str, masking_dict: Dict, instance_counters: Dict) -> 
         masked = masking_dict["mappings"]["surname"][original]["masked_as"]
     else:
         forbidden = known_surname_forms(masking_dict, except_original=original)
-        hyphen_parts = original.split('-')
+        # Маска — від слова без невидимих символів і з ASCII-апострофом; ключ
+        # mapping — написання з документа (unmask відновлює його точно)
+        base = clean_word(original)
+        hyphen_parts = base.split('-')
         if len(hyphen_parts) == 2 and all(len(p) >= 3 for p in hyphen_parts):
             # Подвійне прізвище: кожна частина — власна синтетична маска,
             # структура «Х-Y» зберігається (Петренко-Іванова → Сірченко-Юхимова)
+            # Ціле подвійне прізвище теж не має збігатися з іншою маской:
+            # «Дороше\u00adнка-Ґудзя» і «Дорошенка-Ґудзя» інакше діставали одну
+            # маску, і unmask плутав, яке з написань де стояло
             masked_parts: List[str] = []
-            for part in hyphen_parts:
-                mp = synthesize_surname(part, forbidden=forbidden | set(masked_parts))
-                masked_parts.append(_apply_original_case(part, mp))
+            taken: Set[str] = set()
+            for _attempt in range(8):
+                masked_parts = []
+                for part in hyphen_parts:
+                    mp = synthesize_surname(part, forbidden=forbidden | taken | {m.lower() for m in masked_parts})
+                    masked_parts.append(_apply_original_case(part, mp))
+                if '-'.join(masked_parts).lower() not in forbidden:
+                    break
+                taken.add(masked_parts[-1].lower())
             masked = '-'.join(masked_parts)
         else:
             # Інша форма того самого прізвища вже має маску — її основа
             # (див. surname.paradigm_mask), інакше синтез
             masked = _apply_original_case(
-                original, paradigm_mask(original, masking_dict, forbidden)
-                or synthesize_surname(original, forbidden=forbidden))
+                base, paradigm_mask(base, masking_dict, forbidden)
+                or synthesize_surname(base, forbidden=forbidden))
     return add_to_mapping(masking_dict, instance_counters, "surname", original, masked)
 
 def pseudo_gender(value: str) -> str:
