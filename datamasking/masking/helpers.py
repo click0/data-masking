@@ -109,7 +109,16 @@ def _apply_original_case(original: str, masked: str) -> str:
     if original.isupper(): return masked.upper()
     elif len(original) > 1 and original[0].isupper() and original[1:].islower(): return masked.capitalize()
     elif original.islower(): return masked.lower()
-    # Змішаний регістр (подвійні прізвища) — маска вже має потрібний регістр
+    # Змішаний регістр («О'Коннор», «МакКейн», «Ба-Петренко»): маска з великої,
+    # якщо з великої оригінал. До 3.2.1 вона лишалась малими літерами, і
+    # unmask повертав «о'коннор»
+    first = next((ch for ch in original if ch.isalpha()), "")
+    if first.isupper() and masked.islower():
+        masked = masked[:1].upper() + masked[1:]
+        # «О'Коннор» → «О'Кегус»: велика літера після апострофа — як в оригіналі
+        if (len(original) > 2 and original[1] in _cfg.APOSTROPHE_CHARS and original[2].isupper()
+                and len(masked) > 2 and masked[1] == "'"):
+            masked = masked[:2] + masked[2].upper() + masked[3:]
     return masked
 
 def normalize_string(s: str) -> str:
@@ -127,7 +136,7 @@ def normalize_identifier(identifier: str) -> str:
     identifier_str = str(identifier).upper()
     return re.sub(r'[\s\-.]', '', identifier_str).strip()
 
-_PUNCT = ',.!?;:'
+_PUNCT = ',.!?;:…'
 
 _CLEAN_WORD = str.maketrans({**{a: "'" for a in _cfg.APOSTROPHE_CHARS},
                              **{c: None for c in _cfg.INVISIBLE_CHARS}})
@@ -143,8 +152,12 @@ def strip_word(word: str, leading_punct: bool = False) -> str:
     """Слово без обрамлення (лапки, дужки, «/…/», «*…*»), невидимих символів
     по краях і розділових знаків у кінці — у будь-якому поєднанні
     («Петровича),»); з *leading_punct* — і розділових знаків на початку."""
-    lead = _cfg.WRAP_CHARS + _cfg.INVISIBLE_CHARS + (_PUNCT if leading_punct else "")
-    trail = _cfg.WRAP_CHARS + _cfg.INVISIBLE_CHARS + _PUNCT
+    # Апостроф на краю слова — лапка («‘Петренко Іван Петрович’»), не частина
+    # слова; до 3.2.1 таке прізвище лишалось відкритим
+    lead = _cfg.WRAP_CHARS + _cfg.APOSTROPHE_CHARS + _cfg.INVISIBLE_CHARS + (_PUNCT if leading_punct else "")
+    # Дефіс, тире чи «_» розмітки в кінці слова («Петренко- командир»,
+    # «_Петренко Іван_») — теж не його частина
+    trail = _cfg.WRAP_CHARS + _cfg.APOSTROPHE_CHARS + _cfg.INVISIBLE_CHARS + _PUNCT + '-–—_'
     start, end = 0, len(word)
     while start < end and word[start] in lead:
         start += 1
@@ -154,8 +167,12 @@ def strip_word(word: str, leading_punct: bool = False) -> str:
 
 
 def ends_clause(word: str) -> bool:
-    """Після слова — розділовий знак або закривна дужка: ПІБ на ньому закінчується."""
-    return word.rstrip(_cfg.QUOTE_CHARS + '*/')[-1:] in _PUNCT + ')]}>'
+    """Після слова — розділовий знак, закривна дужка чи тире: ПІБ на ньому
+    закінчується. «/» після слова, яке з «/» не починається, — роздільник
+    («Савчук Євген/ Савчук Євген Олександрович»), а не обрамлення «/…/»."""
+    if word.rstrip(_cfg.QUOTE_CHARS + '*/')[-1:] in _PUNCT + ')]}>' + '-–—':
+        return True
+    return word.endswith('/') and not word.startswith('/')
 
 
 def is_pib_anchor(word: str) -> bool:

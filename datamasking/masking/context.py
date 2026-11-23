@@ -8,6 +8,7 @@ Extracted from data_masking.py during the package refactoring (v2.5.0).
 """
 
 import re
+import unicodedata
 from typing import Dict, List, Optional, Set, Tuple
 
 from datamasking.masking import constants as _cfg
@@ -118,6 +119,12 @@ def has_full_pib(words: List[str]) -> bool:
     return False
 
 
+# Літери в номері — індекс («№ 123дск», «№ 45-ОС», «№ 12/ОКП»): до п'яти літер
+# і до кінця слова. До 3.2.1 у «№764Сидоренко О.» і «№ 907/Поліщуку» номером
+# було й прізвище: воно маскувалось двічі, і unmask його не повертав
+_INDEX = r"[А-Яа-яІіЇїЄєҐґA-Za-z]{1,5}(?![А-Яа-яІіЇїЄєҐґA-Za-z'’ʼ])"
+
+
 def analyze_number_sign_context(text: str, match: re.Match) -> Optional[Dict]:
     """Аналізує контекст після символу №"""
     pos = match.end()
@@ -125,7 +132,7 @@ def analyze_number_sign_context(text: str, match: re.Match) -> Optional[Dict]:
 
     # 1. №БР...
     if re.match(r'\s*БР', after_text, re.IGNORECASE):
-        br_match = re.match(r'\s*БР[-\s]?(\d+(?:[/-]\d+)*(?:[/-][А-Яа-яІіЇїЄєҐґA-Za-z]+)*)', after_text, re.IGNORECASE)
+        br_match = re.match(r'\s*БР[-\s]?(\d+(?:[/-]\d+)*(?:[/-]' + _INDEX + r')*)', after_text, re.IGNORECASE)
         if br_match:
             full_text = text[match.start():match.end() + len(br_match.group(0))]
             return {
@@ -137,7 +144,7 @@ def analyze_number_sign_context(text: str, match: re.Match) -> Optional[Dict]:
             }
 
     # 2. № 123...
-    number_match = re.match(r'\s*(\d+(?:[/-]\d+)*(?:[/-][А-Яа-яІіЇїЄєҐґA-Za-z]+|[А-Яа-яІіЇїЄєҐґA-Za-z]+)?)', after_text)
+    number_match = re.match(r'\s*(\d+(?:[/-]\d+)*(?:[/-]?' + _INDEX + r')?)', after_text)
     if not number_match:
         return None
 
@@ -168,7 +175,8 @@ def analyze_br_keyword(text: str, match: re.Match) -> Optional[Dict]:
     pos = match.end()
     after_text = text[pos:pos+100]
     # «БР 566», «БР-566», «БР566», «БР: 566» (до 3.2.0 два останні лишались відкритими)
-    br_match = re.match(r'(?:\s*:\s*|[-\s])?(\d+(?:[/-]\d+)*(?:дск|п|к)?)', after_text, re.IGNORECASE)
+    # Індекс («дск», «п», «к») — до кінця слова: у «БР208Капітану» «К» — не він
+    br_match = re.match(r'(?:\s*:\s*|[-\s])?(\d+(?:[/-]\d+)*(?:(?:дск|п|к)(?![^\W\d_]))?)', after_text, re.IGNORECASE)
     if br_match:
         return {
             'type': 'br_standalone',
@@ -186,6 +194,57 @@ def _csv_cells(line: str) -> str:
     return re.sub(r'"\s*[,;]?\s*"', ' ', line)
 
 
+# Знак упритул між двома словами (не дефіс і не апостроф — вони частина
+# слова; не крапка — скорочення): після нього починається нове слово. «/» —
+# перед словом від двох літер чи ініціалом («в/ч», «п/п» — скорочення,
+# «посада/старший», «Ігоровичу/Є.С. Зінченко» — ні)
+# Слово — і службовий токен уже замаскованого фрагмента («___PIB_MASKED_2___»)
+_GLUE_RE = re.compile(
+    r'(?<=[^\W\d])[:=+—–•№\\*#~→…!?<>%&@^$](?=[^\W\d])'
+    r'|(?<=[^\s/])/(?=[^\W\d]{2}|[А-ЯІЇЄҐ]\.)'
+    # Число впритул перед словом («1991старшого матроса») — теж окреме слово
+    r'|(?<=\d)(?=[^\W\d_])'
+    # Крапка в кінці речення без пробілу («прибув.Петренко Іван Петрович»);
+    # «І.Петренко», «ст.сержант», «м.Київ» — ініціал і скорочення
+    r'|(?<=[а-яіїєґ]{2})\.(?=[А-ЯІЇЄҐ])')
+
+
+# Маркер на початку слова: знак (не лапка, не дужка, не «*» і «/» — їх знімає
+# strip_word; не крапка й кома), «1)», «а)», «1.» або «_» / «__» розмітки
+# перед кириличним словом (службові токени — «___» і латинка)
+_BULLET_RE = re.compile(
+    r'(?:^|(?<=\s))(?:[^\w\s' + re.escape(_cfg.WRAP_CHARS + _cfg.APOSTROPHE_CHARS + _cfg.INVISIBLE_CHARS)
+    + r'.,|;]+|(?:\d{1,3}|[а-яіїєґa-z])\)|\d{1,3}\.|_{1,2}(?=[А-ЯІЇЄҐа-яіїєґ]))(?=[^\W\d_])')
+
+
+def _glue_space(m: "re.Match[str]") -> str:
+    # «/» у слові з цифрою — частина номера («№ 957/ШТАБ», «№БР-7/5-К/2»);
+    # службовий токен («___PIB_MASKED_2___») — не номер
+    if m.group(0) == '/':
+        word = m.string[:m.start()].rsplit(None, 1)[-1:]
+        if word and not word[0].endswith('___') and any(ch.isdigit() for ch in word[0]):
+            return '/'
+    return m.group(0) + ' '
+
+
+def separate_glued(line: str) -> str:
+    """Слова, приклеєні до знака, — окремими словами (для розбору рядка;
+    у самому тексті нічого не міняється)."""
+    # (слово — і службовий токен уже замаскованого фрагмента: до 3.2.1 у
+    # «Коваль Тетяна Дмитрівна,майором Руденком …» після заміни звання
+    # токеном по батькові лишалось приклеєним до нього й відкритим)
+    line = re.sub(r',(?=[^\W\d])', ', ', line)
+    # Знак упритул між словами («звання:старший матрос», «посада/старший
+    # сержант»): до 3.2.1 «звання:старший» було одним словом, за звання
+    # бралось лише «матрос», і unmask бачив у «старший моряк» інше, двослівне
+    # звання й не відновлював його. «в/ч», «п/п» лишаються словами
+    line = _GLUE_RE.sub(_glue_space, line)
+    # Маркер переліку впритул до слова («-Петренко Іван Петрович», «•сержант
+    # Коваль», «1)Петренко»): до 3.2.1 «-Петренко» не було словом ПІБ, і
+    # прізвище лишалось відкритим, а звання після маркера не маскувалось
+    return _BULLET_RE.sub(lambda m: m.group(0) + ' ', line)
+
+
 def clean_line_before_parsing(line: str) -> str:
     # «|» таблиць — як пробіл (рушій потім знаходить слова ПІБ у рядку з
     # оригінальними роздільниками, див. engine.locate_words)
@@ -201,7 +260,7 @@ def clean_line_before_parsing(line: str) -> str:
     # — не частина слова; всередині слова лишаються: рушій шукає слова ПІБ у
     # справжньому рядку, і слово без них там не знайшлося б
     line = re.sub(r'(?:^|(?<=\s))[' + _cfg.INVISIBLE_CHARS + r']+|[' + _cfg.INVISIBLE_CHARS + r']+(?=\s|$)', '', line)
-    line = re.sub(r',(?=[^\W\d_])', ', ', line)
+    line = separate_glued(line)
     # Видаляємо нумерацію пунктів на початку рядка: "20.1.2.1.", "1.", "1.2.", "3.2." тощо
     line = re.sub(r'^\s*(?:\d+\.)+\s*', '', line)
     line = re.sub(r'\d{1,2}[.!]\d{1,2}\.\d{4}', '', line)
@@ -249,14 +308,17 @@ def extract_base_rank(full_rank_text: str) -> Tuple[str, str]:
 
 def looks_like_pib_line(line: str) -> bool:
     if not line or len(line.strip()) < 6: return False
-    line_clean = WORD_SEPARATOR_RE.sub(' ', _csv_cells(line)).strip()
+    line_clean = WORD_SEPARATOR_RE.sub(' ', separate_glued(_csv_cells(line))).strip()
     line_lower = line_clean.lower()
 
-    if line_clean.startswith('===') or line_clean.startswith('---') or re.match(r'^[А-ЯҐЄІЇA-Z\s]+:\s*$', line_clean): return False
+    if line_clean.startswith('===') or line_clean.startswith('---'): return False
+    words = line_clean.split()
+    # «НАКАЗУЮ:» — заголовок; «ПЕТРЕНКО ІВАН ПЕТРОВИЧ:» — ні (до 3.2.1 ім'я
+    # та по батькові в такому рядку лишались відкритими)
+    if re.match(r'^[А-ЯҐЄІЇA-Z\s]+:\s*$', line_clean) and not has_full_pib(words): return False
 
     normalized = normalize_string(line_clean)
     has_rank = any(rank in normalized for rank in _cfg.RANKS_LIST)
-    words = line_clean.split()
 
     # Повний ПІБ (…Прізвище Ім'я По-батькові…) — маскуємо завжди: і в рядку
     # капсом («КОВАЛЬ ТЕТЯНА СЕРГІЇВНА» — підпис), і після «Згідно з рапортом»,
@@ -293,7 +355,14 @@ def looks_like_pib_line(line: str) -> bool:
     capitalize_sequence = 0
     max_sequence = 0
     for word in words:
-        clean_word = word.strip(',.!?;:')
+        # Слово без дужок, розмітки й розділових знаків: до 3.2.1 знімались лише
+        # розділові, і «(Петренко Іван)», «**Петренко Іван**» лишались
+        # відкритими. Слово після відкривної лапки не рахується, як і раніше:
+        # два слова з великої в лапках — частіше назва («Золота Зірка»)
+        if word.lstrip(',.!?;:')[:1] in _cfg.QUOTE_CHARS + _cfg.APOSTROPHE_CHARS:
+            capitalize_sequence = 0
+            continue
+        clean_word = strip_word(word, leading_punct=True)
         if (clean_word and len(clean_word) > 2 and clean_word[0].isupper() and looks_like_name(clean_word)):
             capitalize_sequence += 1
             max_sequence = max(max_sequence, capitalize_sequence)
@@ -343,7 +412,7 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
         # «*старший матрос …*», «/старшому моряку …/»: без цього звання
         # знаходилось без першого слова («матрос» → «моряк»), а unmask бачив
         # у «*старший моряк» інше, двослівне звання й не відновлював його
-        norm = normalize_string(part.strip('*/'))
+        norm = normalize_string(strip_word(part, leading_punct=True))
         if not norm:
             continue
         if chunks:
@@ -613,9 +682,17 @@ def _rank_word_as_surname(word: str, next_word: Optional[str]) -> bool:
     return looks_like_name(next_word)
 
 
+_OPENING = '([{<«„“'
+
+
 def _extract_pib_words(parts, start: int, after_rank: bool):
     pib_words = []
     for idx, word in enumerate(parts[start:start + 3]):
+        # Відкривна дужка чи лапка посеред ПІБ починає нове («Доповів [Петро
+        # БІЛИЙ]»): до 3.2.1 «Доповів Петро БІЛИЙ» бралось як одне ПІБ, у
+        # тексті не знаходилось, і рядок лишався відкритим цілком
+        if idx > 0 and word[:1] in _OPENING:
+            break
         clean = strip_word(word)
         if looks_like_name(word):
             pib_words.append(clean)
@@ -629,4 +706,13 @@ def _extract_pib_words(parts, start: int, after_rank: bool):
         # не існував у тексті (заміна не спрацьовувала)
         if ends_clause(word):
             break
+    # «Сергій РУДЕНКО<таб>Василь ДОРОШЕНКО»: ім'я, ПРІЗВИЩЕ капсом і ще одне
+    # слово, що не є по батькові, — це вже наступна особа. До 3.2.1 «Василь»
+    # маскувався як по батькові, а його прізвище лишалось відкритим
+    if len(pib_words) == 3:
+        # NFC: розкладені «Й», «Ї» (NFD) — ті самі літери
+        first, second, third = (unicodedata.normalize("NFC", w) for w in pib_words)
+        if (second.isupper() and first[1:].islower() and third[1:].islower()
+                and not is_patronymic_word(third, second)):
+            pib_words = pib_words[:2]
     return pib_words

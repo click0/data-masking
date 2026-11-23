@@ -25,6 +25,19 @@ def is_likely_surname_by_case(word: str) -> bool:
     letters_only = re.sub(r"[-']", '', word)
     return letters_only.isupper() and len(letters_only) >= 3
 
+_APOSTROPHE_NAME_RE = re.compile(r"[А-ЯІЇЄҐ]['’ʼ‘`][А-ЯІЇЄҐ][а-яіїєґ]{2,}")
+
+
+# Літери (і комбінувальні знаки розкладених «й», «ї» — NFD), апостроф, дефіс
+_NAME_CHARS_RE = re.compile(r"(?:[^\W\d_]|[-\u0300-\u036f" + re.escape(_cfg.APOSTROPHE_CHARS + _cfg.INVISIBLE_CHARS)
+                            + r"])+")
+
+
+def is_apostrophe_name(word: str) -> bool:
+    """«О'Коннор», «Д’Артаньян»: одна велика літера, апостроф і слово з великої."""
+    return _APOSTROPHE_NAME_RE.fullmatch(word) is not None
+
+
 def looks_like_name(word: str) -> bool:
     if word.startswith("___") and word.endswith("___"): return False
     clean_word = strip_word(word)
@@ -33,6 +46,9 @@ def looks_like_name(word: str) -> bool:
     if len(clean_word) < _cfg.NAME_MIN_LENGTH: return False
     if _cfg.NAME_MAX_LENGTH and len(clean_word) > _cfg.NAME_MAX_LENGTH: return False
     if '.' in clean_word: return False
+    # Лише літери, апостроф, дефіс (і невидимі символи всередині слова): до
+    # 3.2.1 «Василівні№» проходило як слово ПІБ і маскувалось разом зі знаком
+    if not _NAME_CHARS_RE.fullmatch(clean_word): return False
     # Дієслова 1-2 особи множини (Повідомляємо, Просимо, Надаєте) —
     # ніколи не імена/прізвища
     if clean_word.lower().endswith(('ємо', 'имо', 'емо', 'єте', 'ите', 'ете')):
@@ -66,6 +82,9 @@ def looks_like_name(word: str) -> bool:
 
     if clean_word[0].isupper() and clean_word[1:].islower(): return True
     if clean_word.isupper(): return True
+    # «О'Коннор», «Д'Артаньян»: велика літера після апострофа — до 3.2.1 таке
+    # прізвище не вважалось словом ПІБ і лишалось відкритим разом зі званням
+    if is_apostrophe_name(clean_word): return True
 
     declension_endings = ['ом', 'ем', 'єм', 'ім', 'ою', 'єю', 'ою', 'у', 'ю', 'а', 'я', 'і', 'ї']
     for ending in declension_endings:

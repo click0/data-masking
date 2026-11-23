@@ -173,12 +173,18 @@ def mask_patronymic(patronymic: str, gender: Optional[str], masking_dict: Dict, 
     is_upper = patronymic.isupper()
     is_capitalize = patronymic[0].isupper() and patronymic[1:].islower() if len(patronymic) > 1 else False
     patronymic_lower = patronymic.lower()
+    # Змішаний регістр (подвійне прізвище на місці по батькові — «Анна Марія
+    # Петренко-Коваль», «Гасан-Огли»): ключ mapping — написання з документа,
+    # маска — з великої. До 3.2.1 ключ і маска були малими літерами, і unmask
+    # повертав «петренко-коваль»
+    mixed = not (is_upper or is_capitalize or patronymic.islower())
+    key = patronymic if mixed else patronymic_lower
 
     if "patronymic" not in masking_dict["mappings"]: masking_dict["mappings"]["patronymic"] = {}
-    if patronymic_lower in masking_dict["mappings"]["patronymic"]:
-        masked = masking_dict["mappings"]["patronymic"][patronymic_lower]["masked_as"]
+    if key in masking_dict["mappings"]["patronymic"]:
+        masked = masking_dict["mappings"]["patronymic"][key]["masked_as"]
         masked_with_case = _apply_original_case(patronymic, masked)
-        record_instance(masking_dict, instance_counters, "patronymic", patronymic_lower, masked)
+        record_instance(masking_dict, instance_counters, "patronymic", key, masked)
         return masked_with_case
 
     form = analyze_patronymic(patronymic_lower)
@@ -217,10 +223,10 @@ def mask_patronymic(patronymic: str, gender: Optional[str], masking_dict: Dict, 
 
     # Застосовуємо регістр
     if is_upper: fake_patronymic = fake_patronymic.upper()
-    elif is_capitalize: fake_patronymic = fake_patronymic.capitalize()
+    elif is_capitalize or (mixed and patronymic[0].isupper()): fake_patronymic = fake_patronymic.capitalize()
     else: fake_patronymic = fake_patronymic.lower()
 
-    return add_to_mapping(masking_dict, instance_counters, "patronymic", patronymic_lower, fake_patronymic)
+    return add_to_mapping(masking_dict, instance_counters, "patronymic", key, fake_patronymic)
 
 def mask_name(original: str, masking_dict: Dict, instance_counters: Dict,
               gender_hint: Optional[str] = None, patronymic_hint: Optional[str] = None,

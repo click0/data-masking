@@ -213,6 +213,11 @@ def _is_title(word: str) -> bool:
     return len(letters) > 1 and letters[0].isupper() and "".join(letters[1:]).islower()
 
 
+def _is_mixed(word: str) -> bool:
+    """Ні всі великі, ні всі малі, ні «перша велика, решта малі»."""
+    return not (word.isupper() or word.islower() or _is_title(word)) and any(ch.isalpha() for ch in word)
+
+
 def _capitalize(word: str) -> str:
     """str.capitalize(), що пропускає невидимі символи перед першою літерою
     (до 3.2.0 «\u00adҐудзем» ставало «\u00adґудзем»)."""
@@ -230,6 +235,11 @@ def _apply_original_case(original: str, masked: str) -> str:
     if original.isupper():
         return masked.upper()
     elif _is_title(original):
+        # Оригінал у mapping записано змішаним регістром («О'Коннор»,
+        # «МакКейн», «Дорошенку-Ґудзю»): повертаємо як записано — до 3.2.1
+        # capitalize() давав «О'коннор», «Маккейн»
+        if _is_mixed(masked):
+            return masked
         # Подвійне ім'я («Анна-Марія», «АННА-МАРІЯ»): кожна частина з великої,
         # якщо так записано в mapping — до 3.2.0 capitalize() давав
         # «Анна-марія». «генерал-майор» лишається «Генерал-майор»

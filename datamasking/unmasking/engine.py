@@ -57,11 +57,21 @@ def _reapply_separators(raw: str, restored: str) -> str:
     return "".join(out)
 
 
+# Межа слова з літер: поруч не літера. Цифра чи «_» впритул — не перешкода:
+# маскування бере і «22.10.2004Іванов», і «28.02.1950капітану» (дата зникає
+# на час розбору рядка), і «_Петренко І.П._», тож і unmask має їх знаходити
+# — до 3.2.1 межею було «не літера/цифра/_», і такі маски лишались у тексті
+_NOT_AFTER_LETTER = r'(?<![^\W\d_])'
+_NOT_BEFORE_LETTER = r'(?![^\W\d_])'
+
+
 def _rank_pattern(rank_form: str) -> str:
     """Регулярний вираз звання: слова через будь-які пробільні роздільники,
-    межі — не літера/цифра і не дефіс («майор» у «генерал-майор» — не звання)."""
-    return (r'(?<![\w-])' + r'\s+'.join(re.escape(w) for w in rank_form.split())
-            + r'(?![\w-])')
+    межі — не літера і не дефіс між літерами («майор» у «генерал-майор» і
+    «майор-інструктор» — не звання, а «-майор Петренко» у переліку і «майор-
+    Петренко» — звання)."""
+    return (_NOT_AFTER_LETTER + r'(?<![^\W\d_]-)' + r'\s+'.join(re.escape(w) for w in rank_form.split())
+            + _NOT_BEFORE_LETTER + r'(?!-[^\W\d_])')
 
 
 def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
@@ -76,9 +86,17 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
     rank_instance_map = build_instance_map(temp_map_for_ranks)
 
     all_masked_ranks = set()
+    # Точне написання окремих входжень (звання нестандартним регістром —
+    # «Старший Лейтенант»; з 3.2.1): маска -> {номер входження: текст}
+    rank_exact: Dict[str, Dict[int, str]] = {}
     for original, mask_info in mappings.get("rank", {}).items():
         if isinstance(mask_info, dict) and "masked_as" in mask_info:
             all_masked_ranks.add(mask_info["masked_as"].lower())
+            exact = mask_info.get("exact")
+            if isinstance(exact, dict):
+                for number, written in exact.items():
+                    if isinstance(written, str) and str(number).isdigit():
+                        rank_exact.setdefault(mask_info["masked_as"].lower(), {})[int(number)] = written
 
     # КРОК 1: ПОШУК ВСІХ ЗВАНЬ У ТЕКСТІ
     # ALL_RANK_FORMS відсортовано за довжиною спадно, тож довша форма
@@ -147,7 +165,8 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
                     stats["skipped_count"] += 1
                     continue
 
-                original_rank = _apply_original_case(base_rank, original_rank)
+                original_rank = (rank_exact.get(masked_rank_lower, {}).get(instance_num)
+                                 or _apply_original_case(base_rank, original_rank))
                 restored_full_rank = f"{original_rank} {additional_words}" if additional_words else original_rank
 
                 replacements_to_do.append((found["start"], found["end"],
@@ -194,7 +213,8 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
                 elif original_base_form in RANK_DECLENSIONS:
                     reconstructed_form = RANK_DECLENSIONS[original_base_form].get(case or 'nominative', original_base_form)
 
-            reconstructed_form = _apply_original_case(base_rank_text, reconstructed_form)
+            reconstructed_form = (rank_exact.get(base_masked_form, {}).get(instance_num)
+                                  or _apply_original_case(base_rank_text, reconstructed_form))
             restored_full_rank = f"{reconstructed_form} {additional_words}" if additional_words else reconstructed_form
 
             replacements_to_do.append((found["start"], found["end"],
@@ -313,17 +333,33 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
                         + re.escape(parts[1]) + r'\s+' + re.escape(parts[2]))
         return re.escape(mask)
 
+    # Ініціали — одна-дві літери: їхня межа сувора («не літера/цифра»),
+    # інакше маска «Р.» знаходилась би в «2024р.»
+    initials_masks = {
+        info["masked_as"] for info in mappings_copy.get("initials", {}).values()
+        if isinstance(info, dict) and isinstance(info.get("masked_as"), str)
+    }
+
     def _bounded(mask: str) -> str:
-        # Числова маска (дата, ІПН, номер) може стояти впритул до літер
-        # («31.12.2024р.», «ІПН1234567890» — v3.1.8), тож її межа — «не
-        # цифра»; для масок із літер межа — «не літера/цифра», як і раніше
-        before = r'(?<!\d)' if mask[:1].isdigit() else r'(?<!\w)'
-        if mask[-1:].isdigit():
-            after = r'(?!\d)'
-        elif mask[-1:] == '.':
-            after = ''  # ініціали впритул до прізвища: «Ґ.Є.Пебоженко»
+        # Межа залежить від краю маски. Цифра (дата, ІПН, номер) може стояти
+        # впритул до літер («31.12.2024р.», «ІПН1234567890» — v3.1.8): межа
+        # «не цифра». Літера: «не літера» (див. _NOT_AFTER_LETTER). Інший знак
+        # («№19дск») — без межі: до 3.2.1 «наказ№19дск» не відновлювався, бо
+        # перед «№» стояла літера
+        strict = mask in initials_masks
+        first, last = mask[:1], mask[-1:]
+        if first.isdigit():
+            before = r'(?<!\d)'
+        elif first.isalpha():
+            before = r'(?<![^\W_])' if strict else _NOT_AFTER_LETTER
         else:
-            after = r'(?!\w)'
+            before = ''
+        if last.isdigit():
+            after = r'(?!\d)'
+        elif last.isalpha():
+            after = r'(?![^\W_])' if strict else _NOT_BEFORE_LETTER
+        else:
+            after = ''  # ініціали впритул до прізвища: «Ґ.Є.Пебоженко»
         return before + _alternative(mask) + after
 
     # Єдиний regex; довші маски першими в alternation
