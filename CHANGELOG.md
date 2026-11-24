@@ -103,6 +103,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   in the same case form: in `Івану сержанту Гриценку Ігорю` the name `Ігорю`
   was masked as `Івану`, and unmasking swapped the two. A rejected candidate
   is no longer offered again.
+- The same rank twice in a row, at the end of one line and the start of
+  the next (`… доповів старший лейтенант` / `Старший лейтенант Мороз Ігор
+  Петрович`): the second `Старший` was masked as a surname and the rank of
+  the person became `лейтенант`; in capitals the result did not unmask.
 - A Latin letter that looks like a Cyrillic one inside a rank
   (`cтарший лейтенант` with a Latin `c`): only `лейтенант` was taken for the
   rank, `cтарший` was masked as a surname, and the rank came back as

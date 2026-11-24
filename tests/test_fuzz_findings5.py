@@ -533,6 +533,22 @@ class TestRankWithLatinLookalike:
         assert mapping["mappings"]["rank"]["сержант"]["exact"] == {"1": "cержант"}
 
 
+class TestSameRankTwice:
+    """Те саме звання двічі поспіль (кінець рядка і початок наступного)."""
+
+    @pytest.mark.parametrize("text", [
+        "доповів старший лейтенант\nСтарший лейтенант Мороз Ігор Петрович прибув",
+        "Кравченко Ольга Петрівна, 1984 р.н., старший лейтенант\nСТАРШИЙ ЛЕЙТЕНАНТ КРАВЧЕНКО ОЛЬГА ПЕТРІВНА.",
+        "капітаном старший лейтенант Мороз Ігор, старший лейтенант Коваль Олег",
+        "сержант Петренко та сержант Коваль, сержант Мороз Ігор Іванович",
+    ])
+    def test_rank_word_is_not_a_surname(self, text):
+        masked, mapping = _rt(text)
+        assert not any("тарш" in key.lower() for key in mapping["mappings"]["surname"]), mapping["mappings"]["surname"]
+        assert set(mapping["mappings"]["rank"]) <= {"старший лейтенант", "сержант"}, mapping["mappings"]["rank"]
+        assert "мороз" not in masked.lower() and "кравченко" not in masked.lower()
+
+
 class TestNameMaskAndOpenWord:
     @pytest.mark.parametrize("text", [
         "Івану сержанту Гриценку Ігорю",

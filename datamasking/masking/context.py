@@ -398,6 +398,27 @@ def _caps_line_has_known_name(words: List[str]) -> bool:
     return False
 
 
+def _rank_tail_length(words_after: List[str]) -> int:
+    """Скільки слів після звання належать до нього: «медичної служби»,
+    «юстиції», «у відставці», «запасу» …"""
+    additional_words = 0
+    if len(words_after) >= 2:
+        two_words = ' '.join(words_after[:2])
+        if two_words == 'медичної служби':
+            additional_words += 2
+            words_after = words_after[2:]
+    if words_after and words_after[0] == 'юстиції':
+        additional_words += 1
+        words_after = words_after[1:]
+    if words_after and words_after[0] in ['у', 'в', 'на']:
+        if len(words_after) > 1 and words_after[1] in ['відставці', 'запасі', 'пенсії', 'резерві']:
+            additional_words += 2
+    elif words_after and words_after[0] in ['запасу', 'резерву']:
+        # «майор запасу Петренко …» (до 3.2.0 звання лишалось відкритим)
+        additional_words += 1
+    return additional_words
+
+
 def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     line = line.strip()
     if not line: return None, None, None
@@ -446,37 +467,19 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
     for rank_form in _cfg.ALL_RANK_FORMS:
         rank_pattern = rank_form + ' '
         rank_index = normalized_line.find(rank_pattern)
-        # Звання — лише цілими словами: «майора» всередині «генерал-майора»
-        # чи «солдата» всередині «Солдатенка» — не звання
+        # Усі входження форми, а не лише перше: до 3.2.1 у «…доповів старший
+        # лейтенант<новий рядок>Старший лейтенант Мороз Ігор Петрович» друге
+        # «Старший» бралось за прізвище, а званням особи ставало «лейтенант»
         while rank_index != -1:
+            # Звання — лише цілими словами: «майора» всередині «генерал-майора»
+            # чи «солдата» всередині «Солдатенка» — не звання
             end = rank_index + len(rank_form)
             if rank_index in tok_start and char_tok[end] == -1:
-                break
+                first_tok = char_tok[rank_index]
+                last_tok = char_tok[rank_index + len(rank_form) - 1]
+                additional_words = _rank_tail_length(normalized_line[rank_index + len(rank_pattern):].split())
+                rank_matches.append((rank_index, rank_form, first_tok, last_tok - first_tok + 1 + additional_words))
             rank_index = normalized_line.find(rank_pattern, rank_index + 1)
-        if rank_index == -1:
-            continue
-
-        first_tok = char_tok[rank_index]
-        last_tok = char_tok[rank_index + len(rank_form) - 1]
-        words_after = normalized_line[rank_index + len(rank_pattern):].split()
-        additional_words = 0
-
-        if len(words_after) >= 2:
-            two_words = ' '.join(words_after[:2])
-            if two_words == 'медичної служби':
-                additional_words += 2
-                words_after = words_after[2:]
-        if words_after and words_after[0] == 'юстиції':
-            additional_words += 1
-            words_after = words_after[1:]
-        if words_after and words_after[0] in ['у', 'в', 'на']:
-            if len(words_after) > 1 and words_after[1] in ['відставці', 'запасі', 'пенсії', 'резерві']:
-                additional_words += 2
-        elif words_after and words_after[0] in ['запасу', 'резерву']:
-            # «майор запасу Петренко …» (до 3.2.0 звання лишалось відкритим)
-            additional_words += 1
-
-        rank_matches.append((rank_index, rank_form, first_tok, last_tok - first_tok + 1 + additional_words))
 
     if rank_matches:
         rank_matches.sort(key=lambda x: x[0])
