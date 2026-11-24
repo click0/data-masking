@@ -4,7 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [3.2.1] - 2026-11
+
+Patch release with the results of the fifth bug hunt after 3.2.0. It fixes
+names and ranks that stayed open when a list marker, a label or punctuation
+was typed without a space before them, occurrences that unmasking did not
+restore next to a number sign or a digit, and words in mixed letter case.
+Unmasking a large document is about three times faster.
 
 ### Compatibility
 - Masks are the same as in 3.2.0 except where 3.2.0 left data open or
@@ -15,9 +21,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   in the document): a rank in unusual letter case (`Старший Лейтенант`,
   `старшому ЛЕЙТЕНАНТУ`), a feminine form whose mask has none, a rank with
   a look-alike Latin letter, and any rank not in lower case when
-  `preserve_case` is `false`. 3.2.0 and
-  earlier ignore the key and restore such a rank as they did before: in
-  regular case and in the masculine form.
+  `preserve_case` is `false`. 3.2.0 and earlier ignore the key and restore
+  such a rank as they did before: in regular case and in the masculine form.
 
 ### Fixed — data left unmasked
 - A list marker, a number or a label typed without a space before the name
