@@ -15,7 +15,7 @@ from typing import Dict, Optional, Tuple, Callable
 from datamasking.masking import constants as _cfg
 from datamasking.masking import surname as _surname
 from datamasking.masking.helpers import add_to_mapping, get_deterministic_seed, _apply_original_case
-from datamasking.masking.context import extract_base_rank
+from datamasking.masking.context import extract_base_rank, fold_rank_homoglyphs
 
 
 def mask_military_unit(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
@@ -546,7 +546,9 @@ def mask_rank_preserve_case(original_text: str, masking_dict: Dict, instance_cou
     Маскує звання зі збереженням регістру та граматичного відмінка (Bug Fix #16-18).
     """
     base_rank_text, additional_words = extract_base_rank(original_text)
-    base_male_form, detected_case, gender = get_rank_info(base_rank_text)
+    # Латинські літери-двійники («cтарший лейтенант») — як кириличні
+    folded = fold_rank_homoglyphs(base_rank_text)
+    base_male_form, detected_case, gender = get_rank_info(folded)
 
     if not base_male_form:
         masked_result = mask_rank(base_rank_text, masking_dict, instance_counters)
@@ -581,6 +583,9 @@ def mask_rank_preserve_case(original_text: str, masking_dict: Dict, instance_cou
     # preserve_case: false — маска завжди малими літерами, тож
     # регістр звання теж лише з mapping (до 3.2.1 «МАЙОР» повертався як «майор»)
     if not _cfg.PRESERVE_CASE and not base_rank_text.islower():
+        _remember_exact_rank(masking_dict, base_male_form, base_rank_text, always=True)
+    # Написання з латинською літерою теж відновлюється лише з mapping
+    if folded != base_rank_text.lower():
         _remember_exact_rank(masking_dict, base_male_form, base_rank_text, always=True)
     result = final_rank if final_rank else masked_base_male
     return f"{result} {additional_words}" if additional_words else result

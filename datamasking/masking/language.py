@@ -48,7 +48,7 @@ def looks_like_name(word: str) -> bool:
     if '.' in clean_word: return False
     # Лише літери, апостроф, дефіс (і невидимі символи всередині слова): до
     # 3.2.1 «Василівні№» проходило як слово ПІБ і маскувалось разом зі знаком
-    if not _NAME_CHARS_RE.fullmatch(clean_word): return False
+    if not clean_word.isalpha() and not _NAME_CHARS_RE.fullmatch(clean_word): return False
     # Дієслова 1-2 особи множини (Повідомляємо, Просимо, Надаєте) —
     # ніколи не імена/прізвища
     if clean_word.lower().endswith(('ємо', 'имо', 'емо', 'єте', 'ите', 'ете')):

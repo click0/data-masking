@@ -148,22 +148,20 @@ def clean_word(word: str) -> str:
     return word.translate(_CLEAN_WORD)
 
 
+# Апостроф на краю слова — лапка («‘Петренко Іван Петрович’»), не частина
+# слова; до 3.2.1 таке прізвище лишалось відкритим
+_LEAD = _cfg.WRAP_CHARS + _cfg.APOSTROPHE_CHARS + _cfg.INVISIBLE_CHARS
+_LEAD_PUNCT = _LEAD + _PUNCT
+# Дефіс, тире чи «_» розмітки в кінці слова («Петренко- командир»,
+# «_Петренко Іван_») — теж не його частина
+_TRAIL = _LEAD_PUNCT + '-–—_'
+
+
 def strip_word(word: str, leading_punct: bool = False) -> str:
     """Слово без обрамлення (лапки, дужки, «/…/», «*…*»), невидимих символів
     по краях і розділових знаків у кінці — у будь-якому поєднанні
     («Петровича),»); з *leading_punct* — і розділових знаків на початку."""
-    # Апостроф на краю слова — лапка («‘Петренко Іван Петрович’»), не частина
-    # слова; до 3.2.1 таке прізвище лишалось відкритим
-    lead = _cfg.WRAP_CHARS + _cfg.APOSTROPHE_CHARS + _cfg.INVISIBLE_CHARS + (_PUNCT if leading_punct else "")
-    # Дефіс, тире чи «_» розмітки в кінці слова («Петренко- командир»,
-    # «_Петренко Іван_») — теж не його частина
-    trail = _cfg.WRAP_CHARS + _cfg.APOSTROPHE_CHARS + _cfg.INVISIBLE_CHARS + _PUNCT + '-–—_'
-    start, end = 0, len(word)
-    while start < end and word[start] in lead:
-        start += 1
-    while end > start and word[end - 1] in trail:
-        end -= 1
-    return word[start:end]
+    return word.lstrip(_LEAD_PUNCT if leading_punct else _LEAD).rstrip(_TRAIL)
 
 
 def ends_clause(word: str) -> bool:

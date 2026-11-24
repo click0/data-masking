@@ -13,8 +13,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Where the mask of a rank cannot carry its spelling, the spelling is now
   also recorded in the mapping under `"exact"` (occurrence number → spelling
   in the document): a rank in unusual letter case (`Старший Лейтенант`,
-  `старшому ЛЕЙТЕНАНТУ`), a feminine form whose mask has none, and any rank
-  not in lower case when `preserve_case` is `false`. 3.2.0 and
+  `старшому ЛЕЙТЕНАНТУ`), a feminine form whose mask has none, a rank with
+  a look-alike Latin letter, and any rank not in lower case when
+  `preserve_case` is `false`. 3.2.0 and
   earlier ignore the key and restore such a rank as they did before: in
   regular case and in the masculine form.
 
@@ -98,8 +99,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - With `preserve_case: false` a rank in capitals or with a capital first
   letter came back in lower case.
 - A rank in quotes lost the spaces inside the quotes (`«сержант »`).
+- The mask of a first name could be a word that stays open in the document
+  in the same case form: in `Івану сержанту Гриценку Ігорю` the name `Ігорю`
+  was masked as `Івану`, and unmasking swapped the two. A rejected candidate
+  is no longer offered again.
+- A Latin letter that looks like a Cyrillic one inside a rank
+  (`cтарший лейтенант` with a Latin `c`): only `лейтенант` was taken for the
+  rank, `cтарший` was masked as a surname, and the rank came back as
+  `старший старший прапорщик`. The rank is now recognised, and its spelling
+  is kept under `"exact"`.
 - `матросом …БР 123`: `БР` after an ellipsis was masked as a surname, and
   the number was not restored.
+
+### Performance
+- Unmasking a large document is about three times faster (2000 lines with
+  300 people: from about 1.5 s to 0.45 s). Masks are grouped by their first
+  character, so a mask made of letters is never tried in the middle of a
+  word, and rank forms that do not occur in the text are skipped. The
+  occurrences found are the same.
 
 ## [3.2.0] - 2026-11
 

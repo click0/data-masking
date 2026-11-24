@@ -543,7 +543,8 @@ class TestUnmaskOtherDataSinglePass:
         real_compile = _re.compile
 
         def boom(pattern, *a, **k):
-            if "коваленко" in pattern.lower():
+            # перша літера маски стоїть у шаблоні окремо: «к(?:оваленко…)»
+            if "оваленко" in pattern.lower():
                 raise _re.error("forced failure")
             return real_compile(pattern, *a, **k)
 

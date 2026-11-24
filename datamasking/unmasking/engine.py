@@ -9,7 +9,7 @@ Extracted from unmask_data.py during the package refactoring (v2.5.0).
 
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 try:
     from typing import TypedDict
@@ -107,7 +107,12 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
     # (проявлялось у --re-mask, де маски проходів перекриваються як підрядки)
     all_found_ranks: List[FoundRank] = []
     covered = bytearray(len(restored_text) + 1)
+    # Більшості форм звань у документі немає: перше слово форми спершу
+    # шукається як підрядок (це значно дешевше за regex на весь текст)
+    lowered_text = restored_text.lower()
     for rank_form in ALL_RANK_FORMS:
+        if rank_form.split(None, 1)[0].lower() not in lowered_text:
+            continue
         # Між словами звання — будь-який пробільний роздільник (маскування
         # зберігає таб/подвійний пробіл оригіналу, v3.1.7). Межа — не лише
         # \b: звання не починається й не закінчується на дефісі, інакше
@@ -247,7 +252,8 @@ def unmask_ranks_gender_aware(masked_text: str, masking_map: Dict) -> Tuple[str,
 
 # Пробіли — лише після лапки (інакше квадратичний час на довгих пробілах);
 # між днем і місяцем пробілу може не бути («28»вересня — так маскується)
-_DT_QUOTE_OPEN = r'(?:[«"„“\'‘]\s*)?'
+_DT_OPENING = '«"„“\'‘'
+_DT_QUOTE_OPEN = r'(?:[' + _DT_OPENING + r']\s*)?'
 _DT_QUOTE_CLOSE = r'\s*(?:[»"“”\'’]\s*)?'
 _DT_STRIP_RE = re.compile(r'[«»"„“”\'‘’]')
 
@@ -340,35 +346,74 @@ def unmask_other_data(masked_text: str, masking_map: Dict) -> Tuple[str, Dict]:
         if isinstance(info, dict) and isinstance(info.get("masked_as"), str)
     }
 
-    def _bounded(mask: str) -> str:
-        # Межа залежить від краю маски. Цифра (дата, ІПН, номер) може стояти
-        # впритул до літер («31.12.2024р.», «ІПН1234567890» — v3.1.8): межа
-        # «не цифра». Літера: «не літера» (див. _NOT_AFTER_LETTER). Інший знак
-        # («№19дск») — без межі: до 3.2.1 «наказ№19дск» не відновлювався, бо
-        # перед «№» стояла літера
-        strict = mask in initials_masks
-        first, last = mask[:1], mask[-1:]
-        if first.isdigit():
-            before = r'(?<!\d)'
-        elif first.isalpha():
-            before = r'(?<![^\W_])' if strict else _NOT_AFTER_LETTER
-        else:
-            before = ''
+    def _after(mask: str) -> str:
+        last = mask[-1:]
         if last.isdigit():
-            after = r'(?!\d)'
-        elif last.isalpha():
-            after = r'(?![^\W_])' if strict else _NOT_BEFORE_LETTER
-        else:
-            after = ''  # ініціали впритул до прізвища: «Ґ.Є.Пебоженко»
-        return before + _alternative(mask) + after
+            return r'(?!\d)'
+        if last.isalpha():
+            return r'(?![^\W_])' if mask in initials_masks else _NOT_BEFORE_LETTER
+        return ''  # ініціали впритул до прізвища: «Ґ.Є.Пебоженко»
 
-    # Єдиний regex; довші маски першими в alternation
-    masks_sorted = sorted(instance_map.keys(), key=len, reverse=True)
+    def _combined(masks: List[str]) -> str:
+        """Єдиний regex з усіх масок; *masks* — довші першими.
+
+        Межа залежить від краю маски. Цифра (дата, ІПН, номер) може стояти
+        впритул до літер («31.12.2024р.», «ІПН1234567890» — v3.1.8): межа
+        «не цифра». Літера: «не літера» (див. _NOT_AFTER_LETTER). Інший знак
+        («№19дск») — без межі: до 3.2.1 «наказ№19дск» не відновлювався, бо
+        перед «№» стояла літера.
+
+        Маски згруповано за межею на початку, а маски з літер — ще й за
+        першою літерою: перевірка «не після літери» виконується один раз на
+        позицію, а не для кожної маски, і всередині слова жодна маска з літер
+        не пробується. Порядок «довша маска першою» зберігається: маски з
+        різних груп не можуть починатися з того самого символу."""
+        letter_tails: Dict[str, List[str]] = {}
+        letter_literal: Dict[str, str] = {}
+        digit_alts: List[str] = []
+        digit_first: Set[str] = set()
+        other_alts: List[str] = []
+        other_first: Set[str] = set()
+        for mask in masks:
+            first = mask[:1]
+            if not first:
+                continue  # порожня маска «знаходилась» би між будь-якими символами
+            if first.isdigit():
+                alternative = _alternative(mask)
+                digit_alts.append(alternative + _after(mask))
+                digit_first.add(first)
+                if alternative.startswith(_DT_QUOTE_OPEN):
+                    digit_first.update(_DT_OPENING)
+            elif first.isalpha():
+                key = first.lower() if len(first.lower()) == 1 else first
+                tail = re.escape(mask[1:]) + _after(mask)
+                if mask in initials_masks:
+                    # сувора межа: перед ініціалом і не цифра
+                    tail = r'(?<!\d' + re.escape(first) + r')' + tail
+                letter_tails.setdefault(key, []).append(tail)
+                letter_literal.setdefault(key, re.escape(first))
+            else:
+                other_alts.append(re.escape(mask) + _after(mask))
+                other_first.add(first)
+
+        def _any_of(chars: Set[str]) -> str:
+            return '[' + ''.join(re.escape(ch) for ch in sorted(chars)) + ']'
+
+        groups = []
+        if letter_tails:
+            groups.append(_NOT_AFTER_LETTER + '(?:' + '|'.join(
+                letter_literal[key] + '(?:' + '|'.join(tails) + ')' for key, tails in letter_tails.items()) + ')')
+        if digit_alts:
+            groups.append(r'(?<!\d)(?=' + _any_of(digit_first) + ')(?:' + '|'.join(digit_alts) + ')')
+        if other_alts:
+            groups.append('(?=' + _any_of(other_first) + ')(?:' + '|'.join(other_alts) + ')')
+        return '(' + '|'.join(groups) + ')'
+
+    masks_sorted = sorted((m for m in instance_map if m), key=len, reverse=True)
+    if not masks_sorted:
+        return restored_text, stats
     try:
-        big_re = re.compile(
-            r'(' + '|'.join(_bounded(m) for m in masks_sorted) + r')',
-            re.IGNORECASE,
-        )
+        big_re = re.compile(_combined(masks_sorted), re.IGNORECASE)
     except re.error as e:
         # Запасний шлях (екзотичні символи в масках). Не тихо: логуємо,
         # бо повільний шлях значно дорожчий на великих документах.

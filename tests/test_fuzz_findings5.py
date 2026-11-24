@@ -247,6 +247,52 @@ class TestUnmaskBoundaries:
         assert _unmask("-майор Коваль, майор- Мороз", mappings) == "-капітан Коваль, капітан- Мороз"
 
 
+class TestCombinedUnmaskRegex:
+    """Маски згруповано за першим символом (швидкодія); результат — як у
+    одного переліку «довша маска першою»."""
+
+    def test_longer_mask_first(self):
+        mappings = {"surname": {"Іванов": {"masked_as": "Ковар", "instances": [1]},
+                                "Петренко": {"masked_as": "Коваренко", "instances": [1]}}}
+        assert _unmask("Коваренко і Ковар", mappings) == "Петренко і Іванов"
+
+    def test_first_letter_in_any_case(self):
+        mappings = {"surname": {"Іванов": {"masked_as": "Ковар", "instances": [1, 2, 3]}}}
+        assert _unmask("КОВАР, ковар і Ковар", mappings) == "ІВАНОВ, іванов і Іванов"
+
+    def test_initials_and_surname_with_the_same_first_letter(self):
+        mappings = {"initials": {"П.": {"masked_as": "К.", "instances": [1]}},
+                    "surname": {"Іванов": {"masked_as": "Ковар", "instances": [1]}}}
+        assert _unmask("Ковар К. прибув у буд. 12К.", mappings) == "Іванов П. прибув у буд. 12К."
+
+    def test_text_date_before_a_number_with_the_same_digits(self):
+        mappings = {"date_text": {"28 вересня 2025": {"masked_as": "31 грудня 2025", "instances": [1, 2]}},
+                    "order_number": {"12": {"masked_as": "31", "instances": [1]}}}
+        assert _unmask("№ 31 від «31» грудня 2025 та 31 грудня 2025", mappings) == \
+            "№ 12 від «28» вересня 2025 та 28 вересня 2025"
+
+    def test_masks_of_every_kind_together(self):
+        mappings = {"surname": {"Іванов": {"masked_as": "Ковар", "instances": [1]}},
+                    "ipn": {"1234567890": {"masked_as": "1239999990", "instances": [1]}},
+                    "br_number": {"№14дск": {"masked_as": "№19дск", "instances": [1]}},
+                    "military_unit": {"А1234": {"masked_as": "А9377", "instances": [1]}}}
+        assert _unmask("наказ№19дск: Ковар, ІПН1239999990, в/ч А9377; слово Коваром і 91239999990", mappings) == \
+            "наказ№14дск: Іванов, ІПН1234567890, в/ч А1234; слово Коваром і 91239999990"
+
+    def test_empty_mask_is_ignored(self):
+        # mapping, переданий у функцію напряму (CLI такий відхиляє раніше)
+        mappings = {"surname": {"Іванов": {"masked_as": "", "instances": [1]},
+                                "Петренко": {"masked_as": "Ковар", "instances": [1]}}}
+        assert _unmask("Ковар прибув", mappings) == "Петренко прибув"
+        assert _unmask("Ковар прибув", {"surname": {"Іванов": {"masked_as": "", "instances": [1]}}}) == "Ковар прибув"
+
+    def test_many_masks(self):
+        originals = [f"Прізвище{chr(0x430 + i % 32)}{chr(0x430 + i // 32)}" for i in range(600)]
+        masks = [f"Маска{chr(0x430 + i % 32)}{chr(0x430 + i // 32)}" for i in range(600)]
+        mappings = {"surname": {o: {"masked_as": m, "instances": [1]} for o, m in zip(originals, masks)}}
+        assert _unmask(" ".join(masks), mappings) == " ".join(originals)
+
+
 class TestInitials:
     @pytest.mark.parametrize("text, kept", [
         ("буд. 12А. Петренко прибув", "12А."),
@@ -465,6 +511,38 @@ class TestDecomposedLetters:
         for secret in ("бойк", "гайов", "вишневецьк", "юрійович", "руденко"):
             assert secret not in masked, masked
         assert not {unicodedata.normalize("NFC", k).lower() for k in mapping["mappings"]["surname"]} & {"ком", "ко"}
+
+
+class TestRankWithLatinLookalike:
+    """Латинська літера-двійник усередині звання (текст, склеєний з різних джерел)."""
+
+    @pytest.mark.parametrize("text, rank", [
+        ("CТАРШИЙ ЛЕЙТЕНАНТ КРАВЧЕНКО ОЛЬГА ПЕТРІВНА.", "старший лейтенант"),   # латинська C
+        ("cержант Петренко Іван Петрович прибув, сержант Коваль Олег Іванович", "сержант"),
+        ("kапітан медичної служби Мороз Ігор Петрович", "капітан"),
+        ("стаpший сеpжант Мороз Ігор", "старший сержант"),   # латинська p
+    ])
+    def test_rank_is_recognised_and_restored(self, text, rank):
+        masked, mapping = _rt(text)
+        assert list(mapping["mappings"]["rank"]) == [rank], mapping["mappings"]["rank"]
+        assert not any("тарш" in key.lower() or "ержант" in key.lower() for key in mapping["mappings"]["surname"])
+        assert masked.isascii() is False and not any(ch in masked for ch in "Ccpk"), masked
+
+    def test_spelling_is_kept_in_the_mapping(self):
+        _masked, mapping = _rt("cержант Петренко Іван Петрович")
+        assert mapping["mappings"]["rank"]["сержант"]["exact"] == {"1": "cержант"}
+
+
+class TestNameMaskAndOpenWord:
+    @pytest.mark.parametrize("text", [
+        "Івану сержанту Гриценку Ігорю",
+        "ІВАНУ сержанту Гриценку Ігорю",
+        "Ігоря немає. сержанта Гриценка Івана викликали, Ігоря теж",
+    ])
+    def test_mask_is_not_a_word_left_in_the_document(self, text):
+        masked, mapping = _rt(text)
+        for info in mapping["mappings"]["name"].values():
+            assert info["masked_as"].lower() not in {w.strip(".,").lower() for w in text.split()}, masked
 
 
 class TestParsingLine:

@@ -282,13 +282,19 @@ def mask_name(original: str, masking_dict: Dict, instance_counters: Dict,
 
         # Страховка: маска ніколи не є тим самим ім'ям (у будь-якому відмінку)
         # і не збігається зі словом документа
+        # Відхилені кандидати більше не пропонуються: до 3.2.1 виключався лише
+        # попередній, і за двох імен на літеру («Іван», «Ігор») спроби ходили
+        # по колу — «Ігорю» діставало маску «Івану», хоча «Івану» стояло в
+        # документі відкритим, і unmask міняв їх місцями
+        rejected: Set[str] = set()
         attempts = 0
         while (same_name_forms(masked, original) or same_name_forms(new_name, original)
                or same_name_forms(new_name, form.nominative)
                or masked.lower() in doc_words) and attempts < 10:
+            rejected.add(new_name.lower())
             seed = get_deterministic_seed(lemma + str(attempts))
             new_name = generate_easy_name(gender, first_letter, seed, max_attempts=50,
-                                          exclude=new_name.lower(), forbidden=doc_words)
+                                          exclude=form.nominative, forbidden=doc_words | rejected)
             masked = decline_name(new_name, case, gender)
             attempts += 1
 

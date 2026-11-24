@@ -200,7 +200,11 @@ def _csv_cells(line: str) -> str:
 # «посада/старший», «Ігоровичу/Є.С. Зінченко» — ні)
 # Слово — і службовий токен уже замаскованого фрагмента («___PIB_MASKED_2___»)
 _GLUE_RE = re.compile(
-    r'(?<=[^\W\d])[:=+—–•№\\*#~→…!?<>%&@^$](?=[^\W\d])'
+    # Кома впритул до слова чи токена («Дмитрівна,майором», «…,___RANK_MASKED_1___»:
+    # до 3.2.1 після заміни звання токеном по батькові лишалось приклеєним
+    # до нього й відкритим)
+    r',(?=[^\W\d])'
+    r'|(?<=[^\W\d])[:=+—–•№\\*#~→…!?<>%&@^$](?=[^\W\d])'
     r'|(?<=[^\s/])/(?=[^\W\d]{2}|[А-ЯІЇЄҐ]\.)'
     # Число впритул перед словом («1991старшого матроса») — теж окреме слово
     r'|(?<=\d)(?=[^\W\d_])'
@@ -230,10 +234,6 @@ def _glue_space(m: "re.Match[str]") -> str:
 def separate_glued(line: str) -> str:
     """Слова, приклеєні до знака, — окремими словами (для розбору рядка;
     у самому тексті нічого не міняється)."""
-    # (слово — і службовий токен уже замаскованого фрагмента: до 3.2.1 у
-    # «Коваль Тетяна Дмитрівна,майором Руденком …» після заміни звання
-    # токеном по батькові лишалось приклеєним до нього й відкритим)
-    line = re.sub(r',(?=[^\W\d])', ', ', line)
     # Знак упритул між словами («звання:старший матрос», «посада/старший
     # сержант»): до 3.2.1 «звання:старший» було одним словом, за звання
     # бралось лише «матрос», і unmask бачив у «старший моряк» інше, двослівне
@@ -276,6 +276,18 @@ def extract_identifier_from_line(line: str) -> Optional[str]:
         return normalize_identifier(last_word)
     return None
 
+def fold_rank_homoglyphs(text: str) -> str:
+    """Нижній регістр *text*, де в кожному слові з кирилицею латинські
+    літери-двійники замінено кириличними (довжина не змінюється)."""
+    if text.isascii() or not _LATIN_RE.search(text):
+        return text.lower()
+    return _WORD_OR_GAP_RE.sub(lambda m: fold_homoglyphs(m.group(0)), text)
+
+
+_LATIN_RE = re.compile(r"[A-Za-z]")
+_WORD_OR_GAP_RE = re.compile(r"\S+")
+
+
 def extract_base_rank(full_rank_text: str) -> Tuple[str, str]:
     if not full_rank_text: return full_rank_text, ""
     service_type_phrases = ['медичної служби', 'юстиції']
@@ -317,7 +329,7 @@ def looks_like_pib_line(line: str) -> bool:
     # та по батькові в такому рядку лишались відкритими)
     if re.match(r'^[А-ЯҐЄІЇA-Z\s]+:\s*$', line_clean) and not has_full_pib(words): return False
 
-    normalized = normalize_string(line_clean)
+    normalized = fold_rank_homoglyphs(normalize_string(line_clean))
     has_rank = any(rank in normalized for rank in _cfg.RANKS_LIST)
 
     # Повний ПІБ (…Прізвище Ім'я По-батькові…) — маскуємо завжди: і в рядку
@@ -412,7 +424,10 @@ def parse_hybrid_line(line: str) -> Tuple[Optional[str], Optional[str], Optional
         # «*старший матрос …*», «/старшому моряку …/»: без цього звання
         # знаходилось без першого слова («матрос» → «моряк»), а unmask бачив
         # у «*старший моряк» інше, двослівне звання й не відновлював його
-        norm = normalize_string(strip_word(part, leading_punct=True))
+        # Латинська літера-двійник у званні («cтарший лейтенант» з латинською
+        # «c») — як кирилична: до 3.2.1 званням вважалось лише «лейтенант», а
+        # «cтарший» маскувалось як прізвище
+        norm = fold_rank_homoglyphs(normalize_string(strip_word(part, leading_punct=True)))
         if not norm:
             continue
         if chunks:

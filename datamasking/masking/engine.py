@@ -797,11 +797,12 @@ def join_with_separators(words: List[str], separators: List[str]) -> str:
 _PLAIN_CASE_ENDINGS = frozenset({"", "а", "я", "у", "ю", "ом", "ем", "єм", "и", "і", "ою", "ею"})
 
 
-def _plain_stem(word: str) -> Optional[str]:
+def _plain_stem(word: str, split: Optional[Tuple[str, str, str]] = None) -> Optional[str]:
     """Основа прізвища «простої» родини (на приголосний, «-а», «-я») без
     м'якого знака і кінцевого «й»: Коваль / Коваля / Ковалем → «ковал»,
-    Шамрай / Шамрая → «шамра», Хмара / Хмару → «хмар». Інші родини — None."""
-    stem, ending, family = _surname.split_surname(word)
+    Шамрай / Шамрая → «шамра», Хмара / Хмару → «хмар». Інші родини — None.
+    *split* — уже відомий результат split_surname(word)."""
+    stem, ending, family = split or _surname.split_surname(word)
     if family not in ("", "а", "я") or ending not in _PLAIN_CASE_ENDINGS:
         return None
     if not ending and stem[-1:] in "ьй":
@@ -832,10 +833,11 @@ def _mask_known_surnames_standalone(text: str, masking_dict: Dict, instance_coun
     # «Ковалем» лишались відкритими
     known_plain = set()
     for original in surnames:
-        stem, _ending, family = _surname.split_surname(original)
+        split = _surname.split_surname(original)
+        stem, _ending, family = split
         if len(stem) >= 3:
             known_pairs.add((stem.lower(), family.lower()))
-        plain = _plain_stem(original)
+        plain = _plain_stem(original, split)
         if plain:
             known_plain.add(plain)
     if not known_pairs:
@@ -853,9 +855,10 @@ def _mask_known_surnames_standalone(text: str, masking_dict: Dict, instance_coun
         if low in masks_lower or low in _cfg.EXCLUDE_WORDS_LOWER or low in _cfg.ABBREVIATION_WHITELIST \
                 or low in _cfg.RANKS_LIST_LOWER or not looks_like_name(word):
             return word
-        stem, _ending, family = _surname.split_surname(word)
+        split = _surname.split_surname(word)
+        stem, _ending, family = split
         if ((len(stem) < 3 or (stem.lower(), family.lower()) not in known_pairs)
-                and _plain_stem(word) not in known_plain):
+                and _plain_stem(word, split) not in known_plain):
             return word
         # Лапка чи дефіс у кінці («Петренко’», «Петренко-») — не частина прізвища
         core = word.rstrip(_cfg.APOSTROPHE_CHARS + "-")
