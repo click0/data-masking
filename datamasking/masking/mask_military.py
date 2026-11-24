@@ -15,7 +15,7 @@ from typing import Dict, Optional, Tuple, Callable
 from datamasking.masking import constants as _cfg
 from datamasking.masking import surname as _surname
 from datamasking.masking.helpers import add_to_mapping, get_deterministic_seed, _apply_original_case
-from datamasking.masking.context import extract_base_rank
+from datamasking.masking.context import extract_base_rank, fold_rank_homoglyphs
 
 
 def mask_military_unit(original: str, masking_dict: Dict, instance_counters: Dict) -> str:
@@ -546,7 +546,9 @@ def mask_rank_preserve_case(original_text: str, masking_dict: Dict, instance_cou
     Маскує звання зі збереженням регістру та граматичного відмінка (Bug Fix #16-18).
     """
     base_rank_text, additional_words = extract_base_rank(original_text)
-    base_male_form, detected_case, gender = get_rank_info(base_rank_text)
+    # Латинські літери-двійники («cтарший лейтенант») — як кириличні
+    folded = fold_rank_homoglyphs(base_rank_text)
+    base_male_form, detected_case, gender = get_rank_info(folded)
 
     if not base_male_form:
         masked_result = mask_rank(base_rank_text, masking_dict, instance_counters)
@@ -572,5 +574,31 @@ def mask_rank_preserve_case(original_text: str, masking_dict: Dict, instance_cou
 
     if _cfg.PRESERVE_CASE and final_rank:
         final_rank = _apply_original_case(base_rank_text, final_rank)
+        _remember_exact_rank(masking_dict, base_male_form, base_rank_text)
+    # Жіноча форма («капітанці»), а маска жіночої форми не має («старшому
+    # прапорщику» — коли решта звань зайнята): рід із маски не відновити. До
+    # 3.2.1 unmask повертав «капітану»
+    if gender == 'female' and masked_base_male.lower() not in _cfg.RANK_FEMININE_MAP:
+        _remember_exact_rank(masking_dict, base_male_form, base_rank_text, always=True)
+    # preserve_case: false — маска завжди малими літерами, тож
+    # регістр звання теж лише з mapping (до 3.2.1 «МАЙОР» повертався як «майор»)
+    if not _cfg.PRESERVE_CASE and not base_rank_text.islower():
+        _remember_exact_rank(masking_dict, base_male_form, base_rank_text, always=True)
+    # Написання з латинською літерою теж відновлюється лише з mapping
+    if folded != base_rank_text.lower():
+        _remember_exact_rank(masking_dict, base_male_form, base_rank_text, always=True)
     result = final_rank if final_rank else masked_base_male
     return f"{result} {additional_words}" if additional_words else result
+
+
+def _remember_exact_rank(masking_dict: Dict, base_form: str, written: str, always: bool = False) -> None:
+    """Звання, записане нестандартним регістром («Старший Лейтенант»,
+    «старшому ЛЕЙТЕНАНТУ»): регістр маски його не передає, тож написання
+    зберігається в mapping — «exact»: {номер входження: текст}. До 3.2.1
+    unmask повертав «Старший лейтенант» / «старшому лейтенанту»."""
+    regular = written.isupper() or written.islower() or (written[:1].isupper() and written[1:].islower())
+    if regular and not always:
+        return
+    entry = masking_dict["mappings"]["rank"].get(base_form.lower())
+    if isinstance(entry, dict) and entry.get("instances"):
+        entry.setdefault("exact", {})[str(entry["instances"][-1])] = written

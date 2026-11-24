@@ -26,7 +26,7 @@ from datamasking.masking.context import (
 from datamasking.masking.declension import analyze_patronymic
 from datamasking.masking.helpers import get_deterministic_seed, add_to_mapping, clean_word
 from datamasking.masking.language import (
-    is_likely_surname_by_case, detect_gender_by_patronymic, looks_like_name,
+    is_apostrophe_name, is_likely_surname_by_case, detect_gender_by_patronymic, looks_like_name,
 )
 from datamasking.masking.mask_personal import (
     mask_ipn, mask_passport_id, mask_military_id,
@@ -54,15 +54,23 @@ def _rank_hints(rank: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
 
 _UA_UPPER = "АБВГҐДЕЖЗІЙКЛМНОПРСТУФХЦЧШЩЮЯЄІЇҐ"
 
-# Межі слова: не всередині слова — ні після літери, апострофа чи дефіса, ні
-# після літери з «‘», «`» чи невидимим символом (див. constants.JOINER_CHARS)
-_JOIN = _cfg.JOINER_CHARS
-WORD_BEFORE = r"(?<![\w'’ʼ-])(?<![\w'’ʼ-][" + _JOIN + r"])"
-WORD_AFTER = r"(?![\w'’ʼ-])(?![" + _JOIN + r"]\w)"
+# Межі слова: не всередині слова — ні після літери, ні після літери з
+# апострофом, дефісом, «‘», «`» чи невидимим символом (див.
+# constants.JOINER_CHARS). Дефіс чи апостроф без слова перед ним («-Петренко»
+# у переліку, «'Петренко І.П.'» в одинарних лапках) — маркер або лапка, а не
+# частина слова (до 3.2.1 таке слово «не починалось», і прізвище лишалось
+# відкритим)
+# (фрагмент класу символів) — і комбінувальні знаки розкладених «й», «ї»
+# (NFD: «и» + U+0306): до 3.2.1 у «БОЙКОМ В.М.» з таким «Й» прізвищем
+# вважалось «КОМ», а «Бойком В.М.» лишалось відкритим
+_JOIN = _cfg.JOINER_CHARS + "\u0300-\u036f"
+WORD_BEFORE = r"(?<!\w)(?<!\w['’ʼ-])(?<![\w'’ʼ-][" + _JOIN + r"])"
+WORD_AFTER = r"(?!\w)(?!['’ʼ-]\w)(?![" + _JOIN + r"]\w)"
 
 # Прізвище у Title Case, зокрема подвійне з великої після дефіса
-# (Петренко-Іванова, Нечуй-Левицький)
-_SURNAME_RE = (r"[А-ЯІЇЄҐ][а-яіїєґ'ʼ’" + _JOIN + r"]{2,}"
+# (Петренко-Іванова, Нечуй-Левицький) і з апострофом після першої літери
+# (О'Коннор — з 3.2.1)
+_SURNAME_RE = (r"(?:[А-ЯІЇЄҐ]['ʼ’‘`](?=[А-ЯІЇЄҐ]))?[А-ЯІЇЄҐ][а-яіїєґ'ʼ’" + _JOIN + r"]{2,}"
                r"(?:-[" + _JOIN + r"]*[А-ЯІЇЄҐ]?[а-яіїєґ'ʼ’" + _JOIN + r"]{2,})?")
 # КАПСОМ, зокрема подвійне (ПЕТРЕНКО-КОВАЛЬ): до 3.1.20 включно бралась лише одна
 # частина, і друга (чи перша — «ПЕТРЕНКО» у «ПЕТРЕНКО-КОВАЛЬ І.М.») лишалась
@@ -71,30 +79,38 @@ _SURNAME_UPPER_RE = (r"[А-ЯІЇЄҐ][А-ЯІЇЄҐ'ʼ’" + _JOIN + r"]{2,}"
 _NAME_RE = r'(?:' + _SURNAME_RE + r'|' + _SURNAME_UPPER_RE + r')'
 # Прізвище перед ініціалами починається з початку слова (не з «КОВАЛЬ»
 # усередині «ПЕТРЕНКО-КОВАЛЬ»)
-_NAME_START = r"(?<![А-ЯІЇЄҐа-яіїєґA-Za-z'ʼ’-])(?<![А-ЯІЇЄҐа-яіїєґA-Za-z'ʼ’-][" + _JOIN + r"])"
+_NAME_START = (r"(?<![А-ЯІЇЄҐа-яіїєґA-Za-z])(?<![А-ЯІЇЄҐа-яіїєґA-Za-z]['ʼ’-])"
+               r"(?<![А-ЯІЇЄҐа-яіїєґA-Za-z'ʼ’-][" + _JOIN + r"])")
 
 # Пробіл у межах рядка (НЕ \s — щоб ініціали не склеювались
 # з наступним рядком через \n)
 _SP = r'[  ]'
 
+# Ініціал — велика літера, зокрема розкладена «Й» / «Ї» (NFD: «И» + U+0306)
 # Прізвище + 2 ініціали: Іванов П.А. / Іванов П. А. / ІВАНОВ П.А. / Іванов П.А (без
 # останньої крапки — лише якщо далі не літера)
 _RE_NAME_INI2 = re.compile(
-    _NAME_START + r'(' + _NAME_RE + r')' + _SP + r'+([А-ЯІЇЄҐ])\.' + _SP + r'*([А-ЯІЇЄҐ])(?:\.|(?![а-яіїєґА-ЯІЇЄҐa-zA-Z\'ʼ’]))'
+    _NAME_START + r'(' + _NAME_RE + r')' + _SP + r'+([А-ЯІЇЄҐ][\u0300-\u036f]?)\.' + _SP + r'*([А-ЯІЇЄҐ][\u0300-\u036f]?)(?:\.|(?![а-яіїєґА-ЯІЇЄҐa-zA-Z\d\'ʼ’\u0300-\u036f]))'
 )
+# Ініціал не стоїть упритул після літери, цифри чи дефіса («12А. Петренко» —
+# будинок 12А, «№ 953-К.», «№ 452/Я.» — номер наказу), а прізвище після ініціалів
+# закінчується там, де закінчується слово: до 3.2.1 у «П.ГРИЦЕНКОкомандир»
+# маскувалась частина слова, якої unmask потім не знаходив
+_INI_START = r"(?<![а-яіїєґА-ЯІЇЄҐa-zA-Z\d'ʼ’-])(?<!\d/)"
+_NAME_END = r"(?![а-яіїєґА-ЯІЇЄҐa-zA-Z])(?![" + _JOIN + r"][а-яіїєґА-ЯІЇЄҐa-zA-Z])"
 # 2 ініціали + Прізвище: П.А. Іванов / П. А. Іванов
 _RE_INI2_NAME = re.compile(
-    r'(?<![а-яіїєґА-ЯІЇЄҐa-zA-Z])'
-    r'([А-ЯІЇЄҐ])\.' + _SP + r'*([А-ЯІЇЄҐ])\.' + _SP + r'*(' + _NAME_RE + r')'
+    _INI_START +
+    r'([А-ЯІЇЄҐ][\u0300-\u036f]?)\.' + _SP + r'*([А-ЯІЇЄҐ][\u0300-\u036f]?)\.' + _SP + r'*(' + _NAME_RE + r')' + _NAME_END
 )
 # Прізвище + 1 ініціал: Іванов П.
 _RE_NAME_INI1 = re.compile(
-    _NAME_START + r'(' + _NAME_RE + r')' + _SP + r'+([А-ЯІЇЄҐ])\.(?![а-яіїєґА-ЯІЇЄҐa-zA-Z])'
+    _NAME_START + r'(' + _NAME_RE + r')' + _SP + r'+([А-ЯІЇЄҐ][\u0300-\u036f]?)\.(?![а-яіїєґА-ЯІЇЄҐa-zA-Z])'
 )
 # 1 ініціал + Прізвище: П. Іванов
 _RE_INI1_NAME = re.compile(
-    r'(?<![а-яіїєґА-ЯІЇЄҐa-zA-Z])'
-    r'([А-ЯІЇЄҐ])\.' + _SP + r'*(' + _NAME_RE + r')'
+    _INI_START +
+    r'([А-ЯІЇЄҐ][\u0300-\u036f]?)\.' + _SP + r'*(' + _NAME_RE + r')' + _NAME_END
 )
 # Те саме з переносом рядка між прізвищем і двома ініціалами (жорстко
 # перенесений текст: «… Л.І.\nКоваль»): до 3.1.20 включно прізвище лишалось
@@ -102,11 +118,11 @@ _RE_INI1_NAME = re.compile(
 # рівному збігу в межах рядка програє (див. _non_overlapping)
 _SP_BREAK = _SP + r'*\r?\n' + _SP + r'*'
 _RE_NAME_BREAK_INI2 = re.compile(
-    _NAME_START + r'(' + _NAME_RE + r')' + _SP_BREAK + r'([А-ЯІЇЄҐ])\.' + _SP + r'*([А-ЯІЇЄҐ])\.'
+    _NAME_START + r'(' + _NAME_RE + r')' + _SP_BREAK + r'([А-ЯІЇЄҐ][\u0300-\u036f]?)\.' + _SP + r'*([А-ЯІЇЄҐ][\u0300-\u036f]?)\.'
 )
 _RE_INI2_BREAK_NAME = re.compile(
-    r'(?<![а-яіїєґА-ЯІЇЄҐa-zA-Z])'
-    r'([А-ЯІЇЄҐ])\.' + _SP + r'*([А-ЯІЇЄҐ])\.' + _SP_BREAK + r'(' + _NAME_RE + r')'
+    _INI_START +
+    r'([А-ЯІЇЄҐ][\u0300-\u036f]?)\.' + _SP + r'*([А-ЯІЇЄҐ][\u0300-\u036f]?)\.' + _SP_BREAK + r'(' + _NAME_RE + r')' + _NAME_END
 )
 
 
@@ -127,6 +143,8 @@ def _is_surname_candidate(word: str) -> bool:
     parts = [p for p in clean.split('-') if p]
     if not parts:
         return False
+    if is_apostrophe_name(clean_word(clean)):
+        return True
     for part in parts:
         letters = clean_word(part).replace("'", "")
         if not letters:
@@ -318,7 +336,11 @@ def _get_rank_forms_re() -> Pattern[str]:
     if _RANK_FORMS_RE is None:
         forms = sorted(_cfg.ALL_RANK_FORMS, key=len, reverse=True)
         alternation = '|'.join(re.escape(f).replace(r'\ ', r'\s+') for f in forms)
-        _RANK_FORMS_RE = re.compile(WORD_BEFORE + r"(?:" + alternation + r")" + WORD_AFTER, re.IGNORECASE)
+        # Межі — як у unmask (unmasking.engine._rank_pattern): не літера і не
+        # дефіс між літерами. Звання впритул до цифри («рядового1», «1912рядового») unmask
+        # знаходить, тож і тут воно — відкрите звання, якого маска не повторює
+        _RANK_FORMS_RE = re.compile(
+            r"(?<![^\W\d_])(?<![^\W\d_]-)(?:" + alternation + r")(?![^\W\d_])(?!-[^\W\d_])", re.IGNORECASE)
     return _RANK_FORMS_RE
 
 
@@ -534,7 +556,8 @@ def _mask_quoted_ranks(text: str, masking_dict: Dict, instance_counters: Dict) -
     segments = []
     prev_end = 0
     for m in _QUOTED_RE.finditer(text):
-        inner = m.group(2).strip()
+        raw = m.group(2)
+        inner = raw.strip()
         low = inner.lower()
         if low not in _cfg.ALL_RANK_FORMS_LOWER or low in already:
             continue
@@ -543,7 +566,9 @@ def _mask_quoted_ranks(text: str, masking_dict: Dict, instance_counters: Dict) -
             continue
         already.add(masked.lower())
         segments.append(text[prev_end:m.start()])
-        segments.append(m.group(1) + masked + m.group(3))
+        # Пробіли всередині лапок («сержант ») — як в оригіналі (до 3.2.1 зникали)
+        lead, trail = raw[:len(raw) - len(raw.lstrip())], raw[len(raw.rstrip()):]
+        segments.append(m.group(1) + lead + masked + trail + m.group(3))
         prev_end = m.end()
 
     if segments:
@@ -769,6 +794,22 @@ def join_with_separators(words: List[str], separators: List[str]) -> str:
     return "".join(out)
 
 
+_PLAIN_CASE_ENDINGS = frozenset({"", "а", "я", "у", "ю", "ом", "ем", "єм", "и", "і", "ою", "ею"})
+
+
+def _plain_stem(word: str, split: Optional[Tuple[str, str, str]] = None) -> Optional[str]:
+    """Основа прізвища «простої» родини (на приголосний, «-а», «-я») без
+    м'якого знака і кінцевого «й»: Коваль / Коваля / Ковалем → «ковал»,
+    Шамрай / Шамрая → «шамра», Хмара / Хмару → «хмар». Інші родини — None.
+    *split* — уже відомий результат split_surname(word)."""
+    stem, ending, family = split or _surname.split_surname(word)
+    if family not in ("", "а", "я") or ending not in _PLAIN_CASE_ENDINGS:
+        return None
+    if not ending and stem[-1:] in "ьй":
+        stem = stem[:-1]
+    return stem if len(stem) >= 3 else None
+
+
 def _mask_known_surnames_standalone(text: str, masking_dict: Dict, instance_counters: Dict) -> str:
     """Прізвище, яке вже замасковано в документі, маскується і там, де воно
     стоїть само («…Івенов Павло Данилович звільнений. Іванов отримав
@@ -785,10 +826,20 @@ def _mask_known_surnames_standalone(text: str, masking_dict: Dict, instance_coun
     # «Іванову» → (іван, ов). Лише основи недостатньо: ім'я «Івана» має ту
     # саму основу «іван», і його маска перемаскувалась би як прізвище
     known_pairs = set()
+    # Прізвища на приголосний, «-а», «-я» (Мороз, Коваль, Шамрай, Хмара) — ще
+    # й за основою без м'якого знака / «й»: їхні відмінкові закінчення
+    # збігаються з закінченнями інших родин. До 3.2.1 після «сержант Мороз»
+    # окреме «Мороза», а після «сержант Коваль» — «Коваля», «Ковалю»,
+    # «Ковалем» лишались відкритими
+    known_plain = set()
     for original in surnames:
-        stem, _ending, family = _surname.split_surname(original)
+        split = _surname.split_surname(original)
+        stem, _ending, family = split
         if len(stem) >= 3:
             known_pairs.add((stem.lower(), family.lower()))
+        plain = _plain_stem(original, split)
+        if plain:
+            known_plain.add(plain)
     if not known_pairs:
         return text
     # Жодну вже вставлену маску (будь-якої категорії) не чіпаємо
@@ -804,10 +855,14 @@ def _mask_known_surnames_standalone(text: str, masking_dict: Dict, instance_coun
         if low in masks_lower or low in _cfg.EXCLUDE_WORDS_LOWER or low in _cfg.ABBREVIATION_WHITELIST \
                 or low in _cfg.RANKS_LIST_LOWER or not looks_like_name(word):
             return word
-        stem, _ending, family = _surname.split_surname(word)
-        if len(stem) < 3 or (stem.lower(), family.lower()) not in known_pairs:
+        split = _surname.split_surname(word)
+        stem, _ending, family = split
+        if ((len(stem) < 3 or (stem.lower(), family.lower()) not in known_pairs)
+                and _plain_stem(word, split) not in known_plain):
             return word
-        return mask_surname(word, masking_dict, instance_counters)
+        # Лапка чи дефіс у кінці («Петренко’», «Петренко-») — не частина прізвища
+        core = word.rstrip(_cfg.APOSTROPHE_CHARS + "-")
+        return mask_surname(core, masking_dict, instance_counters) + word[len(core):]
 
     return re.sub(WORD_BEFORE + r"[А-ЯІЇЄҐ][А-ЯІЇЄҐа-яіїєґ'’ʼ" + _JOIN + r"-]{2,}" + WORD_AFTER, _replace, text)
 
@@ -1197,7 +1252,17 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
             # інакше заміна не спрацює, а mask_* уже запишуть сміття в mapping
             pib_span = locate_words(current_line_for_parsing, pib)
             if pib_span is None:
-                break
+                # Розбір бачить слова інакше, ніж вони стоять у рядку. Перше
+                # слово ховається, і розбір іде далі: до 3.2.1 тут рядок
+                # кидався, і решта ПІБ у ньому лишалась відкритою
+                first_word = locate_words(current_line_for_parsing, pib.split()[0])
+                if first_word is None or "___" in pib:
+                    break
+                current_line_for_parsing = _replace_span(
+                    current_line_for_parsing, first_word,
+                    _hold("PIB", current_line_for_parsing[first_word[0]:first_word[1]]))
+                iteration += 1
+                continue
             # Плейсхолдер уже замаскованого фрагмента ніколи не є званням чи
             # частиною ПІБ (інакше маска загорнулась би в маску, а токен
             # потрапив у mapping і вихідний текст)
@@ -1238,7 +1303,21 @@ def _mask_text_core_impl(text: str, masking_dict: Dict, instance_counters: Dict,
                     if isinstance(info, dict) and "masked_as" in info
                 }
                 original_pib_text = current_line_for_parsing[pib_span[0]:pib_span[1]]
-                if any(p.lower() in already_masked for p in parts[:2]):
+                # Ховається лише саме слово-маска, і розбір іде далі: решта
+                # слів — окреме ПІБ («Ковар К.К.|Світлана ЗІНЧЕНКО», «Олег
+                # Лисенко<таб>Ковар К.К.»). До 3.2.1 ховалось усе знайдене
+                # (ім'я поруч лишалось відкритим), а маска на третьому місці
+                # маскувалась ще раз як по батькові, і unmask повертав «Ковар»
+                masked_at = next((i for i, p in enumerate(parts) if p.lower() in already_masked), None)
+                if masked_at is not None and len(pib_span[2]) == len(parts) - 1:
+                    word_start = pib_span[0] + sum(len(parts[i]) + len(pib_span[2][i]) for i in range(masked_at))
+                    word_span: Tuple[int, int, List[str]] = (word_start, word_start + len(parts[masked_at]), [])
+                    current_line_for_parsing = _replace_span(
+                        current_line_for_parsing, word_span,
+                        _hold("PIB", current_line_for_parsing[word_span[0]:word_span[1]]))
+                    iteration += 1
+                    continue
+                if masked_at is not None:
                     current_line_for_parsing = _replace_span(current_line_for_parsing, pib_span,
                                                              _hold("PIB", original_pib_text))
                     iteration += 1

@@ -148,6 +148,10 @@ def _validate_mappings(mapping: Dict, where: str) -> None:
             instances = info.get("instances", [])
             if not isinstance(instances, list) or not all(isinstance(n, int) for n in instances):
                 raise ValueError(f"'{where}mappings.{category}.{original}.instances' must be a list of integers")
+            # Точне написання окремих входжень (з 3.2.1, лише звання)
+            exact = info.get("exact", {})
+            if not isinstance(exact, dict) or not all(isinstance(v, str) for v in exact.values()):
+                raise ValueError(f"'{where}mappings.{category}.{original}.exact' must be an object of strings")
 
 
 def show_chain_info(masking_map: Dict) -> None:

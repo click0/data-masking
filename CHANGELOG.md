@@ -4,6 +4,124 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Compatibility
+- Masks are the same as in 3.2.0 except where 3.2.0 left data open or
+  masked part of a word (see below). Mappings made by earlier versions are
+  unmasked as before.
+- Where the mask of a rank cannot carry its spelling, the spelling is now
+  also recorded in the mapping under `"exact"` (occurrence number → spelling
+  in the document): a rank in unusual letter case (`Старший Лейтенант`,
+  `старшому ЛЕЙТЕНАНТУ`), a feminine form whose mask has none, a rank with
+  a look-alike Latin letter, and any rank not in lower case when
+  `preserve_case` is `false`. 3.2.0 and
+  earlier ignore the key and restore such a rank as they did before: in
+  regular case and in the masculine form.
+
+### Fixed — data left unmasked
+- A list marker, a number or a label typed without a space before the name
+  (`-Петренко Іван Петрович`, `•Петренко …`, `1)Петренко …`, `12.Петренко …`,
+  `ПІБ:Петренко Іван Петрович`): the surname stayed open, and with initials
+  (`-Петренко І.П.`) the whole name did. A rank after such a marker
+  (`-майор Петренко`, `Звання:майор Петренко …`) was not masked.
+- A name of two words in brackets or in Markdown emphasis
+  (`(Петренко Іван)`, `[Петро БІЛИЙ]`, `**Петренко Іван**`,
+  `_Петренко Іван Петрович_`), and a name in single quotes
+  (`‘Петренко Іван Петрович’`, `'Петренко І.П.'`) stayed open or lost the
+  surname. Two capitalised words in double quotes are still not taken for a
+  name: they are more often a title (`«Золота Зірка»`).
+- A line in capitals that ends with a colon was skipped as a heading even
+  when it was a full name (`ПЕТРЕНКО ІВАН ПЕТРОВИЧ:`).
+- Surnames with a capital letter after an apostrophe (`О'Коннор`,
+  `Д'Артаньян`) were not recognised: the surname and the rank before it
+  stayed open. All their case forms now share one mask stem.
+- Two people in one line with a dash, a slash or a bracket between them and
+  no spaces (`Ярошенко Олег Васильович—підполковнику Мельнику …`,
+  `полковника Савчук Євген/Савчук Євген Олександрович`,
+  `Коваль Тетяна Дмитрівна,майором Руденком …`,
+  `Доповів [Петро БІЛИЙ]`): a patronymic or a first name stayed open, or
+  nothing in the line was masked. In the first example 3.2.0 also dropped
+  the dash and the rank from the masked text.
+- `Сергій РУДЕНКО<tab>Василь ДОРОШЕНКО` (first name and SURNAME, twice): the
+  second first name was masked as a patronymic and the second surname
+  stayed open.
+- `С.Б. Зінченко|Світлана ЗІНЧЕНКО`: a first name next to a surname already
+  masked with initials stayed open.
+- A surname already masked in the document stayed open where it stood alone
+  in another case: `Мороза`, `Коваля`, `Ковалю`, `Ковалем`, `Бондаря`,
+  `Ткача`, `Шамрая`, `Хмару` after `сержант Мороз`, `сержант Коваль` and so
+  on. Only surnames in `-енко`, `-ук`, `-ов`, `-ський` and the like were
+  found in every case.
+- Text with decomposed letters (`й` and `ї` stored as two characters, as
+  macOS and some PDF exports do): in `БОЙКОМ В.М.` only `КОМ` was taken for
+  the surname, `Бойком В.М.` stayed open, and initials `Й.` were not
+  recognised.
+- A hyphen or a dash glued to the end of a name (`Петренко Іван Петрович-
+  командир`) left the last word open.
+- No space after the full stop of the previous sentence
+  (`… вибув.Петренко Іван Петрович прибув`): the surname stayed open.
+- When a name found by the line parser could not be located in the line, the
+  rest of the line was skipped. Now only that word is skipped.
+
+### Fixed — unmasking did not restore the original
+- A number sign typed right after a word (`наказ№14дск`, `Наказ№5`,
+  `123№БР456`): the number was masked and not restored.
+- A word typed right after a number or a date (`22.10.2004Іванов Петро
+  Іванович`, `28.02.1950капітану 2-го рангу Ткаченку`): the surname or the
+  rank was masked and not restored. A mask made of letters is now found
+  next to a digit or `_` as well; initials are still matched as whole words,
+  so `2024р.` is never taken for a masked initial.
+- A rank typed right after a colon, a slash, a full stop or a digit
+  (`Звання:старший матрос Петренко …`, `посада/старший лейтенант …`,
+  `1991старшого матроса …`) was taken without its first word. The mask could
+  read `старший старший прапорщик`, and for `старший матрос` the rank was
+  not restored.
+- Initials next to something that is not a surname: in `П.ГРИЦЕНКОкомандир`
+  and `Т.СавчукаОлегівні` part of the word was masked; in `буд. 12А.
+  Петренко` and `№ 953-К.Миколаївни` a letter after a number was masked as
+  an initial. Neither was restored. A letter glued to a digit or a hyphen is
+  no longer an initial, and a surname after initials ends where the word
+  ends.
+- `наказ №764Сидоренко О.П.`, `№ 907/Поліщуку`: the surname was taken for
+  the letter index of the order number. The index is at most five letters
+  and ends where the word ends. In `БР208Капітану` the `К` was taken for the
+  index `к`.
+- A mask was masked again: in `Олег Лисенко<tab>Коваль П.П.` the surname
+  masked with the initials became the “patronymic” of the two words before
+  it, and unmasking returned the first mask.
+- Words in mixed letter case came back in lower case or capitalised: a
+  double surname in the place of a patronymic (`Анна Марія Петренко-Коваль`
+  → `петренко-коваль`), a rank with each word capitalised or partly in
+  capitals (`Старший Лейтенант`, `старшому ЛЕЙТЕНАНТУ`).
+- A feminine rank form (`Капітанці`) came back masculine (`Капітану`) when
+  every rank with a feminine form was taken and the mask had none.
+- With `preserve_case: false` a rank in capitals or with a capital first
+  letter came back in lower case.
+- A rank in quotes lost the spaces inside the quotes (`«сержант »`).
+- The mask of a first name could be a word that stays open in the document
+  in the same case form: in `Івану сержанту Гриценку Ігорю` the name `Ігорю`
+  was masked as `Івану`, and unmasking swapped the two. A rejected candidate
+  is no longer offered again.
+- The same rank twice in a row, at the end of one line and the start of
+  the next (`… доповів старший лейтенант` / `Старший лейтенант Мороз Ігор
+  Петрович`): the second `Старший` was masked as a surname and the rank of
+  the person became `лейтенант`; in capitals the result did not unmask.
+- A Latin letter that looks like a Cyrillic one inside a rank
+  (`cтарший лейтенант` with a Latin `c`): only `лейтенант` was taken for the
+  rank, `cтарший` was masked as a surname, and the rank came back as
+  `старший старший прапорщик`. The rank is now recognised, and its spelling
+  is kept under `"exact"`.
+- `матросом …БР 123`: `БР` after an ellipsis was masked as a surname, and
+  the number was not restored.
+
+### Performance
+- Unmasking a large document is about three times faster (2000 lines with
+  300 people: from about 1.5 s to 0.45 s). Masks are grouped by their first
+  character, so a mask made of letters is never tried in the middle of a
+  word, and rank forms that do not occur in the text are skipped. The
+  occurrences found are the same.
+
 ## [3.2.0] - 2026-11
 
 Minor release with the results of two bug hunts after 3.1.21. Most changes

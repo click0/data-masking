@@ -173,12 +173,18 @@ def mask_patronymic(patronymic: str, gender: Optional[str], masking_dict: Dict, 
     is_upper = patronymic.isupper()
     is_capitalize = patronymic[0].isupper() and patronymic[1:].islower() if len(patronymic) > 1 else False
     patronymic_lower = patronymic.lower()
+    # Змішаний регістр (подвійне прізвище на місці по батькові — «Анна Марія
+    # Петренко-Коваль», «Гасан-Огли»): ключ mapping — написання з документа,
+    # маска — з великої. До 3.2.1 ключ і маска були малими літерами, і unmask
+    # повертав «петренко-коваль»
+    mixed = not (is_upper or is_capitalize or patronymic.islower())
+    key = patronymic if mixed else patronymic_lower
 
     if "patronymic" not in masking_dict["mappings"]: masking_dict["mappings"]["patronymic"] = {}
-    if patronymic_lower in masking_dict["mappings"]["patronymic"]:
-        masked = masking_dict["mappings"]["patronymic"][patronymic_lower]["masked_as"]
+    if key in masking_dict["mappings"]["patronymic"]:
+        masked = masking_dict["mappings"]["patronymic"][key]["masked_as"]
         masked_with_case = _apply_original_case(patronymic, masked)
-        record_instance(masking_dict, instance_counters, "patronymic", patronymic_lower, masked)
+        record_instance(masking_dict, instance_counters, "patronymic", key, masked)
         return masked_with_case
 
     form = analyze_patronymic(patronymic_lower)
@@ -217,10 +223,10 @@ def mask_patronymic(patronymic: str, gender: Optional[str], masking_dict: Dict, 
 
     # Застосовуємо регістр
     if is_upper: fake_patronymic = fake_patronymic.upper()
-    elif is_capitalize: fake_patronymic = fake_patronymic.capitalize()
+    elif is_capitalize or (mixed and patronymic[0].isupper()): fake_patronymic = fake_patronymic.capitalize()
     else: fake_patronymic = fake_patronymic.lower()
 
-    return add_to_mapping(masking_dict, instance_counters, "patronymic", patronymic_lower, fake_patronymic)
+    return add_to_mapping(masking_dict, instance_counters, "patronymic", key, fake_patronymic)
 
 def mask_name(original: str, masking_dict: Dict, instance_counters: Dict,
               gender_hint: Optional[str] = None, patronymic_hint: Optional[str] = None,
@@ -276,13 +282,19 @@ def mask_name(original: str, masking_dict: Dict, instance_counters: Dict,
 
         # Страховка: маска ніколи не є тим самим ім'ям (у будь-якому відмінку)
         # і не збігається зі словом документа
+        # Відхилені кандидати більше не пропонуються: до 3.2.1 виключався лише
+        # попередній, і за двох імен на літеру («Іван», «Ігор») спроби ходили
+        # по колу — «Ігорю» діставало маску «Івану», хоча «Івану» стояло в
+        # документі відкритим, і unmask міняв їх місцями
+        rejected: Set[str] = set()
         attempts = 0
         while (same_name_forms(masked, original) or same_name_forms(new_name, original)
                or same_name_forms(new_name, form.nominative)
                or masked.lower() in doc_words) and attempts < 10:
+            rejected.add(new_name.lower())
             seed = get_deterministic_seed(lemma + str(attempts))
             new_name = generate_easy_name(gender, first_letter, seed, max_attempts=50,
-                                          exclude=new_name.lower(), forbidden=doc_words)
+                                          exclude=form.nominative, forbidden=doc_words | rejected)
             masked = decline_name(new_name, case, gender)
             attempts += 1
 
